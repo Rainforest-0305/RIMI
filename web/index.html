@@ -173,6 +173,10 @@
   .foot{display:flex;align-items:center;margin-top:15px;padding-top:13px;border-top:1px solid var(--line-2)}
   .rc{font-family:var(--mono);font-size:10.5px;color:var(--t4)}
   .src{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--blue);text-decoration:none} .src:hover{text-decoration:underline}
+  .cardshare{margin-left:auto;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
+    background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px}
+  .cardshare:hover{text-decoration:underline}
+  .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
   .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 4px;background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
@@ -415,6 +419,196 @@ async function loadScale(rno){
   }catch(e){box.innerHTML='<div class="plain">규모 분석 실패: '+esc(e.message)+'</div>';}
 }
 
+/* ================= 공시 통계카드 (순수 Canvas 2D, 1080²) =================
+   디자이너 정본 목업 draw()를 1:1 이식 + 실데이터 매핑. 외부 CDN·서버 무접촉.
+   헬퍼는 _card 접두어로 기존 전역과 격리. */
+const _cardFONT='Pretendard,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif';
+function _cardRR(x,px,py,w,h,r){
+  x.beginPath();
+  x.moveTo(px+r,py);
+  x.arcTo(px+w,py,px+w,py+h,r);
+  x.arcTo(px+w,py+h,px,py+h,r);
+  x.arcTo(px,py+h,px,py,r);
+  x.arcTo(px,py,px+w,py,r);
+  x.closePath();
+}
+function _cardF(x,size,weight,ls){ x.font=`${weight} ${size}px ${_cardFONT}`; x.letterSpacing=(ls||0)+'px'; }
+function _cardTitle(x,text,tx,ty,maxW,size,lh,maxLines,color){
+  _cardF(x,size,600,0); x.fillStyle=color; x.textAlign='left'; x.textBaseline='alphabetic';
+  let lines=[], cur='';
+  for(const ch of String(text||'')){
+    if(x.measureText(cur+ch).width>maxW && cur){ lines.push(cur); cur=ch; }
+    else cur+=ch;
+  }
+  if(cur) lines.push(cur);
+  if(lines.length>maxLines){
+    lines=lines.slice(0,maxLines);
+    let last=lines[maxLines-1];
+    while(x.measureText(last+'…').width>maxW && last.length) last=last.slice(0,-1);
+    lines[maxLines-1]=last+'…';
+  }
+  lines.forEach((ln,i)=> x.fillText(ln, tx, ty+lh*(i+1)-10));
+}
+/* item(STATE.items의 한 원소) -> DOM canvas 반환(공유/다운로드/테스트 공용, 동기). */
+function renderCardCanvas(item){
+  const S=Math.max(2,Math.min(window.devicePixelRatio||1,3));
+  const canvas=document.createElement('canvas');
+  canvas.width=1080*S; canvas.height=1080*S;
+  const x=canvas.getContext('2d');
+  x.scale(S,S);   // 이하 모든 좌표는 논리 1080단위(목업 그대로)
+
+  // 다크 브랜드 팔레트 고정(공유이미지는 항상 다크룩)
+  const BG0='#0e1116', BG1='#0a0c10', CARD='#171b21';
+  const T1='#e9edf2', T2='#aab3bf', T3='#7d8794', T4='#565f6b', LINE='#252b34';
+  const BLUEINK='#8fbcff', UP='#ff5b64', DOWN='#4d94ff';
+  const R=1008, CX=540;
+
+  // ---- 실데이터 매핑 (index.html 기존 로직 재사용) ----
+  const imp=item.impact||{};
+  const h=WINSEL[item.rcept_no]||DEFWIN;
+  const wlab=WL[h]||'1개월';
+  const w=(imp.windows||{})[h]||{};
+  const pick=valPick(w);
+  const p=fmtPct(pick.val);
+  const heroColor=(p.cls==='up')?UP:((p.cls==='down')?DOWN:T3);
+  const n=(typeof w.n==='number')?w.n:null;
+  const upPct=(typeof pick.up==='number')?Math.round(pick.up*100):null;
+  const dnPct=(upPct==null)?null:100-upPct;
+  const grade=imp.grade||'na';
+  const gTxt='신뢰도 '+(imp.confidence||'참고');
+  let gFg,gBg;
+  if(grade==='A'){ gFg='#2dd48a'; gBg='rgba(45,212,138,.14)'; }
+  else if(grade==='B'){ gFg='#8fbcff'; gBg='rgba(77,148,255,.14)'; }
+  else { gFg='#7d8794'; gBg='rgba(125,135,148,.14)'; }
+
+  // ---- background: vertical gradient + top blue glow ----
+  let g=x.createLinearGradient(0,0,0,1080);
+  g.addColorStop(0,BG0); g.addColorStop(1,BG1);
+  x.fillStyle=g; x.fillRect(0,0,1080,1080);
+  let gl=x.createRadialGradient(540,-60,40,540,-60,760);
+  gl.addColorStop(0,'rgba(77,148,255,0.10)'); gl.addColorStop(1,'rgba(77,148,255,0)');
+  x.fillStyle=gl; x.fillRect(0,0,1080,600);
+  x.strokeStyle=LINE; x.lineWidth=2; _cardRR(x,6,6,1068,1068,34); x.stroke();
+
+  // ---- HEADER: logo + double-arc mark ----
+  const lx=72, ly=60, ls=76, lr=20;
+  let lg=x.createLinearGradient(lx,ly,lx+ls,ly+ls);
+  lg.addColorStop(0,'#2f86ff'); lg.addColorStop(1,'#0061ff');
+  _cardRR(x,lx,ly,ls,ls,lr); x.fillStyle=lg; x.fill();
+  x.save();
+  x.translate(lx+14, ly+14); x.scale(2,2);
+  x.lineCap='round';
+  x.beginPath(); x.arc(7.5,12,2.3,0,Math.PI*2); x.fillStyle='#fff'; x.fill();
+  x.strokeStyle='#fff'; x.lineWidth=2.2; x.globalAlpha=1;
+  x.beginPath(); x.arc(8.15,12,6, -50.06*Math.PI/180, 50.06*Math.PI/180, false); x.stroke();
+  x.globalAlpha=0.5;
+  x.beginPath(); x.arc(9.615,12,9.2, -48.6*Math.PI/180, 48.6*Math.PI/180, false); x.stroke();
+  x.restore();
+  x.globalAlpha=1; x.lineCap='butt';
+  x.textBaseline='alphabetic'; x.textAlign='left';
+  _cardF(x,40,800,1); x.fillStyle=T1; x.fillText('MIRI',170,96);
+  _cardF(x,22,600,0); x.fillStyle=T3; x.fillText('공시 통계 카드',170,124);
+  // period pill (히어로 창 라벨)
+  const pTxt=wlab; _cardF(x,26,700,0);
+  const pw=x.measureText(pTxt).width, ph=48, ppx=22;
+  const pW=pw+ppx*2, pX=R-pW, pY=62;
+  _cardRR(x,pX,pY,pW,ph,ph/2); x.fillStyle='rgba(77,148,255,0.12)'; x.fill();
+  x.strokeStyle='rgba(77,148,255,0.35)'; x.lineWidth=1.5; _cardRR(x,pX,pY,pW,ph,ph/2); x.stroke();
+  x.fillStyle=BLUEINK; x.textBaseline='middle'; x.fillText(pTxt,pX+ppx,pY+ph/2+1);
+  // divider
+  x.strokeStyle=LINE; x.lineWidth=1;
+  x.beginPath(); x.moveTo(72,170); x.lineTo(1008,170); x.stroke();
+
+  // ---- STOCK: 종목명(폭 초과 시 56->48 자동 축소) + 코드 ----
+  x.textBaseline='alphabetic'; x.textAlign='left';
+  const nm=String(item.corp_name||''); const code=String(item.stock_code||'');
+  _cardF(x,30,600,0); const codeW=x.measureText(code).width;
+  let nmSize=56; _cardF(x,nmSize,800,-0.5);
+  if(x.measureText(nm).width > 936-codeW-18){ nmSize=48; _cardF(x,nmSize,800,-0.5); }
+  x.fillStyle=T1; x.fillText(nm,72,252);
+  const nmw=x.measureText(nm).width;
+  _cardF(x,30,600,0); x.fillStyle=T3; x.fillText(code,72+nmw+18,252);
+
+  // ---- TITLE (report_nm, up to 2 lines) ----
+  _cardTitle(x, String(item.report_nm||''), 72, 286, 936, 34, 46, 2, T2);
+
+  // ---- TRUST ROW: 표본 N + 등급/신뢰 뱃지 ----
+  x.textBaseline='alphabetic';
+  _cardF(x,30,600,0); x.fillStyle=T2;
+  const tTxt=(n!=null)?('과거 유사공시 '+n+'건'):'과거 유사공시 집계 중';
+  x.fillText(tTxt,72,388);
+  const tw=x.measureText(tTxt).width;
+  _cardF(x,26,700,0);
+  const gw=x.measureText(gTxt).width, gh=44, gpx=18, gX=72+tw+20, gY=364;
+  _cardRR(x,gX,gY,gw+gpx*2,gh,gh/2); x.fillStyle=gBg; x.fill();
+  x.fillStyle=gFg; x.textBaseline='middle'; x.fillText(gTxt,gX+gpx,gY+gh/2+1);
+
+  // ---- HERO PANEL ----
+  const hx=72, hy=430, hw=936, hh=280, hr=28;
+  _cardRR(x,hx,hy,hw,hh,hr); x.fillStyle=CARD; x.fill();
+  let hg=x.createLinearGradient(hx,hy,hx,hy+hh);
+  hg.addColorStop(0,'rgba(255,255,255,0.03)'); hg.addColorStop(1,'rgba(255,255,255,0)');
+  _cardRR(x,hx,hy,hw,hh,hr); x.fillStyle=hg; x.fill();
+  x.strokeStyle=LINE; x.lineWidth=1.5; _cardRR(x,hx,hy,hw,hh,hr); x.stroke();
+  x.textAlign='center'; x.textBaseline='alphabetic';
+  _cardF(x,30,600,0); x.fillStyle=T3;
+  x.fillText(wlab+' 뒤 '+(VALCAP[VALMODE]||'평균 등락'), CX, 500);
+  _cardF(x,148,800,-2); x.fillStyle=heroColor;
+  x.fillText(p.txt, CX, 648);
+
+  // ---- PROBABILITY (up 없으면 라벨·바 전체 생략, 히어로 아래 공백 유지) ----
+  if(upPct!=null){
+    x.textBaseline='alphabetic';
+    _cardF(x,32,700,0); x.fillStyle=UP; x.textAlign='left';
+    x.fillText('▲ 상승 '+upPct+'%', 72, 758);
+    x.fillStyle=DOWN; x.textAlign='right';
+    x.fillText('하락 '+dnPct+'% ▼', 1008, 758);
+    x.textAlign='left';
+    const bx=72, by=782, bw=936, bh=42, br=21, gap=6;
+    const upW=Math.round(bw*(upPct/100))-gap/2, dnX=bx+upW+gap, dnW=bw-upW-gap;
+    _cardRR(x,bx,by,upW,bh,br); x.fillStyle=UP; x.fill();
+    _cardRR(x,dnX,by,dnW,bh,br); x.fillStyle=DOWN; x.fill();
+  }
+
+  // ---- FOOTER ----
+  x.strokeStyle=LINE; x.lineWidth=1;
+  x.beginPath(); x.moveTo(72,986); x.lineTo(1008,986); x.stroke();
+  x.textBaseline='alphabetic'; x.textAlign='left';
+  _cardF(x,23,500,0); x.fillStyle=T4;
+  x.fillText('과거 통계이며 미래 수익을 보장하지 않습니다 · 출처 DART', 72, 1026);
+  _cardF(x,23,700,0); x.fillStyle=T4; x.textAlign='right';
+  x.fillText('rimi-s76t.onrender.com', 1008, 1026);
+  x.textAlign='left';
+
+  return canvas;
+}
+
+/* 공유/다운로드 — CTO 지침 그대로. 서버 무접촉. */
+async function shareCard(rcept){
+  const item=STATE.items.find(x=>x.rcept_no===rcept);
+  if(!item) return;
+  track('share_card',{code:item.stock_code, rcept:item.rcept_no,
+    win:(WINSEL[item.rcept_no]||DEFWIN), valmode:VALMODE, market:item.market});
+  await document.fonts.ready;
+  const canvas=renderCardCanvas(item);
+  const fn='MIRI_'+item.stock_code+'_'+item.rcept_no+'_'+
+    (new Date().toISOString().slice(0,10).replace(/-/g,''))+'.png';
+  canvas.toBlob(async(blob)=>{
+    const file=new File([blob],fn,{type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title:'MIRI 공시 통계',
+          text:item.corp_name+' — 과거 유사공시 통계\nhttps://rimi-s76t.onrender.com/?utm_source=share&utm_medium=share_card'});
+        return;
+      }catch(e){ if(e.name==='AbortError') return; }
+    }
+    const u=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),4000);
+  },'image/png');
+}
+
 /* ---------- filter tabs ---------- */
 function renderFilter(){
   const el=document.getElementById('filter');
@@ -474,7 +668,8 @@ function renderFeed(){
       <div class="impact" id="imp-${id}">${impactInner(a)}</div>
       ${scale}
       <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
-        `<a class="src" href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
+        (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">↗ 공유</button>`:'')+
+        `<a class="src"${ok?' style="margin-left:14px"':''} href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
     </article>`;
   }).join('');
   // seg 토글 위임
