@@ -1,7 +1,7 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v8';
+const CACHE = 'miri-v9';
 const SHELL = ['/', '/index.html', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -18,6 +18,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  if (url.origin !== location.origin) return;          // Umami 등 외부 트래픽은 SW 미개입
   if (e.request.method !== 'GET') return;              // 등록/삭제(POST/DELETE)는 통과
   if (url.pathname.startsWith('/api/')) return;        // API는 항상 네트워크(실시간)
   // HTML/내비게이션은 network-first(항상 최신 UI), 실패 시에만 캐시

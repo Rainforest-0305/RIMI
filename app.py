@@ -514,6 +514,15 @@ def search(q: str = ""):
         return {"query": (q or "").strip(), "count": 0, "results": []}
 
 
+@api.get("/api/config")
+def get_config():
+    """프론트가 애널리틱스 로더를 켜기 위한 공개 설정. 미설정이면 website_id 빈 문자열 → 스크립트 미로드."""
+    return {
+        "umami_src": os.getenv("UMAMI_SRC", "https://cloud.umami.is/script.js"),
+        "umami_website_id": os.getenv("UMAMI_WEBSITE_ID", ""),
+    }
+
+
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
 _WEB_DIR = Path(__file__).parent / "web"
 api.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")

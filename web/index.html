@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <link rel="icon" type="image/svg+xml" href="icon.svg"/>
-<link rel="apple-touch-icon" href="icon.svg"/>
+<link rel="apple-touch-icon" href="/icon-192.png"/>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>미리 · MIRI — 공시가 뜨면, 과거 데이터로 앞을 봅니다</title>
@@ -403,6 +403,7 @@ function scaleInner(d){
     ${rows}`;
 }
 async function loadScale(rno){
+  track('scale_view', {rcept: rno});
   const item=STATE.items.find(x=>x.rcept_no===rno);
   const box=document.getElementById('scale-'+cssId(rno));
   const btn=document.getElementById('scbtn-'+cssId(rno));
@@ -480,7 +481,7 @@ function renderFeed(){
       <div class="impact" id="imp-${id}">${impactInner(a)}</div>
       ${scale}
       <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
-        `<a class="src" href="${esc(a.url)}" target="_blank" rel="noopener">DART 원문 ↗</a></div>
+        `<a class="src" href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
     </article>`;
   }).join('');
   // seg 토글 위임
@@ -532,6 +533,7 @@ async function addStock(){
     const d=await jsend('POST',API+'/watchlist',{stock_code:v});
     renderChips(d.stocks);inp.value='';
     msg.textContent='✔ 등록 완료. 피드를 갱신합니다.';msg.className='formmsg ok';
+    track('watchlist_add', {code: v, via:'input'});
     loadFeed(true);
   }catch(e){msg.textContent=e.message;msg.className='formmsg err';}
 }
@@ -560,6 +562,7 @@ async function doSearch(q){
   try{
     const d=await jget(API+'/search?q='+encodeURIComponent(query));
     if(my!==SEARCHSEQ)return;                 // 더 최신 요청이 있으면 폐기
+    track('search', {q: query, n: (d.results||[]).length});
     renderSearchResults(d.results||[]);
   }catch(e){
     if(my!==SEARCHSEQ)return;
@@ -601,6 +604,7 @@ async function registerStock(code,btn){
     if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));
     renderChips(d.stocks);                      // 칩·STATE.stocks 갱신
     setDone();
+    track('watchlist_add', {code: code, via:'search'});
     searchFlash('✔ '+esc(code)+' 등록 완료. 피드를 갱신합니다.','ok');
     loadFeed(true);                             // 관심종목 피드 새로고침(기존 로직 재사용)
   }catch(e){
@@ -618,6 +622,19 @@ async function registerStock(code,btn){
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 }
+
+/* ---------- analytics (Umami, 설정 있을 때만 로드) ---------- */
+function track(name, data){ try{ if(window.umami && umami.track) umami.track(name, data); }catch(e){} }
+(function(){
+  fetch(API + '/config').then(r=>r.json()).then(cfg=>{
+    if(!cfg || !cfg.umami_website_id) return;      // 미설정이면 비활성
+    var s=document.createElement('script');
+    s.async=true; s.src=cfg.umami_src || 'https://cloud.umami.is/script.js';
+    s.setAttribute('data-website-id', cfg.umami_website_id);
+    s.setAttribute('data-domains', location.hostname);   // 자기 도메인만
+    document.head.appendChild(s);
+  }).catch(function(){});
+})();
 
 /* ---------- init ---------- */
 loadFeed(false);
