@@ -60,7 +60,9 @@
     backdrop-filter:blur(14px);margin-top:-2px;
     /* 상태바(시계·다이나믹아일랜드) 높이까지 헤더가 배경으로 덮는다 —
        스크롤 시 콘텐츠가 상태바 밑으로 비치지 않게 */
-    padding:calc(14px + env(safe-area-inset-top, 0px)) 2px 6px}
+    padding:calc(14px + env(safe-area-inset-top, 0px)) calc(50vw - 50% + 2px) 6px;
+    /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
+    margin-inline:calc(50% - 50vw)}
   .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 12px}
   .hi{width:23px;height:23px;border-radius:7px;background:var(--blue);display:grid;place-items:center;flex:none}
   .hi svg{width:14px;height:14px}
