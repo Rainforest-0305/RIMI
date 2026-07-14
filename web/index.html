@@ -41,7 +41,10 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
-    min-height:100dvh;display:flex;justify-content:center;padding:24px 15px 22px}
+    min-height:100dvh;display:flex;justify-content:center;
+    /* 상단: 상태바(시계·다이나믹아일랜드) 영역은 비워둔다 — PWA standalone 대응 */
+    padding:calc(14px + env(safe-area-inset-top, 0px)) 15px
+            calc(22px + env(safe-area-inset-bottom, 0px))}
   .num{font-variant-numeric:tabular-nums}
   .app{width:100%;max-width:460px;display:flex;flex-direction:column;gap:11px}
 
@@ -180,20 +183,6 @@
 </head>
 <body>
 <div class="app">
-  <div class="hero">
-    <span class="icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round">
-        <circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/>
-        <path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.1"/>
-        <path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.1" opacity=".55"/>
-      </svg>
-    </span>
-    <div class="htext">
-      <div class="nm">미리<span class="en">MIRI</span></div>
-      <div class="tg">공시가 뜨면, 과거 데이터로 앞을 봅니다</div>
-    </div>
-  </div>
-
   <header>
     <div class="hrow">
       <span class="hi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></span>
