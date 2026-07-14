@@ -1,0 +1,29 @@
+{
+  "_comment": "관심종목. stock_code=6자리. keywords=제목 부분매칭 추가 알림(선택).",
+  "stocks": [
+    {
+      "name": "삼성전자",
+      "stock_code": "005930"
+    },
+    {
+      "name": "SK하이닉스",
+      "stock_code": "000660"
+    },
+    {
+      "name": "카카오",
+      "stock_code": "035720"
+    },
+    {
+      "name": "NAVER",
+      "stock_code": "035420"
+    },
+    {
+      "name": "에코프로비엠",
+      "stock_code": "247540"
+    }
+  ],
+  "keywords": [
+    "무상증자",
+    "자기주식"
+  ]
+}

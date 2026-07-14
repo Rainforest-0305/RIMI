@@ -1,0 +1,121 @@
+{
+  "_meta": {
+    "generated_at": "2026-07-13",
+    "source": "seed-placeholder",
+    "market": "KOSPI",
+    "note": "strat-data 산출 전 임시 시드. 수치는 예시(illustrative)이며 실집계로 교체 예정. 파일 삭제 시 앱은 자동으로 '집계 중' 폴백."
+  },
+  "buckets": {
+    "자본거래": ["유상증자", "무상증자", "전환사채", "주식소각"],
+    "지배구조": ["최대주주변경", "합병분할", "지분변동"],
+    "영업/실적": ["실적", "공급계약", "임상"],
+    "주주환원": ["자사주", "배당"],
+    "위험/기타": ["소송", "감사보고서", "정정공시", "기타공시"]
+  },
+  "types": {
+    "자사주": {
+      "windows": {
+        "d1": {"excess": 1.82, "up_prob": 0.63, "n": 214},
+        "w1": {"excess": 2.41, "up_prob": 0.58, "n": 214},
+        "m1": {"excess": 3.10, "up_prob": 0.55, "n": 210}
+      },
+      "confidence": "A"
+    },
+    "주식소각": {
+      "windows": {
+        "d1": {"excess": 2.55, "up_prob": 0.71, "n": 96},
+        "w1": {"excess": 3.40, "up_prob": 0.66, "n": 96},
+        "m1": {"excess": 4.20, "up_prob": 0.61, "n": 94}
+      },
+      "confidence": "B"
+    },
+    "유상증자": {
+      "windows": {
+        "d1": {"excess": -3.10, "up_prob": 0.29, "n": 188},
+        "w1": {"excess": -2.40, "up_prob": 0.35, "n": 188},
+        "m1": {"excess": -1.20, "up_prob": 0.44, "n": 183}
+      },
+      "confidence": "A"
+    },
+    "무상증자": {
+      "windows": {
+        "d1": {"excess": 2.90, "up_prob": 0.62, "n": 71},
+        "w1": {"excess": 1.80, "up_prob": 0.54, "n": 71},
+        "m1": {"excess": 0.40, "up_prob": 0.49, "n": 70}
+      },
+      "confidence": "B"
+    },
+    "전환사채": {
+      "windows": {
+        "d1": {"excess": -1.95, "up_prob": 0.37, "n": 142},
+        "w1": {"excess": -1.40, "up_prob": 0.41, "n": 142},
+        "m1": {"excess": -0.60, "up_prob": 0.46, "n": 139}
+      },
+      "confidence": "A"
+    },
+    "배당": {
+      "windows": {
+        "d1": {"excess": 0.85, "up_prob": 0.56, "n": 260},
+        "w1": {"excess": 1.10, "up_prob": 0.55, "n": 260},
+        "m1": {"excess": 1.35, "up_prob": 0.53, "n": 255}
+      },
+      "confidence": "A"
+    },
+    "공급계약": {
+      "windows": {
+        "d1": {"excess": 2.15, "up_prob": 0.60, "n": 176},
+        "w1": {"excess": 2.05, "up_prob": 0.56, "n": 176},
+        "m1": {"excess": 1.55, "up_prob": 0.52, "n": 171}
+      },
+      "confidence": "A"
+    },
+    "실적": {
+      "windows": {
+        "d1": {"excess": 0.40, "up_prob": 0.51, "n": 320},
+        "w1": {"excess": 0.65, "up_prob": 0.52, "n": 320},
+        "m1": {"excess": 0.90, "up_prob": 0.51, "n": 312}
+      },
+      "confidence": "A"
+    },
+    "최대주주변경": {
+      "windows": {
+        "d1": {"excess": 1.20, "up_prob": 0.54, "n": 48},
+        "w1": {"excess": 1.90, "up_prob": 0.56, "n": 48},
+        "m1": {"excess": 2.30, "up_prob": 0.55, "n": 47}
+      },
+      "confidence": "B"
+    },
+    "합병분할": {
+      "windows": {
+        "d1": {"excess": 0.95, "up_prob": 0.52, "n": 63},
+        "w1": {"excess": 1.30, "up_prob": 0.53, "n": 63},
+        "m1": {"excess": 1.70, "up_prob": 0.52, "n": 61}
+      },
+      "confidence": "B"
+    },
+    "소송": {
+      "windows": {
+        "d1": {"excess": -1.60, "up_prob": 0.40, "n": 88},
+        "w1": {"excess": -1.20, "up_prob": 0.43, "n": 88},
+        "m1": {"excess": -0.70, "up_prob": 0.46, "n": 85}
+      },
+      "confidence": "B"
+    },
+    "임상": {
+      "windows": {
+        "d1": {"excess": 3.80, "up_prob": 0.58, "n": 54},
+        "w1": {"excess": 2.10, "up_prob": 0.52, "n": 54},
+        "m1": {"excess": 0.30, "up_prob": 0.48, "n": 52}
+      },
+      "confidence": "B"
+    },
+    "위험/기타": {
+      "windows": {
+        "d1": {"excess": 0.10, "up_prob": 0.50, "n": 410},
+        "w1": {"excess": 0.15, "up_prob": 0.50, "n": 410},
+        "m1": {"excess": 0.20, "up_prob": 0.50, "n": 402}
+      },
+      "confidence": "A"
+    }
+  }
+}

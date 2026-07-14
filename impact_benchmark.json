@@ -1,0 +1,2290 @@
+{
+  "_meta": {
+    "method": "market-adjusted event study. 진입=공시 접수일 익일 시가, 보유 1/5/21거래일 후 종가. CAR = 종목 raw등락 - 같은구간 '자기 시장' 동일가중(EW) 전체시장 등락(코스피 종목은 코스피 EW, 코스닥 종목은 코스닥 EW로 보정 → 시장 mismatch 편향 방지).",
+    "index_proxy": "시장별 동일가중(EW) 전체시장 지수 — 각 시장의 보유 유니버스(과거 5년 공시발생 종목, ≈전체시장) 일별 리밸런스 EW 포트폴리오를 코스피/코스닥 독립 구축. KOSPI200(069500)·KOSDAQ150은 대형주 편향, 종합지수(1001 등)는 KRX사일로 사망으로 pykrx 조회 불가 → 시장별 EW 자체구축이 size편향 제거에 최선.",
+    "markets": "KOSPI(corp_cls=Y) + KOSDAQ(corp_cls=K) 시장전체 수집·집계. 상위 유형통계는 두 시장 통합(각 사건 자기시장 baseline 보정), by_market 에 코스피/코스닥 각각의 d/w/m 별도 제공.",
+    "span": "20210101~20260515",
+    "pblntf_types": [
+      "A",
+      "B",
+      "I"
+    ],
+    "n_unique_disclosures": 342584,
+    "n_disclosures_kospi": 143176,
+    "n_disclosures_kosdaq": 199408,
+    "min_n_for_selfscope": 30,
+    "conf_grades": "n>=80 높음 / 30-79 보통 / <30 참고",
+    "fields": "raw_avg=실제평균등락%, raw_med=실제등락 중앙값%, market_avg=같은구간 시장평균등락%, car_avg=초과등락(raw-market)%, car_med=초과등락 중앙값%, raw_up_prob=raw>0비율, up_prob=CAR>0비율, n=표본, scope=집계에 실제로 쓴 라벨(폴백 시 상위버킷/전체), by_market={KOSPI/KOSDAQ}.{d/w/m} 시장별 동일 필드. 제품 표시 권장: '실제 raw_avg% / 같은기간 시장 market_avg% → 초과 car_avg%'.",
+    "limitations": "시장대용=시장별 자체구축 EW(전체시장 근사, 종합지수 직접조회 불가), 진입/청산 무비용(전략성과 아닌 정보용 벤치마크), 상폐/데이터부족 사건 일부 skip(생존편향 일부 잔존 — 특히 코스닥은 상폐율 높아 생존편향이 코스피보다 큼), 다중태그 허용(정정+원공시 동시집계), rcept_dt 날짜단위(장중/장후 혼재를 익일시가 진입으로 흡수), 시총 size-matched 벤치마크는 KRX 시총 스냅샷 사망으로 미적용.",
+    "generated_at": "2026-07-14 08:31:54",
+    "scale_adjustment": {
+      "added": [
+        "유상증자",
+        "자사주",
+        "전환사채"
+      ],
+      "rel_size_def": "금액/시총%. 앱: 종목 이벤트 규모로 유형.scale_buckets[label] 선택, 버킷 표본부족(conf=참고) 시 유형레벨(d/w/m)로 폴백.",
+      "bucket_bounds": {
+        "유상증자": [
+          "소<10%",
+          "중10-30%",
+          "대30%+"
+        ],
+        "전환사채": [
+          "소<10%",
+          "중10-25%",
+          "대25%+"
+        ],
+        "자사주": [
+          "소<1%",
+          "중1-3%",
+          "대3%+"
+        ]
+      },
+      "generated_at": "2026-07-14 08:32:11"
+    }
+  },
+  "감사보고서": {
+    "d": {
+      "raw_avg": 0.04,
+      "raw_med": 0.0,
+      "market_avg": 0.05,
+      "car_avg": -0.01,
+      "car_med": -0.16,
+      "raw_up_prob": 0.452,
+      "up_prob": 0.464,
+      "n": 16868,
+      "conf": "높음",
+      "scope": "감사보고서"
+    },
+    "w": {
+      "raw_avg": 0.76,
+      "raw_med": 0.0,
+      "market_avg": 0.68,
+      "car_avg": 0.08,
+      "car_med": -0.69,
+      "raw_up_prob": 0.485,
+      "up_prob": 0.428,
+      "n": 16865,
+      "conf": "높음",
+      "scope": "감사보고서"
+    },
+    "m": {
+      "raw_avg": 4.52,
+      "raw_med": 0.92,
+      "market_avg": 3.92,
+      "car_avg": 0.61,
+      "car_med": -2.74,
+      "raw_up_prob": 0.536,
+      "up_prob": 0.379,
+      "n": 16780,
+      "conf": "높음",
+      "scope": "감사보고서"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": 0.14,
+          "raw_med": 0.0,
+          "market_avg": 0.07,
+          "car_avg": 0.07,
+          "car_med": -0.14,
+          "raw_up_prob": 0.46,
+          "up_prob": 0.463,
+          "n": 6417,
+          "conf": "높음",
+          "scope": "감사보고서"
+        },
+        "w": {
+          "raw_avg": 0.8,
+          "raw_med": 0.0,
+          "market_avg": 0.56,
+          "car_avg": 0.24,
+          "car_med": -0.42,
+          "raw_up_prob": 0.499,
+          "up_prob": 0.445,
+          "n": 6417,
+          "conf": "높음",
+          "scope": "감사보고서"
+        },
+        "m": {
+          "raw_avg": 5.13,
+          "raw_med": 1.06,
+          "market_avg": 3.35,
+          "car_avg": 1.78,
+          "car_med": -2.22,
+          "raw_up_prob": 0.553,
+          "up_prob": 0.385,
+          "n": 6410,
+          "conf": "높음",
+          "scope": "감사보고서"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.02,
+          "raw_med": 0.0,
+          "market_avg": 0.04,
+          "car_avg": -0.06,
+          "car_med": -0.18,
+          "raw_up_prob": 0.448,
+          "up_prob": 0.464,
+          "n": 10451,
+          "conf": "높음",
+          "scope": "감사보고서"
+        },
+        "w": {
+          "raw_avg": 0.73,
+          "raw_med": 0.0,
+          "market_avg": 0.75,
+          "car_avg": -0.02,
+          "car_med": -0.87,
+          "raw_up_prob": 0.477,
+          "up_prob": 0.418,
+          "n": 10448,
+          "conf": "높음",
+          "scope": "감사보고서"
+        },
+        "m": {
+          "raw_avg": 4.15,
+          "raw_med": 0.81,
+          "market_avg": 4.27,
+          "car_avg": -0.12,
+          "car_med": -3.13,
+          "raw_up_prob": 0.527,
+          "up_prob": 0.376,
+          "n": 10370,
+          "conf": "높음",
+          "scope": "감사보고서"
+        }
+      }
+    }
+  },
+  "공급계약": {
+    "d": {
+      "raw_avg": -0.32,
+      "raw_med": -0.33,
+      "market_avg": -0.05,
+      "car_avg": -0.27,
+      "car_med": -0.36,
+      "raw_up_prob": 0.401,
+      "up_prob": 0.421,
+      "n": 21659,
+      "conf": "높음",
+      "scope": "공급계약"
+    },
+    "w": {
+      "raw_avg": -0.19,
+      "raw_med": -0.71,
+      "market_avg": 0.15,
+      "car_avg": -0.34,
+      "car_med": -0.98,
+      "raw_up_prob": 0.422,
+      "up_prob": 0.403,
+      "n": 21641,
+      "conf": "높음",
+      "scope": "공급계약"
+    },
+    "m": {
+      "raw_avg": 0.59,
+      "raw_med": -1.42,
+      "market_avg": 0.7,
+      "car_avg": -0.11,
+      "car_med": -2.47,
+      "raw_up_prob": 0.431,
+      "up_prob": 0.395,
+      "n": 21600,
+      "conf": "높음",
+      "scope": "공급계약"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.14,
+          "raw_med": -0.29,
+          "market_avg": -0.05,
+          "car_avg": -0.09,
+          "car_med": -0.26,
+          "raw_up_prob": 0.409,
+          "up_prob": 0.436,
+          "n": 10768,
+          "conf": "높음",
+          "scope": "공급계약"
+        },
+        "w": {
+          "raw_avg": 0.18,
+          "raw_med": -0.52,
+          "market_avg": 0.13,
+          "car_avg": 0.05,
+          "car_med": -0.67,
+          "raw_up_prob": 0.44,
+          "up_prob": 0.423,
+          "n": 10768,
+          "conf": "높음",
+          "scope": "공급계약"
+        },
+        "m": {
+          "raw_avg": 1.2,
+          "raw_med": -1.04,
+          "market_avg": 0.79,
+          "car_avg": 0.41,
+          "car_med": -1.92,
+          "raw_up_prob": 0.452,
+          "up_prob": 0.408,
+          "n": 10761,
+          "conf": "높음",
+          "scope": "공급계약"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.49,
+          "raw_med": -0.38,
+          "market_avg": -0.05,
+          "car_avg": -0.44,
+          "car_med": -0.46,
+          "raw_up_prob": 0.393,
+          "up_prob": 0.406,
+          "n": 10891,
+          "conf": "높음",
+          "scope": "공급계약"
+        },
+        "w": {
+          "raw_avg": -0.57,
+          "raw_med": -0.88,
+          "market_avg": 0.16,
+          "car_avg": -0.73,
+          "car_med": -1.36,
+          "raw_up_prob": 0.405,
+          "up_prob": 0.383,
+          "n": 10873,
+          "conf": "높음",
+          "scope": "공급계약"
+        },
+        "m": {
+          "raw_avg": -0.02,
+          "raw_med": -1.92,
+          "market_avg": 0.61,
+          "car_avg": -0.63,
+          "car_med": -3.28,
+          "raw_up_prob": 0.41,
+          "up_prob": 0.382,
+          "n": 10839,
+          "conf": "높음",
+          "scope": "공급계약"
+        }
+      }
+    }
+  },
+  "기타공시": {
+    "d": {
+      "raw_avg": -0.25,
+      "raw_med": -0.15,
+      "market_avg": -0.03,
+      "car_avg": -0.23,
+      "car_med": -0.22,
+      "raw_up_prob": 0.426,
+      "up_prob": 0.452,
+      "n": 136692,
+      "conf": "높음",
+      "scope": "기타공시"
+    },
+    "w": {
+      "raw_avg": -0.22,
+      "raw_med": -0.48,
+      "market_avg": 0.11,
+      "car_avg": -0.33,
+      "car_med": -0.82,
+      "raw_up_prob": 0.431,
+      "up_prob": 0.423,
+      "n": 136639,
+      "conf": "높음",
+      "scope": "기타공시"
+    },
+    "m": {
+      "raw_avg": 0.73,
+      "raw_med": -1.0,
+      "market_avg": 1.45,
+      "car_avg": -0.72,
+      "car_med": -2.72,
+      "raw_up_prob": 0.446,
+      "up_prob": 0.384,
+      "n": 135750,
+      "conf": "높음",
+      "scope": "기타공시"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.06,
+          "raw_med": -0.12,
+          "market_avg": -0.04,
+          "car_avg": -0.03,
+          "car_med": -0.13,
+          "raw_up_prob": 0.44,
+          "up_prob": 0.465,
+          "n": 62690,
+          "conf": "높음",
+          "scope": "기타공시"
+        },
+        "w": {
+          "raw_avg": 0.13,
+          "raw_med": -0.25,
+          "market_avg": 0.19,
+          "car_avg": -0.06,
+          "car_med": -0.57,
+          "raw_up_prob": 0.46,
+          "up_prob": 0.438,
+          "n": 62668,
+          "conf": "높음",
+          "scope": "기타공시"
+        },
+        "m": {
+          "raw_avg": 1.3,
+          "raw_med": -0.51,
+          "market_avg": 1.36,
+          "car_avg": -0.06,
+          "car_med": -1.95,
+          "raw_up_prob": 0.469,
+          "up_prob": 0.405,
+          "n": 62531,
+          "conf": "높음",
+          "scope": "기타공시"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.42,
+          "raw_med": -0.2,
+          "market_avg": -0.02,
+          "car_avg": -0.4,
+          "car_med": -0.31,
+          "raw_up_prob": 0.414,
+          "up_prob": 0.441,
+          "n": 74002,
+          "conf": "높음",
+          "scope": "기타공시"
+        },
+        "w": {
+          "raw_avg": -0.51,
+          "raw_med": -0.76,
+          "market_avg": 0.05,
+          "car_avg": -0.56,
+          "car_med": -1.12,
+          "raw_up_prob": 0.407,
+          "up_prob": 0.41,
+          "n": 73971,
+          "conf": "높음",
+          "scope": "기타공시"
+        },
+        "m": {
+          "raw_avg": 0.24,
+          "raw_med": -1.55,
+          "market_avg": 1.53,
+          "car_avg": -1.29,
+          "car_med": -3.64,
+          "raw_up_prob": 0.426,
+          "up_prob": 0.366,
+          "n": 73219,
+          "conf": "높음",
+          "scope": "기타공시"
+        }
+      }
+    }
+  },
+  "무상증자": {
+    "d": {
+      "raw_avg": -2.08,
+      "raw_med": -1.78,
+      "market_avg": -0.1,
+      "car_avg": -1.99,
+      "car_med": -1.81,
+      "raw_up_prob": 0.329,
+      "up_prob": 0.351,
+      "n": 1432,
+      "conf": "높음",
+      "scope": "무상증자"
+    },
+    "w": {
+      "raw_avg": -1.01,
+      "raw_med": -2.77,
+      "market_avg": 0.06,
+      "car_avg": -1.08,
+      "car_med": -2.67,
+      "raw_up_prob": 0.39,
+      "up_prob": 0.386,
+      "n": 1432,
+      "conf": "높음",
+      "scope": "무상증자"
+    },
+    "m": {
+      "raw_avg": -2.13,
+      "raw_med": -6.19,
+      "market_avg": 0.42,
+      "car_avg": -2.56,
+      "car_med": -6.34,
+      "raw_up_prob": 0.351,
+      "up_prob": 0.341,
+      "n": 1432,
+      "conf": "높음",
+      "scope": "무상증자"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.41,
+          "raw_med": -0.53,
+          "market_avg": 0.01,
+          "car_avg": -0.42,
+          "car_med": -0.52,
+          "raw_up_prob": 0.369,
+          "up_prob": 0.44,
+          "n": 141,
+          "conf": "높음",
+          "scope": "무상증자"
+        },
+        "w": {
+          "raw_avg": 1.2,
+          "raw_med": 0.54,
+          "market_avg": 0.45,
+          "car_avg": 0.75,
+          "car_med": 0.1,
+          "raw_up_prob": 0.532,
+          "up_prob": 0.511,
+          "n": 141,
+          "conf": "높음",
+          "scope": "무상증자"
+        },
+        "m": {
+          "raw_avg": 0.46,
+          "raw_med": -0.59,
+          "market_avg": 0.82,
+          "car_avg": -0.37,
+          "car_med": -2.12,
+          "raw_up_prob": 0.461,
+          "up_prob": 0.418,
+          "n": 141,
+          "conf": "높음",
+          "scope": "무상증자"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -2.26,
+          "raw_med": -2.06,
+          "market_avg": -0.11,
+          "car_avg": -2.16,
+          "car_med": -2.01,
+          "raw_up_prob": 0.325,
+          "up_prob": 0.341,
+          "n": 1291,
+          "conf": "높음",
+          "scope": "무상증자"
+        },
+        "w": {
+          "raw_avg": -1.26,
+          "raw_med": -3.25,
+          "market_avg": 0.02,
+          "car_avg": -1.28,
+          "car_med": -3.1,
+          "raw_up_prob": 0.374,
+          "up_prob": 0.373,
+          "n": 1291,
+          "conf": "높음",
+          "scope": "무상증자"
+        },
+        "m": {
+          "raw_avg": -2.42,
+          "raw_med": -7.04,
+          "market_avg": 0.38,
+          "car_avg": -2.8,
+          "car_med": -7.07,
+          "raw_up_prob": 0.339,
+          "up_prob": 0.332,
+          "n": 1291,
+          "conf": "높음",
+          "scope": "무상증자"
+        }
+      }
+    }
+  },
+  "배당": {
+    "d": {
+      "raw_avg": -0.09,
+      "raw_med": -0.13,
+      "market_avg": -0.04,
+      "car_avg": -0.05,
+      "car_med": -0.14,
+      "raw_up_prob": 0.451,
+      "up_prob": 0.468,
+      "n": 14431,
+      "conf": "높음",
+      "scope": "배당"
+    },
+    "w": {
+      "raw_avg": 0.07,
+      "raw_med": -0.25,
+      "market_avg": 0.17,
+      "car_avg": -0.09,
+      "car_med": -0.57,
+      "raw_up_prob": 0.465,
+      "up_prob": 0.439,
+      "n": 14431,
+      "conf": "높음",
+      "scope": "배당"
+    },
+    "m": {
+      "raw_avg": 0.88,
+      "raw_med": -0.9,
+      "market_avg": 1.0,
+      "car_avg": -0.13,
+      "car_med": -1.85,
+      "raw_up_prob": 0.449,
+      "up_prob": 0.401,
+      "n": 14431,
+      "conf": "높음",
+      "scope": "배당"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.14,
+          "raw_med": -0.14,
+          "market_avg": -0.05,
+          "car_avg": -0.09,
+          "car_med": -0.14,
+          "raw_up_prob": 0.446,
+          "up_prob": 0.466,
+          "n": 7573,
+          "conf": "높음",
+          "scope": "배당"
+        },
+        "w": {
+          "raw_avg": 0.04,
+          "raw_med": -0.24,
+          "market_avg": 0.23,
+          "car_avg": -0.19,
+          "car_med": -0.6,
+          "raw_up_prob": 0.464,
+          "up_prob": 0.436,
+          "n": 7573,
+          "conf": "높음",
+          "scope": "배당"
+        },
+        "m": {
+          "raw_avg": 0.57,
+          "raw_med": -0.86,
+          "market_avg": 0.72,
+          "car_avg": -0.15,
+          "car_med": -1.64,
+          "raw_up_prob": 0.446,
+          "up_prob": 0.408,
+          "n": 7573,
+          "conf": "높음",
+          "scope": "배당"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.04,
+          "raw_med": -0.12,
+          "market_avg": -0.03,
+          "car_avg": -0.01,
+          "car_med": -0.15,
+          "raw_up_prob": 0.456,
+          "up_prob": 0.47,
+          "n": 6858,
+          "conf": "높음",
+          "scope": "배당"
+        },
+        "w": {
+          "raw_avg": 0.12,
+          "raw_med": -0.27,
+          "market_avg": 0.1,
+          "car_avg": 0.02,
+          "car_med": -0.54,
+          "raw_up_prob": 0.467,
+          "up_prob": 0.442,
+          "n": 6858,
+          "conf": "높음",
+          "scope": "배당"
+        },
+        "m": {
+          "raw_avg": 1.22,
+          "raw_med": -0.95,
+          "market_avg": 1.32,
+          "car_avg": -0.1,
+          "car_med": -2.15,
+          "raw_up_prob": 0.454,
+          "up_prob": 0.394,
+          "n": 6858,
+          "conf": "높음",
+          "scope": "배당"
+        }
+      }
+    }
+  },
+  "소송": {
+    "d": {
+      "raw_avg": -0.97,
+      "raw_med": 0.0,
+      "market_avg": -0.08,
+      "car_avg": -0.9,
+      "car_med": -0.28,
+      "raw_up_prob": 0.357,
+      "up_prob": 0.452,
+      "n": 4245,
+      "conf": "높음",
+      "scope": "소송"
+    },
+    "w": {
+      "raw_avg": -1.18,
+      "raw_med": -0.14,
+      "market_avg": 0.04,
+      "car_avg": -1.22,
+      "car_med": -0.96,
+      "raw_up_prob": 0.359,
+      "up_prob": 0.424,
+      "n": 4213,
+      "conf": "높음",
+      "scope": "소송"
+    },
+    "m": {
+      "raw_avg": -1.82,
+      "raw_med": -2.54,
+      "market_avg": 1.01,
+      "car_avg": -2.82,
+      "car_med": -4.26,
+      "raw_up_prob": 0.334,
+      "up_prob": 0.338,
+      "n": 4009,
+      "conf": "높음",
+      "scope": "소송"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.41,
+          "raw_med": 0.0,
+          "market_avg": 0.01,
+          "car_avg": -0.42,
+          "car_med": -0.16,
+          "raw_up_prob": 0.401,
+          "up_prob": 0.465,
+          "n": 1376,
+          "conf": "높음",
+          "scope": "소송"
+        },
+        "w": {
+          "raw_avg": -0.86,
+          "raw_med": -0.4,
+          "market_avg": 0.17,
+          "car_avg": -1.03,
+          "car_med": -1.07,
+          "raw_up_prob": 0.387,
+          "up_prob": 0.399,
+          "n": 1362,
+          "conf": "높음",
+          "scope": "소송"
+        },
+        "m": {
+          "raw_avg": -1.21,
+          "raw_med": -2.22,
+          "market_avg": 1.13,
+          "car_avg": -2.33,
+          "car_med": -3.77,
+          "raw_up_prob": 0.361,
+          "up_prob": 0.329,
+          "n": 1347,
+          "conf": "높음",
+          "scope": "소송"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -1.24,
+          "raw_med": 0.0,
+          "market_avg": -0.12,
+          "car_avg": -1.12,
+          "car_med": -0.34,
+          "raw_up_prob": 0.336,
+          "up_prob": 0.446,
+          "n": 2869,
+          "conf": "높음",
+          "scope": "소송"
+        },
+        "w": {
+          "raw_avg": -1.33,
+          "raw_med": 0.0,
+          "market_avg": -0.03,
+          "car_avg": -1.3,
+          "car_med": -0.89,
+          "raw_up_prob": 0.346,
+          "up_prob": 0.435,
+          "n": 2851,
+          "conf": "높음",
+          "scope": "소송"
+        },
+        "m": {
+          "raw_avg": -2.12,
+          "raw_med": -2.86,
+          "market_avg": 0.95,
+          "car_avg": -3.07,
+          "car_med": -4.63,
+          "raw_up_prob": 0.32,
+          "up_prob": 0.343,
+          "n": 2662,
+          "conf": "높음",
+          "scope": "소송"
+        }
+      }
+    }
+  },
+  "실적": {
+    "d": {
+      "raw_avg": -0.33,
+      "raw_med": -0.28,
+      "market_avg": -0.11,
+      "car_avg": -0.22,
+      "car_med": -0.25,
+      "raw_up_prob": 0.418,
+      "up_prob": 0.449,
+      "n": 86265,
+      "conf": "높음",
+      "scope": "실적"
+    },
+    "w": {
+      "raw_avg": -0.37,
+      "raw_med": -0.68,
+      "market_avg": -0.08,
+      "car_avg": -0.29,
+      "car_med": -0.79,
+      "raw_up_prob": 0.422,
+      "up_prob": 0.421,
+      "n": 86257,
+      "conf": "높음",
+      "scope": "실적"
+    },
+    "m": {
+      "raw_avg": 0.91,
+      "raw_med": -0.94,
+      "market_avg": 1.18,
+      "car_avg": -0.27,
+      "car_med": -2.48,
+      "raw_up_prob": 0.451,
+      "up_prob": 0.385,
+      "n": 86036,
+      "conf": "높음",
+      "scope": "실적"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.21,
+          "raw_med": -0.24,
+          "market_avg": -0.07,
+          "car_avg": -0.13,
+          "car_med": -0.21,
+          "raw_up_prob": 0.423,
+          "up_prob": 0.453,
+          "n": 34811,
+          "conf": "높음",
+          "scope": "실적"
+        },
+        "w": {
+          "raw_avg": -0.16,
+          "raw_med": -0.51,
+          "market_avg": 0.06,
+          "car_avg": -0.22,
+          "car_med": -0.65,
+          "raw_up_prob": 0.432,
+          "up_prob": 0.425,
+          "n": 34810,
+          "conf": "높음",
+          "scope": "실적"
+        },
+        "m": {
+          "raw_avg": 1.41,
+          "raw_med": -0.51,
+          "market_avg": 1.31,
+          "car_avg": 0.1,
+          "car_med": -1.99,
+          "raw_up_prob": 0.469,
+          "up_prob": 0.398,
+          "n": 34773,
+          "conf": "높음",
+          "scope": "실적"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.41,
+          "raw_med": -0.32,
+          "market_avg": -0.14,
+          "car_avg": -0.27,
+          "car_med": -0.29,
+          "raw_up_prob": 0.414,
+          "up_prob": 0.446,
+          "n": 51454,
+          "conf": "높음",
+          "scope": "실적"
+        },
+        "w": {
+          "raw_avg": -0.51,
+          "raw_med": -0.81,
+          "market_avg": -0.18,
+          "car_avg": -0.33,
+          "car_med": -0.9,
+          "raw_up_prob": 0.415,
+          "up_prob": 0.417,
+          "n": 51447,
+          "conf": "높음",
+          "scope": "실적"
+        },
+        "m": {
+          "raw_avg": 0.57,
+          "raw_med": -1.31,
+          "market_avg": 1.1,
+          "car_avg": -0.52,
+          "car_med": -2.87,
+          "raw_up_prob": 0.438,
+          "up_prob": 0.376,
+          "n": 51263,
+          "conf": "높음",
+          "scope": "실적"
+        }
+      }
+    }
+  },
+  "유상증자": {
+    "d": {
+      "raw_avg": -1.0,
+      "raw_med": -0.6,
+      "market_avg": -0.13,
+      "car_avg": -0.87,
+      "car_med": -0.6,
+      "raw_up_prob": 0.363,
+      "up_prob": 0.407,
+      "n": 11000,
+      "conf": "높음",
+      "scope": "유상증자"
+    },
+    "w": {
+      "raw_avg": -0.41,
+      "raw_med": -1.4,
+      "market_avg": -0.01,
+      "car_avg": -0.4,
+      "car_med": -1.75,
+      "raw_up_prob": 0.374,
+      "up_prob": 0.391,
+      "n": 10993,
+      "conf": "높음",
+      "scope": "유상증자"
+    },
+    "m": {
+      "raw_avg": -1.82,
+      "raw_med": -4.77,
+      "market_avg": 0.43,
+      "car_avg": -2.25,
+      "car_med": -5.43,
+      "raw_up_prob": 0.351,
+      "up_prob": 0.333,
+      "n": 10844,
+      "conf": "높음",
+      "scope": "유상증자"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.46,
+          "raw_med": -0.42,
+          "market_avg": -0.12,
+          "car_avg": -0.35,
+          "car_med": -0.37,
+          "raw_up_prob": 0.383,
+          "up_prob": 0.424,
+          "n": 3626,
+          "conf": "높음",
+          "scope": "유상증자"
+        },
+        "w": {
+          "raw_avg": -0.19,
+          "raw_med": -0.97,
+          "market_avg": 0.09,
+          "car_avg": -0.28,
+          "car_med": -1.25,
+          "raw_up_prob": 0.392,
+          "up_prob": 0.398,
+          "n": 3624,
+          "conf": "높음",
+          "scope": "유상증자"
+        },
+        "m": {
+          "raw_avg": -0.44,
+          "raw_med": -3.29,
+          "market_avg": 0.61,
+          "car_avg": -1.05,
+          "car_med": -3.96,
+          "raw_up_prob": 0.379,
+          "up_prob": 0.353,
+          "n": 3605,
+          "conf": "높음",
+          "scope": "유상증자"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -1.27,
+          "raw_med": -0.79,
+          "market_avg": -0.14,
+          "car_avg": -1.13,
+          "car_med": -0.76,
+          "raw_up_prob": 0.353,
+          "up_prob": 0.399,
+          "n": 7374,
+          "conf": "높음",
+          "scope": "유상증자"
+        },
+        "w": {
+          "raw_avg": -0.51,
+          "raw_med": -1.78,
+          "market_avg": -0.06,
+          "car_avg": -0.46,
+          "car_med": -2.06,
+          "raw_up_prob": 0.365,
+          "up_prob": 0.388,
+          "n": 7369,
+          "conf": "높음",
+          "scope": "유상증자"
+        },
+        "m": {
+          "raw_avg": -2.5,
+          "raw_med": -6.17,
+          "market_avg": 0.35,
+          "car_avg": -2.85,
+          "car_med": -6.53,
+          "raw_up_prob": 0.337,
+          "up_prob": 0.322,
+          "n": 7239,
+          "conf": "높음",
+          "scope": "유상증자"
+        }
+      }
+    },
+    "scale_buckets": {
+      "n_total": 1759,
+      "buckets": {
+        "소<10%": {
+          "rel_range": [
+            0,
+            10
+          ],
+          "d": {
+            "raw_avg": -1.33,
+            "raw_med": -0.66,
+            "market_avg": -0.09,
+            "car_avg": -1.24,
+            "car_med": -0.73,
+            "raw_up_prob": 0.363,
+            "up_prob": 0.387,
+            "n": 1145,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.36,
+            "raw_med": -1.39,
+            "market_avg": 0.12,
+            "car_avg": -0.48,
+            "car_med": -1.97,
+            "raw_up_prob": 0.365,
+            "up_prob": 0.384,
+            "n": 1143,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -1.69,
+            "raw_med": -5.78,
+            "market_avg": 0.4,
+            "car_avg": -2.09,
+            "car_med": -5.86,
+            "raw_up_prob": 0.331,
+            "up_prob": 0.326,
+            "n": 1139,
+            "conf": "높음"
+          }
+        },
+        "중10-30%": {
+          "rel_range": [
+            10,
+            30
+          ],
+          "d": {
+            "raw_avg": -0.83,
+            "raw_med": -0.67,
+            "market_avg": -0.18,
+            "car_avg": -0.65,
+            "car_med": -0.54,
+            "raw_up_prob": 0.382,
+            "up_prob": 0.427,
+            "n": 419,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.35,
+            "raw_med": -2.29,
+            "market_avg": -0.11,
+            "car_avg": -0.23,
+            "car_med": -2.0,
+            "raw_up_prob": 0.37,
+            "up_prob": 0.375,
+            "n": 419,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -3.95,
+            "raw_med": -7.22,
+            "market_avg": -0.01,
+            "car_avg": -3.95,
+            "car_med": -7.46,
+            "raw_up_prob": 0.344,
+            "up_prob": 0.322,
+            "n": 416,
+            "conf": "높음"
+          }
+        },
+        "대30%+": {
+          "rel_range": [
+            30,
+            null
+          ],
+          "d": {
+            "raw_avg": -2.25,
+            "raw_med": -0.9,
+            "market_avg": -0.27,
+            "car_avg": -1.98,
+            "car_med": -1.0,
+            "raw_up_prob": 0.338,
+            "up_prob": 0.359,
+            "n": 195,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.51,
+            "raw_med": -1.55,
+            "market_avg": -0.06,
+            "car_avg": 0.57,
+            "car_med": -1.6,
+            "raw_up_prob": 0.39,
+            "up_prob": 0.41,
+            "n": 195,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -3.9,
+            "raw_med": -9.94,
+            "market_avg": 0.95,
+            "car_avg": -4.85,
+            "car_med": -9.91,
+            "raw_up_prob": 0.275,
+            "up_prob": 0.264,
+            "n": 193,
+            "conf": "높음"
+          }
+        }
+      },
+      "rel_pctl": {
+        "p25": 1.6,
+        "p50": 5.04,
+        "p75": 14.77,
+        "min": 0.0,
+        "max": 1243.78
+      }
+    }
+  },
+  "임상": {
+    "d": {
+      "raw_avg": -0.94,
+      "raw_med": -0.83,
+      "market_avg": -0.09,
+      "car_avg": -0.85,
+      "car_med": -0.7,
+      "raw_up_prob": 0.351,
+      "up_prob": 0.376,
+      "n": 1372,
+      "conf": "높음",
+      "scope": "임상"
+    },
+    "w": {
+      "raw_avg": -1.8,
+      "raw_med": -1.75,
+      "market_avg": 0.12,
+      "car_avg": -1.92,
+      "car_med": -1.95,
+      "raw_up_prob": 0.37,
+      "up_prob": 0.348,
+      "n": 1372,
+      "conf": "높음",
+      "scope": "임상"
+    },
+    "m": {
+      "raw_avg": -2.6,
+      "raw_med": -3.81,
+      "market_avg": 0.37,
+      "car_avg": -2.97,
+      "car_med": -4.47,
+      "raw_up_prob": 0.378,
+      "up_prob": 0.344,
+      "n": 1372,
+      "conf": "높음",
+      "scope": "임상"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.24,
+          "raw_med": -0.27,
+          "market_avg": -0.06,
+          "car_avg": -0.17,
+          "car_med": -0.21,
+          "raw_up_prob": 0.399,
+          "up_prob": 0.464,
+          "n": 308,
+          "conf": "높음",
+          "scope": "임상"
+        },
+        "w": {
+          "raw_avg": -0.94,
+          "raw_med": -0.9,
+          "market_avg": 0.12,
+          "car_avg": -1.06,
+          "car_med": -1.09,
+          "raw_up_prob": 0.399,
+          "up_prob": 0.367,
+          "n": 308,
+          "conf": "높음",
+          "scope": "임상"
+        },
+        "m": {
+          "raw_avg": -1.25,
+          "raw_med": -1.81,
+          "market_avg": 0.6,
+          "car_avg": -1.85,
+          "car_med": -2.75,
+          "raw_up_prob": 0.419,
+          "up_prob": 0.364,
+          "n": 308,
+          "conf": "높음",
+          "scope": "임상"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -1.14,
+          "raw_med": -1.09,
+          "market_avg": -0.09,
+          "car_avg": -1.05,
+          "car_med": -0.98,
+          "raw_up_prob": 0.337,
+          "up_prob": 0.351,
+          "n": 1064,
+          "conf": "높음",
+          "scope": "임상"
+        },
+        "w": {
+          "raw_avg": -2.05,
+          "raw_med": -2.17,
+          "market_avg": 0.12,
+          "car_avg": -2.18,
+          "car_med": -2.42,
+          "raw_up_prob": 0.361,
+          "up_prob": 0.343,
+          "n": 1064,
+          "conf": "높음",
+          "scope": "임상"
+        },
+        "m": {
+          "raw_avg": -2.99,
+          "raw_med": -5.1,
+          "market_avg": 0.3,
+          "car_avg": -3.29,
+          "car_med": -5.22,
+          "raw_up_prob": 0.367,
+          "up_prob": 0.338,
+          "n": 1064,
+          "conf": "높음",
+          "scope": "임상"
+        }
+      }
+    }
+  },
+  "자사주": {
+    "d": {
+      "raw_avg": 0.03,
+      "raw_med": -0.06,
+      "market_avg": -0.04,
+      "car_avg": 0.07,
+      "car_med": -0.06,
+      "raw_up_prob": 0.461,
+      "up_prob": 0.487,
+      "n": 7439,
+      "conf": "높음",
+      "scope": "자사주"
+    },
+    "w": {
+      "raw_avg": 0.55,
+      "raw_med": 0.0,
+      "market_avg": 0.2,
+      "car_avg": 0.35,
+      "car_med": -0.28,
+      "raw_up_prob": 0.495,
+      "up_prob": 0.472,
+      "n": 7438,
+      "conf": "높음",
+      "scope": "자사주"
+    },
+    "m": {
+      "raw_avg": 1.47,
+      "raw_med": -0.16,
+      "market_avg": 0.98,
+      "car_avg": 0.49,
+      "car_med": -1.29,
+      "raw_up_prob": 0.49,
+      "up_prob": 0.438,
+      "n": 7429,
+      "conf": "높음",
+      "scope": "자사주"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.03,
+          "raw_med": -0.06,
+          "market_avg": -0.02,
+          "car_avg": -0.01,
+          "car_med": -0.13,
+          "raw_up_prob": 0.454,
+          "up_prob": 0.471,
+          "n": 3179,
+          "conf": "높음",
+          "scope": "자사주"
+        },
+        "w": {
+          "raw_avg": 0.35,
+          "raw_med": 0.0,
+          "market_avg": 0.24,
+          "car_avg": 0.12,
+          "car_med": -0.39,
+          "raw_up_prob": 0.488,
+          "up_prob": 0.445,
+          "n": 3178,
+          "conf": "높음",
+          "scope": "자사주"
+        },
+        "m": {
+          "raw_avg": 1.81,
+          "raw_med": -0.13,
+          "market_avg": 1.11,
+          "car_avg": 0.71,
+          "car_med": -1.23,
+          "raw_up_prob": 0.493,
+          "up_prob": 0.435,
+          "n": 3176,
+          "conf": "높음",
+          "scope": "자사주"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": 0.08,
+          "raw_med": -0.08,
+          "market_avg": -0.05,
+          "car_avg": 0.13,
+          "car_med": -0.01,
+          "raw_up_prob": 0.466,
+          "up_prob": 0.5,
+          "n": 4260,
+          "conf": "높음",
+          "scope": "자사주"
+        },
+        "w": {
+          "raw_avg": 0.69,
+          "raw_med": 0.01,
+          "market_avg": 0.17,
+          "car_avg": 0.52,
+          "car_med": -0.11,
+          "raw_up_prob": 0.5,
+          "up_prob": 0.492,
+          "n": 4260,
+          "conf": "높음",
+          "scope": "자사주"
+        },
+        "m": {
+          "raw_avg": 1.21,
+          "raw_med": -0.24,
+          "market_avg": 0.88,
+          "car_avg": 0.33,
+          "car_med": -1.37,
+          "raw_up_prob": 0.488,
+          "up_prob": 0.44,
+          "n": 4253,
+          "conf": "높음",
+          "scope": "자사주"
+        }
+      }
+    },
+    "scale_buckets": {
+      "n_total": 2649,
+      "buckets": {
+        "소<1%": {
+          "rel_range": [
+            0,
+            1
+          ],
+          "d": {
+            "raw_avg": -0.08,
+            "raw_med": -0.2,
+            "market_avg": -0.05,
+            "car_avg": -0.03,
+            "car_med": -0.2,
+            "raw_up_prob": 0.438,
+            "up_prob": 0.454,
+            "n": 1607,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.05,
+            "raw_med": -0.43,
+            "market_avg": 0.28,
+            "car_avg": -0.23,
+            "car_med": -0.73,
+            "raw_up_prob": 0.449,
+            "up_prob": 0.428,
+            "n": 1607,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 0.68,
+            "raw_med": -1.26,
+            "market_avg": 0.94,
+            "car_avg": -0.26,
+            "car_med": -2.1,
+            "raw_up_prob": 0.444,
+            "up_prob": 0.397,
+            "n": 1607,
+            "conf": "높음"
+          }
+        },
+        "중1-3%": {
+          "rel_range": [
+            1,
+            3
+          ],
+          "d": {
+            "raw_avg": 0.08,
+            "raw_med": 0.0,
+            "market_avg": -0.13,
+            "car_avg": 0.21,
+            "car_med": 0.17,
+            "raw_up_prob": 0.497,
+            "up_prob": 0.525,
+            "n": 602,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.47,
+            "raw_med": 0.33,
+            "market_avg": 0.01,
+            "car_avg": 0.45,
+            "car_med": 0.16,
+            "raw_up_prob": 0.523,
+            "up_prob": 0.512,
+            "n": 602,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 0.5,
+            "raw_med": 0.17,
+            "market_avg": 0.86,
+            "car_avg": -0.36,
+            "car_med": -0.8,
+            "raw_up_prob": 0.506,
+            "up_prob": 0.464,
+            "n": 601,
+            "conf": "높음"
+          }
+        },
+        "대3%+": {
+          "rel_range": [
+            3,
+            null
+          ],
+          "d": {
+            "raw_avg": -0.77,
+            "raw_med": -0.6,
+            "market_avg": -0.06,
+            "car_avg": -0.71,
+            "car_med": -0.56,
+            "raw_up_prob": 0.357,
+            "up_prob": 0.398,
+            "n": 440,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.07,
+            "raw_med": -0.56,
+            "market_avg": 0.07,
+            "car_avg": 0.0,
+            "car_med": -0.7,
+            "raw_up_prob": 0.45,
+            "up_prob": 0.448,
+            "n": 440,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 1.09,
+            "raw_med": -0.65,
+            "market_avg": 1.27,
+            "car_avg": -0.18,
+            "car_med": -1.88,
+            "raw_up_prob": 0.489,
+            "up_prob": 0.422,
+            "n": 436,
+            "conf": "높음"
+          }
+        }
+      },
+      "rel_pctl": {
+        "p25": 0.07,
+        "p50": 0.54,
+        "p75": 1.99,
+        "min": 0.0,
+        "max": 763094.59
+      }
+    }
+  },
+  "전환사채": {
+    "d": {
+      "raw_avg": -0.35,
+      "raw_med": -0.33,
+      "market_avg": -0.09,
+      "car_avg": -0.26,
+      "car_med": -0.34,
+      "raw_up_prob": 0.406,
+      "up_prob": 0.442,
+      "n": 10695,
+      "conf": "높음",
+      "scope": "전환사채"
+    },
+    "w": {
+      "raw_avg": 0.15,
+      "raw_med": -1.04,
+      "market_avg": 0.05,
+      "car_avg": 0.09,
+      "car_med": -1.31,
+      "raw_up_prob": 0.412,
+      "up_prob": 0.414,
+      "n": 10689,
+      "conf": "높음",
+      "scope": "전환사채"
+    },
+    "m": {
+      "raw_avg": -0.22,
+      "raw_med": -3.78,
+      "market_avg": 0.58,
+      "car_avg": -0.8,
+      "car_med": -4.63,
+      "raw_up_prob": 0.379,
+      "up_prob": 0.358,
+      "n": 10579,
+      "conf": "높음",
+      "scope": "전환사채"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.45,
+          "raw_med": -0.27,
+          "market_avg": -0.08,
+          "car_avg": -0.37,
+          "car_med": -0.3,
+          "raw_up_prob": 0.401,
+          "up_prob": 0.445,
+          "n": 1430,
+          "conf": "높음",
+          "scope": "전환사채"
+        },
+        "w": {
+          "raw_avg": 1.94,
+          "raw_med": -0.85,
+          "market_avg": 0.24,
+          "car_avg": 1.7,
+          "car_med": -1.08,
+          "raw_up_prob": 0.411,
+          "up_prob": 0.406,
+          "n": 1429,
+          "conf": "높음",
+          "scope": "전환사채"
+        },
+        "m": {
+          "raw_avg": 4.54,
+          "raw_med": -3.09,
+          "market_avg": 0.97,
+          "car_avg": 3.57,
+          "car_med": -4.55,
+          "raw_up_prob": 0.405,
+          "up_prob": 0.369,
+          "n": 1419,
+          "conf": "높음",
+          "scope": "전환사채"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.34,
+          "raw_med": -0.34,
+          "market_avg": -0.1,
+          "car_avg": -0.24,
+          "car_med": -0.35,
+          "raw_up_prob": 0.407,
+          "up_prob": 0.441,
+          "n": 9265,
+          "conf": "높음",
+          "scope": "전환사채"
+        },
+        "w": {
+          "raw_avg": -0.13,
+          "raw_med": -1.09,
+          "market_avg": 0.03,
+          "car_avg": -0.15,
+          "car_med": -1.36,
+          "raw_up_prob": 0.413,
+          "up_prob": 0.416,
+          "n": 9260,
+          "conf": "높음",
+          "scope": "전환사채"
+        },
+        "m": {
+          "raw_avg": -0.96,
+          "raw_med": -3.91,
+          "market_avg": 0.52,
+          "car_avg": -1.48,
+          "car_med": -4.67,
+          "raw_up_prob": 0.375,
+          "up_prob": 0.356,
+          "n": 9160,
+          "conf": "높음",
+          "scope": "전환사채"
+        }
+      }
+    },
+    "scale_buckets": {
+      "n_total": 1925,
+      "buckets": {
+        "소<10%": {
+          "rel_range": [
+            0,
+            10
+          ],
+          "d": {
+            "raw_avg": -0.63,
+            "raw_med": -0.53,
+            "market_avg": -0.12,
+            "car_avg": -0.51,
+            "car_med": -0.52,
+            "raw_up_prob": 0.398,
+            "up_prob": 0.419,
+            "n": 1269,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.97,
+            "raw_med": -1.35,
+            "market_avg": 0.11,
+            "car_avg": -1.08,
+            "car_med": -1.58,
+            "raw_up_prob": 0.398,
+            "up_prob": 0.396,
+            "n": 1268,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -2.89,
+            "raw_med": -4.86,
+            "market_avg": 0.37,
+            "car_avg": -3.26,
+            "car_med": -5.92,
+            "raw_up_prob": 0.359,
+            "up_prob": 0.324,
+            "n": 1261,
+            "conf": "높음"
+          }
+        },
+        "중10-25%": {
+          "rel_range": [
+            10,
+            25
+          ],
+          "d": {
+            "raw_avg": -0.15,
+            "raw_med": -0.42,
+            "market_avg": -0.1,
+            "car_avg": -0.05,
+            "car_med": -0.37,
+            "raw_up_prob": 0.416,
+            "up_prob": 0.431,
+            "n": 529,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.29,
+            "raw_med": -0.96,
+            "market_avg": 0.06,
+            "car_avg": 0.22,
+            "car_med": -1.35,
+            "raw_up_prob": 0.423,
+            "up_prob": 0.405,
+            "n": 529,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -1.07,
+            "raw_med": -3.9,
+            "market_avg": 0.42,
+            "car_avg": -1.49,
+            "car_med": -4.59,
+            "raw_up_prob": 0.373,
+            "up_prob": 0.343,
+            "n": 525,
+            "conf": "높음"
+          }
+        },
+        "대25%+": {
+          "rel_range": [
+            25,
+            null
+          ],
+          "d": {
+            "raw_avg": -1.33,
+            "raw_med": -0.75,
+            "market_avg": -0.09,
+            "car_avg": -1.25,
+            "car_med": -1.06,
+            "raw_up_prob": 0.346,
+            "up_prob": 0.362,
+            "n": 127,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 15.48,
+            "raw_med": -1.07,
+            "market_avg": 0.25,
+            "car_avg": 15.23,
+            "car_med": -1.65,
+            "raw_up_prob": 0.409,
+            "up_prob": 0.402,
+            "n": 127,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 26.81,
+            "raw_med": -2.07,
+            "market_avg": 1.37,
+            "car_avg": 25.43,
+            "car_med": -3.57,
+            "raw_up_prob": 0.403,
+            "up_prob": 0.355,
+            "n": 124,
+            "conf": "높음"
+          }
+        }
+      },
+      "rel_pctl": {
+        "p25": 2.15,
+        "p50": 6.36,
+        "p75": 12.68,
+        "min": 0.02,
+        "max": 305.63
+      }
+    }
+  },
+  "정정공시": {
+    "d": {
+      "raw_avg": -0.33,
+      "raw_med": -0.22,
+      "market_avg": -0.07,
+      "car_avg": -0.26,
+      "car_med": -0.28,
+      "raw_up_prob": 0.409,
+      "up_prob": 0.444,
+      "n": 56416,
+      "conf": "높음",
+      "scope": "정정공시"
+    },
+    "w": {
+      "raw_avg": -0.17,
+      "raw_med": -0.61,
+      "market_avg": 0.13,
+      "car_avg": -0.3,
+      "car_med": -0.96,
+      "raw_up_prob": 0.416,
+      "up_prob": 0.413,
+      "n": 56369,
+      "conf": "높음",
+      "scope": "정정공시"
+    },
+    "m": {
+      "raw_avg": 0.23,
+      "raw_med": -1.72,
+      "market_avg": 1.04,
+      "car_avg": -0.8,
+      "car_med": -3.02,
+      "raw_up_prob": 0.419,
+      "up_prob": 0.378,
+      "n": 55826,
+      "conf": "높음",
+      "scope": "정정공시"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.14,
+          "raw_med": -0.19,
+          "market_avg": -0.06,
+          "car_avg": -0.08,
+          "car_med": -0.2,
+          "raw_up_prob": 0.42,
+          "up_prob": 0.45,
+          "n": 21560,
+          "conf": "높음",
+          "scope": "정정공시"
+        },
+        "w": {
+          "raw_avg": 0.14,
+          "raw_med": -0.49,
+          "market_avg": 0.14,
+          "car_avg": -0.0,
+          "car_med": -0.75,
+          "raw_up_prob": 0.429,
+          "up_prob": 0.42,
+          "n": 21552,
+          "conf": "높음",
+          "scope": "정정공시"
+        },
+        "m": {
+          "raw_avg": 1.52,
+          "raw_med": -0.9,
+          "market_avg": 1.18,
+          "car_avg": 0.34,
+          "car_med": -2.25,
+          "raw_up_prob": 0.451,
+          "up_prob": 0.393,
+          "n": 21475,
+          "conf": "높음",
+          "scope": "정정공시"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.45,
+          "raw_med": -0.25,
+          "market_avg": -0.08,
+          "car_avg": -0.37,
+          "car_med": -0.33,
+          "raw_up_prob": 0.402,
+          "up_prob": 0.44,
+          "n": 34856,
+          "conf": "높음",
+          "scope": "정정공시"
+        },
+        "w": {
+          "raw_avg": -0.37,
+          "raw_med": -0.71,
+          "market_avg": 0.12,
+          "car_avg": -0.49,
+          "car_med": -1.16,
+          "raw_up_prob": 0.408,
+          "up_prob": 0.408,
+          "n": 34817,
+          "conf": "높음",
+          "scope": "정정공시"
+        },
+        "m": {
+          "raw_avg": -0.57,
+          "raw_med": -2.38,
+          "market_avg": 0.95,
+          "car_avg": -1.52,
+          "car_med": -3.78,
+          "raw_up_prob": 0.399,
+          "up_prob": 0.368,
+          "n": 34351,
+          "conf": "높음",
+          "scope": "정정공시"
+        }
+      }
+    }
+  },
+  "주식소각": {
+    "d": {
+      "raw_avg": -0.41,
+      "raw_med": -0.46,
+      "market_avg": -0.03,
+      "car_avg": -0.38,
+      "car_med": -0.34,
+      "raw_up_prob": 0.415,
+      "up_prob": 0.424,
+      "n": 1117,
+      "conf": "높음",
+      "scope": "주식소각"
+    },
+    "w": {
+      "raw_avg": -0.32,
+      "raw_med": -0.89,
+      "market_avg": 0.25,
+      "car_avg": -0.57,
+      "car_med": -1.23,
+      "raw_up_prob": 0.423,
+      "up_prob": 0.385,
+      "n": 1117,
+      "conf": "높음",
+      "scope": "주식소각"
+    },
+    "m": {
+      "raw_avg": 0.05,
+      "raw_med": -1.4,
+      "market_avg": 1.04,
+      "car_avg": -0.99,
+      "car_med": -2.72,
+      "raw_up_prob": 0.435,
+      "up_prob": 0.379,
+      "n": 1116,
+      "conf": "높음",
+      "scope": "주식소각"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.28,
+          "raw_med": -0.33,
+          "market_avg": -0.04,
+          "car_avg": -0.25,
+          "car_med": -0.24,
+          "raw_up_prob": 0.438,
+          "up_prob": 0.443,
+          "n": 632,
+          "conf": "높음",
+          "scope": "주식소각"
+        },
+        "w": {
+          "raw_avg": 0.07,
+          "raw_med": -0.62,
+          "market_avg": 0.29,
+          "car_avg": -0.21,
+          "car_med": -1.06,
+          "raw_up_prob": 0.434,
+          "up_prob": 0.4,
+          "n": 632,
+          "conf": "높음",
+          "scope": "주식소각"
+        },
+        "m": {
+          "raw_avg": 0.68,
+          "raw_med": -0.66,
+          "market_avg": 1.01,
+          "car_avg": -0.34,
+          "car_med": -1.82,
+          "raw_up_prob": 0.46,
+          "up_prob": 0.413,
+          "n": 632,
+          "conf": "높음",
+          "scope": "주식소각"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.57,
+          "raw_med": -0.56,
+          "market_avg": -0.02,
+          "car_avg": -0.55,
+          "car_med": -0.47,
+          "raw_up_prob": 0.384,
+          "up_prob": 0.4,
+          "n": 485,
+          "conf": "높음",
+          "scope": "주식소각"
+        },
+        "w": {
+          "raw_avg": -0.83,
+          "raw_med": -1.32,
+          "market_avg": 0.19,
+          "car_avg": -1.02,
+          "car_med": -1.58,
+          "raw_up_prob": 0.41,
+          "up_prob": 0.365,
+          "n": 485,
+          "conf": "높음",
+          "scope": "주식소각"
+        },
+        "m": {
+          "raw_avg": -0.77,
+          "raw_med": -2.5,
+          "market_avg": 1.08,
+          "car_avg": -1.84,
+          "car_med": -4.37,
+          "raw_up_prob": 0.401,
+          "up_prob": 0.335,
+          "n": 484,
+          "conf": "높음",
+          "scope": "주식소각"
+        }
+      }
+    }
+  },
+  "지분변동": {
+    "d": {
+      "raw_avg": -0.97,
+      "raw_med": -0.93,
+      "market_avg": -0.16,
+      "car_avg": -0.82,
+      "car_med": -0.55,
+      "raw_up_prob": 0.392,
+      "up_prob": 0.451,
+      "n": 51,
+      "conf": "보통",
+      "scope": "지분변동"
+    },
+    "w": {
+      "raw_avg": 1.24,
+      "raw_med": -1.46,
+      "market_avg": -0.71,
+      "car_avg": 1.95,
+      "car_med": -1.19,
+      "raw_up_prob": 0.451,
+      "up_prob": 0.431,
+      "n": 51,
+      "conf": "보통",
+      "scope": "지분변동"
+    },
+    "m": {
+      "raw_avg": -2.28,
+      "raw_med": -6.2,
+      "market_avg": -0.96,
+      "car_avg": -1.32,
+      "car_med": -4.94,
+      "raw_up_prob": 0.314,
+      "up_prob": 0.314,
+      "n": 51,
+      "conf": "보통",
+      "scope": "지분변동"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.46,
+          "raw_med": -0.12,
+          "market_avg": -0.02,
+          "car_avg": -0.44,
+          "car_med": -0.31,
+          "raw_up_prob": 0.396,
+          "up_prob": 0.445,
+          "n": 931,
+          "conf": "높음",
+          "scope": "지배구조"
+        },
+        "w": {
+          "raw_avg": -1.04,
+          "raw_med": -0.63,
+          "market_avg": 0.26,
+          "car_avg": -1.3,
+          "car_med": -1.5,
+          "raw_up_prob": 0.374,
+          "up_prob": 0.377,
+          "n": 926,
+          "conf": "높음",
+          "scope": "지배구조"
+        },
+        "m": {
+          "raw_avg": -1.15,
+          "raw_med": -2.16,
+          "market_avg": 1.36,
+          "car_avg": -2.52,
+          "car_med": -4.15,
+          "raw_up_prob": 0.369,
+          "up_prob": 0.329,
+          "n": 913,
+          "conf": "높음",
+          "scope": "지배구조"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.8,
+          "raw_med": -0.1,
+          "market_avg": -0.2,
+          "car_avg": -0.6,
+          "car_med": -0.05,
+          "raw_up_prob": 0.435,
+          "up_prob": 0.5,
+          "n": 46,
+          "conf": "보통",
+          "scope": "지분변동"
+        },
+        "w": {
+          "raw_avg": 1.84,
+          "raw_med": -1.48,
+          "market_avg": -0.9,
+          "car_avg": 2.74,
+          "car_med": -0.75,
+          "raw_up_prob": 0.435,
+          "up_prob": 0.478,
+          "n": 46,
+          "conf": "보통",
+          "scope": "지분변동"
+        },
+        "m": {
+          "raw_avg": -1.89,
+          "raw_med": -6.24,
+          "market_avg": -1.33,
+          "car_avg": -0.57,
+          "car_med": -4.79,
+          "raw_up_prob": 0.304,
+          "up_prob": 0.304,
+          "n": 46,
+          "conf": "보통",
+          "scope": "지분변동"
+        }
+      }
+    }
+  },
+  "최대주주변경": {
+    "d": {
+      "raw_avg": -0.84,
+      "raw_med": -0.41,
+      "market_avg": -0.06,
+      "car_avg": -0.77,
+      "car_med": -0.46,
+      "raw_up_prob": 0.379,
+      "up_prob": 0.425,
+      "n": 5741,
+      "conf": "높음",
+      "scope": "최대주주변경"
+    },
+    "w": {
+      "raw_avg": -1.21,
+      "raw_med": -1.36,
+      "market_avg": 0.19,
+      "car_avg": -1.39,
+      "car_med": -1.8,
+      "raw_up_prob": 0.367,
+      "up_prob": 0.378,
+      "n": 5728,
+      "conf": "높음",
+      "scope": "최대주주변경"
+    },
+    "m": {
+      "raw_avg": -1.39,
+      "raw_med": -3.35,
+      "market_avg": 0.98,
+      "car_avg": -2.37,
+      "car_med": -4.68,
+      "raw_up_prob": 0.366,
+      "up_prob": 0.351,
+      "n": 5641,
+      "conf": "높음",
+      "scope": "최대주주변경"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.45,
+          "raw_med": -0.1,
+          "market_avg": -0.02,
+          "car_avg": -0.42,
+          "car_med": -0.3,
+          "raw_up_prob": 0.398,
+          "up_prob": 0.447,
+          "n": 926,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        },
+        "w": {
+          "raw_avg": -1.02,
+          "raw_med": -0.63,
+          "market_avg": 0.26,
+          "car_avg": -1.27,
+          "car_med": -1.51,
+          "raw_up_prob": 0.372,
+          "up_prob": 0.379,
+          "n": 921,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        },
+        "m": {
+          "raw_avg": -1.13,
+          "raw_med": -2.18,
+          "market_avg": 1.36,
+          "car_avg": -2.48,
+          "car_med": -4.13,
+          "raw_up_prob": 0.369,
+          "up_prob": 0.328,
+          "n": 908,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.91,
+          "raw_med": -0.48,
+          "market_avg": -0.07,
+          "car_avg": -0.84,
+          "car_med": -0.51,
+          "raw_up_prob": 0.375,
+          "up_prob": 0.42,
+          "n": 4815,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        },
+        "w": {
+          "raw_avg": -1.24,
+          "raw_med": -1.52,
+          "market_avg": 0.17,
+          "car_avg": -1.42,
+          "car_med": -1.86,
+          "raw_up_prob": 0.366,
+          "up_prob": 0.378,
+          "n": 4807,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        },
+        "m": {
+          "raw_avg": -1.43,
+          "raw_med": -3.7,
+          "market_avg": 0.91,
+          "car_avg": -2.34,
+          "car_med": -4.84,
+          "raw_up_prob": 0.365,
+          "up_prob": 0.356,
+          "n": 4733,
+          "conf": "높음",
+          "scope": "최대주주변경"
+        }
+      }
+    }
+  },
+  "합병분할": {
+    "d": {
+      "raw_avg": -0.38,
+      "raw_med": -0.24,
+      "market_avg": -0.09,
+      "car_avg": -0.3,
+      "car_med": -0.35,
+      "raw_up_prob": 0.408,
+      "up_prob": 0.436,
+      "n": 3687,
+      "conf": "높음",
+      "scope": "합병분할"
+    },
+    "w": {
+      "raw_avg": -0.44,
+      "raw_med": -0.8,
+      "market_avg": 0.21,
+      "car_avg": -0.65,
+      "car_med": -1.23,
+      "raw_up_prob": 0.403,
+      "up_prob": 0.403,
+      "n": 3685,
+      "conf": "높음",
+      "scope": "합병분할"
+    },
+    "m": {
+      "raw_avg": 0.1,
+      "raw_med": -2.7,
+      "market_avg": 0.36,
+      "car_avg": -0.25,
+      "car_med": -3.45,
+      "raw_up_prob": 0.391,
+      "up_prob": 0.372,
+      "n": 3679,
+      "conf": "높음",
+      "scope": "합병분할"
+    },
+    "by_market": {
+      "KOSPI": {
+        "d": {
+          "raw_avg": -0.5,
+          "raw_med": -0.17,
+          "market_avg": -0.03,
+          "car_avg": -0.47,
+          "car_med": -0.26,
+          "raw_up_prob": 0.434,
+          "up_prob": 0.436,
+          "n": 1231,
+          "conf": "높음",
+          "scope": "합병분할"
+        },
+        "w": {
+          "raw_avg": -1.0,
+          "raw_med": -0.84,
+          "market_avg": 0.12,
+          "car_avg": -1.12,
+          "car_med": -1.06,
+          "raw_up_prob": 0.403,
+          "up_prob": 0.402,
+          "n": 1231,
+          "conf": "높음",
+          "scope": "합병분할"
+        },
+        "m": {
+          "raw_avg": 0.33,
+          "raw_med": -1.84,
+          "market_avg": 0.73,
+          "car_avg": -0.4,
+          "car_med": -2.39,
+          "raw_up_prob": 0.427,
+          "up_prob": 0.393,
+          "n": 1231,
+          "conf": "높음",
+          "scope": "합병분할"
+        }
+      },
+      "KOSDAQ": {
+        "d": {
+          "raw_avg": -0.32,
+          "raw_med": -0.27,
+          "market_avg": -0.11,
+          "car_avg": -0.21,
+          "car_med": -0.39,
+          "raw_up_prob": 0.395,
+          "up_prob": 0.436,
+          "n": 2456,
+          "conf": "높음",
+          "scope": "합병분할"
+        },
+        "w": {
+          "raw_avg": -0.16,
+          "raw_med": -0.79,
+          "market_avg": 0.25,
+          "car_avg": -0.41,
+          "car_med": -1.36,
+          "raw_up_prob": 0.403,
+          "up_prob": 0.403,
+          "n": 2454,
+          "conf": "높음",
+          "scope": "합병분할"
+        },
+        "m": {
+          "raw_avg": -0.01,
+          "raw_med": -3.23,
+          "market_avg": 0.17,
+          "car_avg": -0.18,
+          "car_med": -4.25,
+          "raw_up_prob": 0.373,
+          "up_prob": 0.361,
+          "n": 2448,
+          "conf": "높음",
+          "scope": "합병분할"
+        }
+      }
+    }
+  }
+}

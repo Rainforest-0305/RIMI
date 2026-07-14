@@ -1,0 +1,39 @@
+# === 비밀 / 자격증명 (절대 커밋 금지) ===
+.env
+.env.local
+.toss_token*
+*.token
+*.key
+
+# === 대용량 배포 도구 (각 환경에서 내려받음) ===
+bin/
+bin/cloudflared.exe
+
+# === 파이썬 런타임 아티팩트 ===
+__pycache__/
+*.pyc
+*.pyo
+*.tmp
+.DS_Store
+
+# === 빌드/데이터 캐시 (재생성 가능, 대용량) ===
+bench_cache/
+dart_cache/
+
+# === 런타임 로그 / 터널 ===
+tunnel_live*.log
+tunnel_share*.log
+uvicorn_new*.log
+uvicorn_restart*.log
+*.err.log
+*.out.log
+_shopify_dump.txt
+
+# === data/ : 런타임 상태·로그 제외, 배포 필요한 시드 데이터만 포함 ===
+data/*
+!data/corp_index.json
+!data/corp_map.json
+!data/impact_benchmark.json
+
+# === 실험/폐기된 스크래치 산출물 (배포 불필요) ===
+impact_benchmark.biased_kospi200.json

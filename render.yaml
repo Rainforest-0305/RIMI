@@ -1,0 +1,20 @@
+# Render.com 원클릭 배포 청사진.
+# 사용: GitHub 레포 연결 → Render 대시보드가 이 파일을 자동 인식 → DART_API_KEY 만 입력.
+# 프론트+API 를 uvicorn 단일 서비스로 서빙(app:api 가 web/ 정적파일 마운트).
+services:
+  - type: web
+    name: miri-gongsi
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:api --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DART_API_KEY
+        sync: false           # 대시보드에서 주입(코드/레포에 하드코딩 금지)
+      - key: GONGSI_POLL_SEC
+        value: "300"
+      - key: PYTHON_VERSION
+        value: "3.12.10"
