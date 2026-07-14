@@ -53,6 +53,92 @@ _BULLET_PREFETCH_CAP = 12
 # 유발하는 캐시 스탬피드를 방지. 한 스레드만 재빌드하고 나머지는 결과를 공유한다.
 _BUILD_LOCK = threading.Lock()
 
+# ---------------- 백그라운드 불릿 워머(문제2: 배포 커버리지 수렴) ----------------
+# 배포(Render)는 bench_cache 가 비어있고 FS ephemeral 이라 불릿 커버리지가 ~0.
+# 모든 피드 빌드에서 'eligible 이나 이번 빌드 캐시전용 bullets 가 빈' 공시를
+# 백그라운드 단일 스레드로 뒤에서 DART 추출→디스크 캐시에 채운다. 요청 응답은
+# 지연 없이 즉시 반환되고, 다음 빌드/새로고침 때 캐시히트로 커버리지가 수렴한다.
+# 기존 force 인라인 프리페치(cap 12)는 그대로 유지(이건 additive).
+_WARM_QUEUE = []               # 처리 대기 dict: {rcept_no, code, report_nm, rcept_dt}
+_WARM_SEEN = set()             # dedup: 이미 큐/처리중인 rcept_no
+_WARM_LOCK = threading.Lock()  # 큐/상태 접근 보호
+_WARM_THREAD = None            # 단일 워커 스레드 보장
+_WARM_DAY = None               # 서킷브레이커 기준 날짜(YYYYMMDD)
+_WARM_COUNT = 0                # 오늘 처리한 건수
+_WARM_DAILY_CAP = 3000         # 일일 상한(DART 남용 방지). 초과 시 큐 비우고 중단.
+
+
+def _warm_enqueue(items):
+    """eligible 이나 bullets 가 빈 alert dict 리스트를 워머 큐에 넣고 워커를 깨운다.
+
+    fire-and-forget: 절대 요청 스레드를 블록하지 않는다. 큐/상태 접근만 락으로 감싼다.
+    """
+    global _WARM_THREAD
+    if not items:
+        return
+    with _WARM_LOCK:
+        for a in items:
+            rno = (a.get("rcept_no") or "").strip()
+            if not rno or rno in _WARM_SEEN:
+                continue
+            _WARM_SEEN.add(rno)
+            _WARM_QUEUE.append({
+                "rcept_no": rno,
+                "code": (a.get("stock_code") or "").strip(),
+                "report_nm": (a.get("report_nm") or "").strip(),
+                "rcept_dt": (a.get("rcept_dt") or "").strip(),
+            })
+        need_worker = (_WARM_THREAD is None) or (not _WARM_THREAD.is_alive())
+        if _WARM_QUEUE and need_worker:
+            _WARM_THREAD = threading.Thread(
+                target=_warm_worker, name="bullet-warmer", daemon=True)
+            _WARM_THREAD.start()
+
+
+def _warm_worker():
+    """큐를 하나씩 비우며 bullets_for_item(allow_fetch=True)로 디스크 캐시를 채운다.
+
+    - 큐 비면 종료(재기동은 다음 _warm_enqueue 가 담당).
+    - 일일 서킷브레이커 초과면 큐 비우고 종료.
+    - 성공/예외 무관 count++ 후 상한 체크. 예외는 swallow+print. sleep 0.15 레이트리밋.
+    """
+    global _WARM_COUNT, _WARM_DAY, _WARM_THREAD
+    while True:
+        with _WARM_LOCK:
+            # 날짜 바뀌면 서킷브레이커 리셋
+            today = datetime.now().strftime("%Y%m%d")
+            if _WARM_DAY != today:
+                _WARM_DAY = today
+                _WARM_COUNT = 0
+            # 서킷브레이커: 큐 비우고 종료
+            if _WARM_COUNT >= _WARM_DAILY_CAP:
+                _WARM_QUEUE.clear()
+                # 종료 전 스레드 슬롯 해제(레이스 방지): 다음 enqueue 가 재기동을
+                # is_alive 타이밍이 아니라 None 검사로 authoritative 하게 판단.
+                _WARM_THREAD = None
+                return
+            if not _WARM_QUEUE:
+                _WARM_THREAD = None
+                return
+            job = _WARM_QUEUE.pop(0)
+
+        rno = job["rcept_no"]
+        try:
+            code = job["code"]
+            ccode = dart_poll.resolve_corp(code) or "" if code else ""
+            # corp_code 없이도 doc-route(공급계약·배당·소각)는 rcept_no 로 처리됨.
+            scale_extract.bullets_for_item(
+                ccode, code, job["report_nm"], rno, job["rcept_dt"],
+                allow_fetch=True, budget=[999], known_files=None)
+        except Exception as e:
+            print(f"[warm] skip {rno}: {e}")
+        finally:
+            with _WARM_LOCK:
+                _WARM_COUNT += 1
+                # 처리한 rcept 는 SEEN 에서 제거: 재요청 시 캐시히트라 재추출 안 함(안전).
+                _WARM_SEEN.discard(rno)
+        time.sleep(0.15)  # DART 레이트리밋
+
 
 def _fmt_date(rcept_dt: str) -> str:
     """YYYYMMDD -> YYYY-MM-DD (표시용). 실패 시 원본."""
@@ -156,6 +242,15 @@ def _build_feed(force: bool = False) -> dict:
     errors = list(fetch_errors)
     if not raw and fetch_errors:
         errors.append("DART 시장 공시 조회 실패(유량/키/네트워크). 잠시 후 새로고침.")
+
+    # 백그라운드 워머: eligible 인데 이번 빌드 캐시전용 bullets 가 빈 건을 뒤에서 채운다.
+    # fire-and-forget(요청 응답 무지연). 워머 실패가 빌드를 깨지 않게 격리.
+    try:
+        _warm_enqueue([a for a in items
+                       if a.get("scale_eligible") and not a.get("bullets")])
+    except Exception as e:
+        print(f"[warm] enqueue skip: {e}")
+
     return {
         "count": len(items),
         "market": "KOSPI+KOSDAQ",

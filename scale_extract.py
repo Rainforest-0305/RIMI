@@ -600,13 +600,58 @@ def cmd_aggregate():
 
 
 # ---------------- 온디맨드 조회(앱 /api/scale) ----------------
+_NET_CLOSE = {}   # code -> (ts, close) 인메모리 TTL 캐시(배포 중복콜 억제)
+_NET_CLOSE_TTL = 1800  # 30분
+
+
+def _net_close(code):
+    """네트워크 종가. 배포환경(KRX 지오차단·px캐시 없음)에서 시총 산출용.
+    네이버 금융(주) → 야후(백업). 둘 다 해외 IP에서 접근 가능. 실패 시 None."""
+    hit = _NET_CLOSE.get(code)
+    if hit and (time.time() - hit[0]) < _NET_CLOSE_TTL:
+        return hit[1]
+    hdr = {"User-Agent": "Mozilla/5.0"}
+    close = None
+    # 1) 네이버: 시장구분 불필요(6자리 코드만). closePrice='263,000'
+    try:
+        j = requests.get(f"https://m.stock.naver.com/api/stock/{code}/basic",
+                         headers=hdr, timeout=6).json()
+        cp = str(j.get("closePrice", "")).replace(",", "")
+        if cp and float(cp) > 0:
+            close = float(cp)
+    except Exception:
+        pass
+    # 2) 야후 백업: .KS(코스피)·.KQ(코스닥) 순차 시도
+    if close is None:
+        for sfx in (".KS", ".KQ"):
+            try:
+                j = requests.get(
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{sfx}",
+                    params={"interval": "1d", "range": "5d"},
+                    headers=hdr, timeout=6).json()
+                q = j["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+                vals = [c for c in q if c]
+                if vals and vals[-1] > 0:
+                    close = float(vals[-1])
+                    break
+            except Exception:
+                continue
+    if close is not None:
+        _NET_CLOSE[code] = (time.time(), close)
+    return close
+
+
 def _latest_close(code):
-    """진입 근사 종가. px 캐시(있으면) 최종 종가, 없으면 pykrx OHLCV 최근 15일."""
+    """진입 근사 종가. px 캐시(있으면) 최종 종가 → 네트워크(네이버/야후) →
+    pykrx OHLCV. 배포(px캐시 없음·KRX 차단)에서도 네트워크 폴백으로 산출."""
     px = load_px(code)
     if px:
         ds = sorted(px.keys())
         if ds:
             return px[ds[-1]][1]
+    nc = _net_close(code)
+    if nc:
+        return nc
     try:
         from pykrx import stock
         from datetime import timedelta
