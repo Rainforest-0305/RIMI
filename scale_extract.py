@@ -93,6 +93,34 @@ BUCKETS = {
     "전환사채": [(0, 10, "소<10%"), (10, 25, "중10-25%"), (25, 1e9, "대25%+")],
     "자사주":   [(0, 1, "소<1%"),   (1, 3, "중1-3%"),     (3, 1e9, "대3%+")],
 }
+
+# 문서파싱/구조화 신규 유형 규모버킷. 분모(rel)가 유형마다 다르다(시총 아님):
+#   공급계약: rel = 계약금액 / 최근연매출 %      (rev_pct)
+#   소각:     rel = 소각주식 / 발행총수 %        (pct)
+#   무상증자: rel = 무상신주 / 증자전발행총수 %  (nstk_ostk_cnt/bfic_tisstk_ostk)
+#   배당:     rel = 시가배당률 %                 (yield)  ← Phase2(버킷 미집계, scale_only 유지)
+# 경계 근거(census 표본 분포, 2026-07 산출):
+#   공급계약(캐시 n=60):  p25=5.9 p50=15.0 p75=23.3 max=183  → 소<10 / 중10-30 / 대30+
+#     (버킷별 표본 25/22/13 → 균형)
+#   소각(파일럿 n=149):   p25=1.13 p50=2.50 p75=4.64 max=100 → 소<1 / 중1-3 / 대3+
+#     (버킷별 28/56/65 → 균형, 자사주와 컷 일치)
+#   무상증자(파일럿 n=156): p25=9.7 p50=96.6 p75=100 max=800 (이봉: <10% 소액, ~100% 1:1)
+#     → 소<20 / 중20-100 / 대100+ (버킷별 53/41/62 → 균형, 100%=1주당1주 무상 경계)
+BUCKETS_DOC = {
+    "공급계약": [(0, 10, "소<10%"),  (10, 30, "중10-30%"),  (30, 1e9, "대30%+")],
+    "소각":     [(0, 1, "소<1%"),    (1, 3, "중1-3%"),      (3, 1e9, "대3%+")],
+    "무상증자": [(0, 20, "소<20%"),  (20, 100, "중20-100%"), (100, 1e9, "대100%+")],
+}
+# scale_lookup 이 status:ok 시 반환할 rel_label(분모 설명).
+REL_LABELS = {
+    "공급계약": "최근매출 대비",
+    "소각":     "발행주식 대비",
+    "배당":     "시가배당률",
+    "무상증자": "무상신주 비율",
+}
+# stype(집계 라벨) -> impact_benchmark.json 최상위 키. 소각만 라벨 상이.
+STYPE_BENCH_KEY = {"소각": "주식소각"}
+
 MIN_N = 20  # 버킷 자기표본 최소. 미만이면 conf=참고(앱은 유형레벨로 폴백 가능).
 
 
@@ -431,6 +459,16 @@ def _grade(n):
 
 def bucket_of(stype, rel_pct):
     for lo, hi, label in BUCKETS[stype]:
+        if lo <= rel_pct < hi:
+            return label
+    return None
+
+
+def bucket_of_doc(stype, rel_pct):
+    bounds = BUCKETS_DOC.get(stype)
+    if not bounds:
+        return None
+    for lo, hi, label in bounds:
         if lo <= rel_pct < hi:
             return label
     return None
@@ -780,6 +818,49 @@ def _scale_only(report_nm, rcept_no, corp_code, stock_code, rcept_dt=None):
     return None
 
 
+def _upgrade_scale_only(so):
+    """_scale_only 결과(status:scale_only, rel_pct 보유)를 규모버킷 통계가 있으면
+    status:ok(+windows+rel_label)로 승격. 버킷 미집계/저표본(n<MIN_N)이면 원본 유지."""
+    if not so or so.get("status") != "scale_only":
+        return so
+    stype = so.get("stype")
+    rel = so.get("rel_pct")
+    if stype not in BUCKETS_DOC or rel is None:
+        return so     # 배당 등 버킷 미대상 → scale_only 유지
+    bkey = STYPE_BENCH_KEY.get(stype, stype)
+    block = load_scale_buckets().get(bkey)
+    if not block or not block.get("buckets"):
+        return so     # 아직 미집계 → scale_only 폴백
+    label = bucket_of_doc(stype, rel)
+    brow = (block.get("buckets") or {}).get(label) if label else None
+    if not brow:
+        return so
+    m = brow.get("m") or {}
+    if (m.get("n") or 0) < MIN_N:
+        return so     # 저표본(참고) → 유형레벨 폴백(scale_only)
+    windows = {}
+    for k, _ in HORIZONS:
+        w = brow.get(k) or {}
+        windows[k] = {
+            "raw_avg": w.get("raw_avg"),
+            "up_prob": w.get("raw_up_prob", w.get("up_prob")),
+            "n": w.get("n"), "conf": w.get("conf"),
+        }
+    return {
+        "status": "ok",
+        "stype": stype,
+        "amount": so.get("amount"),
+        "amount_txt": so.get("amount_txt", "-"),
+        "rel_pct": rel,
+        "rel_label": REL_LABELS.get(stype, so.get("rel_label")),
+        "bucket": label,
+        "bucket_size": label[:1],
+        "n": m.get("n"),
+        "conf": m.get("conf"),
+        "windows": windows,
+    }
+
+
 def scale_lookup(rcept_no, corp_code, stock_code, report_nm, rcept_dt=None):
     """온디맨드 규모 조회: 공시 1건 -> (금액 -> 시총대비 상대규모 -> 규모버킷 통계).
     DART 최대 1콜(과거 사건은 배치 캐시로 0콜). 항상 dict(status 로 폴백 신호).
@@ -795,7 +876,8 @@ def scale_lookup(rcept_no, corp_code, stock_code, report_nm, rcept_dt=None):
         # 과 scale 대상 목록 일치. (과거 규모버킷 통계는 준비중 — 유형레벨 통계 참고.)
         so = _scale_only(report_nm, rcept_no, corp_code, stock_code, rcept_dt)
         if so is not None:
-            return so
+            # 규모버킷 집계된 신규유형(공급계약/소각/무상증자)이면 status:ok 승격.
+            return _upgrade_scale_only(so)
         return {"status": "unsupported", "reason": "규모보정 미지원 유형"}
     buckets_block = load_scale_buckets().get(stype)
     if not buckets_block or not buckets_block.get("buckets"):
@@ -1215,6 +1297,287 @@ def bullets_for_item(corp_code, stock_code, report_nm, rcept_no, rcept_dt="",
     return []
 
 
+# ---------------- 신규유형(문서/구조화) 규모버킷 집계 ----------------
+def _new_type_events(by):
+    """공급계약/소각(문서파싱) + 무상증자(구조화 fricDecsn) 이벤트. stype 부여."""
+    out = defaultdict(list)
+    for it in by.values():
+        nm = it.get("report_nm", "")
+        dt = doc_route(nm)
+        if dt in ("공급계약", "소각"):
+            e = dict(it)
+            e["stype"] = dt
+            out[dt].append(e)
+            continue
+        ep, _ = struct_route(nm)
+        if ep == "fricDecsn":
+            e = dict(it)
+            e["stype"] = "무상증자"
+            out["무상증자"].append(e)
+    return out
+
+
+def _doc_rel_cached(stype, e):
+    """캐시에서 이벤트 rel(%) 추출(DART 0콜). 없으면 None.
+      공급계약=rev_pct, 소각=pct(캐시 doc), 무상증자=nstk/pre(캐시 fricDecsn)."""
+    if stype == "무상증자":
+        cf = AMT_CACHE / f"fricDecsn_{e.get('corp_code')}.json"
+        if not cf.exists():
+            return None
+        try:
+            rows = json.loads(cf.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        row = rows.get(e.get("rcept_no"))
+        if not row:
+            return None
+        new = _num(row.get("nstk_ostk_cnt"))
+        pre = _num(row.get("bfic_tisstk_ostk"))
+        if new and pre and pre > 0:
+            return new / pre * 100.0
+        return None
+    cf = DOC_CACHE / f"{e.get('rcept_no')}.json"
+    if not cf.exists():
+        return None
+    try:
+        f = json.loads(cf.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if stype == "공급계약":
+        return f.get("rev_pct")
+    if stype == "소각":
+        return f.get("pct")
+    return None
+
+
+# 공급계약 표본: 연도층화 + 최근3년(2024~2026) 가중(현시장 반응 관련성).
+# 2021~2023 최소표본 유지(구간편향 방지). 근거 로그.
+GONGIB_YEAR_TARGET = {
+    "2021": 1100, "2022": 1100, "2023": 1100,   # 구(각 ~29% 샘플, 편향방지 최소)
+    "2024": 2200, "2025": 2500, "2026": 1500,   # 최근(가중; 2026 전량)
+}
+PHASE1_DART_CAP = 16000   # Phase1 배치 총 DART 콜 상한(라이브 폴링 여유 확보)
+
+
+def cmd_fetch_phase1():
+    """Phase1 배치: 무상증자(구조화 full) + 소각(문서 full) + 공급계약(연도층화·
+    최근가중 표본). 캐시 우선(재실행시 스킵). DART 콜 상한 PHASE1_DART_CAP 엄수.
+    배당은 Phase2(별도 일자)로 분리."""
+    budget = [PHASE1_DART_CAP]
+    by = load_events()
+    groups = _new_type_events(by)
+    used = {"무상증자": 0, "소각": 0, "공급계약": 0}
+    log(f"=== Phase1 fetch 시작 (DART 상한 {PHASE1_DART_CAP}) ===")
+
+    # 1) 무상증자: corp 단위 구조화 fricDecsn full (1콜/corp)
+    corps = sorted({e["corp_code"] for e in groups.get("무상증자", []) if e.get("corp_code")})
+    log(f"[무상] corp {len(corps)} 구조화 fetch")
+    for c in corps:
+        cf = AMT_CACHE / f"fricDecsn_{c}.json"
+        if cf.exists():
+            continue
+        if budget[0] <= 0:
+            log("  예산 소진 — 무상 중단"); break
+        dart_detail("fricDecsn", c)      # 1콜 + 캐시
+        budget[0] -= 1
+        used["무상증자"] += 1
+        if used["무상증자"] % 50 == 0:
+            log(f"  무상 진행 {used['무상증자']} (예산 {budget[0]})")
+    log(f"[무상] DART콜 {used['무상증자']}, 예산잔여 {budget[0]}")
+
+    # 2) 소각: 문서파싱 full (1콜/이벤트)
+    sog = groups.get("소각", [])
+    log(f"[소각] 이벤트 {len(sog)} 문서 fetch")
+    for e in sog:
+        rno = e.get("rcept_no")
+        cf = DOC_CACHE / f"{rno}.json"
+        if cf.exists():
+            continue
+        if budget[0] <= 0:
+            log("  예산 소진 — 소각 중단"); break
+        _doc_fields_cached(rno, "소각", allow_fetch=True)   # <=1콜 + 캐시
+        budget[0] -= 1
+        used["소각"] += 1
+        if used["소각"] % 100 == 0:
+            log(f"  소각 진행 {used['소각']} (예산 {budget[0]})")
+    log(f"[소각] DART콜 {used['소각']}, 예산잔여 {budget[0]}")
+
+    # 3) 공급계약: 연도층화 + 최근가중 표본
+    gong = groups.get("공급계약", [])
+    byy = defaultdict(list)
+    for e in gong:
+        y = str(e.get("rcept_dt", ""))[:4]
+        byy[y].append(e)
+    sel = []
+    for y in sorted(byy):
+        tgt = GONGIB_YEAR_TARGET.get(y, 0)
+        # 접수일순(안정) 앞에서부터 tgt건 — px 전량커버 확인됨
+        sel.extend(sorted(byy[y], key=lambda e: e.get("rcept_dt", ""))[:tgt])
+    log(f"[공급] 표본 {len(sel)} (연도별 목표 {GONGIB_YEAR_TARGET}); "
+        f"연도분포 { {y: min(len(byy[y]), GONGIB_YEAR_TARGET.get(y,0)) for y in sorted(byy)} }")
+    for e in sel:
+        rno = e.get("rcept_no")
+        cf = DOC_CACHE / f"{rno}.json"
+        if cf.exists():
+            continue
+        if budget[0] <= 0:
+            log("  예산 소진 — 공급 중단"); break
+        _doc_fields_cached(rno, "공급계약", allow_fetch=True)   # <=1콜 + 캐시
+        budget[0] -= 1
+        used["공급계약"] += 1
+        if used["공급계약"] % 200 == 0:
+            log(f"  공급 진행 {used['공급계약']} (예산 {budget[0]})")
+    log(f"[공급] DART콜 {used['공급계약']}, 예산잔여 {budget[0]}")
+
+    total = sum(used.values())
+    log(f"=== Phase1 fetch 완료: 총 DART콜 {total} "
+        f"(무상 {used['무상증자']} + 소각 {used['소각']} + 공급 {used['공급계약']}), "
+        f"예산잔여 {budget[0]} ===")
+
+
+def cmd_aggregate_doc():
+    """신규유형(공급계약/소각/무상증자) (유형×버킷) 집계 → scale_buckets.json 에
+    **추가**(기존 3유형 블록 비파괴). rel=도메인비율, CAR=기존과 동일(익일 시가진입
+    1/5/21거래일, 자기시장 EW 보정). DART 0콜(캐시만)."""
+    by = load_events()
+    groups = _new_type_events(by)
+    allevs = []
+    rel_missing = defaultdict(int)
+    for stype in BUCKETS_DOC:
+        for e in groups.get(stype, []):
+            rel = _doc_rel_cached(stype, e)
+            if rel is None:
+                rel_missing[stype] += 1
+                continue
+            e["rel"] = rel
+            allevs.append(e)
+    for stype in BUCKETS_DOC:
+        got = sum(1 for e in allevs if e["stype"] == stype)
+        log(f"[{stype}] rel 확보 {got} / 캐시미스 {rel_missing[stype]}")
+
+    # px + 자기시장 EW
+    codes = sorted({e["stock_code"] for e in allevs if e.get("stock_code")})
+    px_all = {c: load_px(c) for c in codes}
+    px_all = {c: p for c, p in px_all.items() if p}
+    code_mkt = {}
+    for e in allevs:
+        code_mkt.setdefault(e["stock_code"], e["market"])
+    V = {}
+    for mkt in ("KOSPI", "KOSDAQ"):
+        sub = {c: p for c, p in px_all.items() if code_mkt.get(c) == mkt}
+        V[mkt] = build_ew_market(sub)
+        log(f"  [{mkt}] EW 유니버스 {len(sub)}종목")
+    px_miss = sorted({e["stock_code"] for e in allevs if e["stock_code"] not in px_all})
+    if px_miss:
+        log(f"  px 미커버 종목 {len(px_miss)} (해당 이벤트 CAR 제외)")
+
+    # 사건별 CAR
+    priced = 0
+    for e in allevs:
+        e["ret"] = {}
+        px = px_all.get(e["stock_code"])
+        if not px:
+            continue
+        r = e.get("rcept_dt", "")
+        if len(r) != 8:
+            continue
+        riso = f"{r[0:4]}-{r[4:6]}-{r[6:8]}"
+        dates = sorted(px.keys())
+        i0 = bisect.bisect_right(dates, riso)
+        if i0 >= len(dates):
+            continue
+        t0 = dates[i0]
+        entry = px[t0][0]
+        V_open, V_close = V[e["market"]]
+        mkt_o = V_open.get(t0)
+        if entry <= 0 or not mkt_o:
+            continue
+        any_h = False
+        for label, k in HORIZONS:
+            j = i0 + k
+            if j >= len(dates):
+                continue
+            exd = dates[j]
+            exit_c = px[exd][1]
+            raw = (exit_c - entry) / entry
+            mkt_c = V_close.get(exd)
+            mret = (mkt_c - mkt_o) / mkt_o if mkt_c else 0.0
+            e["ret"][label] = (raw, mret, raw - mret)
+            any_h = True
+        if any_h:
+            priced += 1
+    log(f"CAR 산출 이벤트 {priced}/{len(allevs)}")
+
+    # (유형×버킷) 집계
+    out = {}
+    summary = []
+    for stype, bounds in BUCKETS_DOC.items():
+        sevs = [e for e in allevs if e["stype"] == stype and e.get("ret")]
+        rels = sorted(e["rel"] for e in sevs)
+        block = {"n_total": len(sevs), "rel_label": REL_LABELS.get(stype),
+                 "buckets": {}}
+        if rels:
+            n = len(rels)
+            block["rel_pctl"] = {
+                "p25": round(rels[n // 4], 2), "p50": round(rels[n // 2], 2),
+                "p75": round(rels[3 * n // 4], 2),
+                "min": round(rels[0], 2), "max": round(rels[-1], 2),
+            }
+        for lo, hi, label in bounds:
+            bevs = [e for e in sevs if lo <= e["rel"] < hi]
+            brow = {"rel_range": [lo, hi if hi < 1e8 else None]}
+            for hlabel, _ in HORIZONS:
+                vals = [e["ret"][hlabel] for e in bevs if hlabel in e.get("ret", {})]
+                a = _agg(vals)
+                brow[hlabel] = {
+                    "raw_avg": a.get("raw_avg", 0.0),
+                    "raw_med": a.get("raw_med", 0.0),
+                    "market_avg": a.get("market_avg", 0.0),
+                    "car_avg": a.get("car_avg", 0.0),
+                    "car_med": a.get("car_med", 0.0),
+                    "raw_up_prob": a.get("raw_up_prob", 0.0),
+                    "up_prob": a.get("up_prob", 0.0),
+                    "n": a.get("n", 0),
+                    "conf": _grade(a.get("n", 0)),
+                }
+            block["buckets"][label] = brow
+            m = brow["m"]
+            summary.append((stype, label, m["n"], m["raw_avg"], m["car_avg"],
+                            m["car_med"], m["up_prob"], m["conf"]))
+        out[stype] = block
+
+    # 기존 scale_buckets.json 에 비파괴 병합(3유형 블록 불변)
+    if OUT.exists():
+        result = json.loads(OUT.read_text(encoding="utf-8"))
+    else:
+        result = {"_meta": {}, "scale_buckets": {}}
+    result["scale_buckets"].update(out)
+    result.setdefault("_meta", {})["scale_doc_types"] = {
+        "added": sorted(out.keys()),
+        "rel_size_def": {
+            "공급계약": "계약금액/최근연매출 %(rev_pct)",
+            "소각": "소각주식/발행총수 %(pct)",
+            "무상증자": "무상신주/증자전발행총수 %",
+        },
+        "rel_labels": {k: REL_LABELS[k] for k in out},
+        "bucket_bounds": {k: [b[2] for b in v] for k, v in BUCKETS_DOC.items()},
+        "car_method": "익일 시가진입, 1/5/21거래일 보유, 자기시장 EW 보정(3유형과 동일).",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    tmp = OUT.with_suffix(".tmp")
+    tmp.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    import os
+    os.replace(tmp, OUT)
+    log(f"저장(신규유형 병합): {OUT}")
+
+    log("=== (신규유형×버킷) 1개월 요약 ===")
+    log(f"{'유형':<8}{'버킷':<12}{'N':>6}{'raw%':>8}{'CAR%':>8}"
+        f"{'CARmed%':>9}{'C>0':>6}  conf")
+    for (st, lb, n, raw, car, cmed, up, conf) in summary:
+        log(f"{st:<8}{lb:<12}{n:>6}{raw:>8}{car:>8}{cmed:>9}{up:>6}  {conf}")
+    return result
+
+
 # ---------------- merge ----------------
 def cmd_merge():
     """impact_benchmark.json 에 각 유형별 scale_buckets 필드 추가(비파괴)."""
@@ -1228,16 +1591,23 @@ def cmd_merge():
     bench = json.loads(IMPACT.read_text(encoding="utf-8"))
     added = 0
     for stype, block in sb.items():
-        if stype in bench and isinstance(bench[stype], dict):
-            bench[stype]["scale_buckets"] = block
+        # stype(집계 라벨) -> impact_benchmark 최상위 키. 소각만 라벨 상이(주식소각).
+        bkey = STYPE_BENCH_KEY.get(stype, stype)
+        if bkey in bench and isinstance(bench[bkey], dict):
+            bench[bkey]["scale_buckets"] = block
             added += 1
         else:
-            log(f"  경고: '{stype}' 유형이 impact_benchmark 에 없음 — 스킵")
+            log(f"  경고: '{stype}'(bench키 '{bkey}') 유형이 impact_benchmark 에 없음 — 스킵")
+    all_bounds = {k: [b[2] for b in v] for k, v in BUCKETS.items()}
+    all_bounds.update({k: [b[2] for b in v] for k, v in BUCKETS_DOC.items()})
     bench.setdefault("_meta", {})["scale_adjustment"] = {
         "added": sorted(sb.keys()),
-        "rel_size_def": "금액/시총%. 앱: 종목 이벤트 규모로 유형.scale_buckets[label] 선택, "
-                        "버킷 표본부족(conf=참고) 시 유형레벨(d/w/m)로 폴백.",
-        "bucket_bounds": {k: [b[2] for b in v] for k, v in BUCKETS.items()},
+        "rel_size_def": "유형별 상대규모(분모 상이): 유상/자사/전환=금액/시총%, "
+                        "공급계약=계약금액/최근연매출%, 소각=소각주식/발행총수%, "
+                        "무상증자=무상신주/증자전발행총수%. 앱: 이벤트 규모로 "
+                        "유형.scale_buckets[label] 선택, 버킷 표본부족(conf=참고,n<20) 시 "
+                        "유형레벨 통계로 폴백.",
+        "bucket_bounds": all_bounds,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     tmp = IMPACT.with_suffix(".merged.tmp")
@@ -1307,4 +1677,5 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "census"
     {"census": cmd_census, "mcap": cmd_mcap, "amounts": cmd_amounts,
      "aggregate": cmd_aggregate, "merge": cmd_merge,
+     "fetch_phase1": cmd_fetch_phase1, "aggregate_doc": cmd_aggregate_doc,
      "prefetch": cmd_bullet_prefetch}[cmd]()

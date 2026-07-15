@@ -388,7 +388,7 @@ function scaleInner(d){
       `<div class="plain">이 건은 규모별 통계를 적용할 수 없어요 (${esc(why)}). 위 유형 통계를 참고하세요.</div>`;
   }
   const sizeWord={'소':'소형','중':'중형','대':'대형'}[d.bucket_size]||d.bucket_size||'';
-  const rel=(d.rel_pct!=null)?` · 시총 대비 ${Number(d.rel_pct).toFixed(1)}%`:'';
+  const rel=(d.rel_pct!=null)?` · ${esc(d.rel_label||'시총 대비')} ${Number(d.rel_pct).toFixed(1)}%`:'';
   const confCls={'높음':'high','보통':'mid','참고':'ref'}[d.conf]||'ref';
   const w=d.windows||{};
   const rows=[['d','1일'],['w','1주'],['m','1개월']].map(([k,lab])=>{
