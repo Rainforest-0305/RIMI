@@ -21,12 +21,13 @@
       "added": [
         "공급계약",
         "무상증자",
+        "배당",
         "소각",
         "유상증자",
         "자사주",
         "전환사채"
       ],
-      "rel_size_def": "유형별 상대규모(분모 상이): 유상/자사/전환=금액/시총%, 공급계약=계약금액/최근연매출%, 소각=소각주식/발행총수%, 무상증자=무상신주/증자전발행총수%. 앱: 이벤트 규모로 유형.scale_buckets[label] 선택, 버킷 표본부족(conf=참고,n<20) 시 유형레벨 통계로 폴백.",
+      "rel_size_def": "유형별 상대규모(분모 상이): 유상/자사/전환=금액/시총%, 공급계약=계약금액/최근연매출%, 소각=소각주식/발행총수%, 무상증자=무상신주/증자전발행총수%, 배당=시가배당률%. 앱: 이벤트 규모로 유형.scale_buckets[label] 선택, 버킷 표본부족(conf=참고,n<20) 시 유형레벨 통계로 폴백.",
       "bucket_bounds": {
         "유상증자": [
           "소<10%",
@@ -57,9 +58,14 @@
           "소<20%",
           "중20-100%",
           "대100%+"
+        ],
+        "배당": [
+          "소<1.5%",
+          "중1.5-3%",
+          "대3%+"
         ]
       },
-      "generated_at": "2026-07-15 10:22:05"
+      "generated_at": "2026-07-16 01:26:24"
     }
   },
   "감사보고서": {
@@ -305,20 +311,20 @@
           "d": {
             "raw_avg": -0.14,
             "raw_med": -0.31,
-            "market_avg": -0.03,
-            "car_avg": -0.11,
+            "market_avg": -0.02,
+            "car_avg": -0.12,
             "car_med": -0.32,
             "raw_up_prob": 0.422,
-            "up_prob": 0.43,
+            "up_prob": 0.431,
             "n": 3586,
             "conf": "높음"
           },
           "w": {
             "raw_avg": 0.25,
             "raw_med": -0.37,
-            "market_avg": 0.42,
-            "car_avg": -0.17,
-            "car_med": -0.82,
+            "market_avg": 0.4,
+            "car_avg": -0.16,
+            "car_med": -0.8,
             "raw_up_prob": 0.457,
             "up_prob": 0.42,
             "n": 3586,
@@ -327,11 +333,11 @@
           "m": {
             "raw_avg": 2.17,
             "raw_med": -0.18,
-            "market_avg": 2.19,
-            "car_avg": -0.02,
-            "car_med": -2.4,
+            "market_avg": 2.02,
+            "car_avg": 0.15,
+            "car_med": -2.35,
             "raw_up_prob": 0.489,
-            "up_prob": 0.407,
+            "up_prob": 0.408,
             "n": 3584,
             "conf": "높음"
           }
@@ -344,11 +350,11 @@
           "d": {
             "raw_avg": -0.21,
             "raw_med": -0.28,
-            "market_avg": -0.06,
-            "car_avg": -0.15,
+            "market_avg": -0.04,
+            "car_avg": -0.17,
             "car_med": -0.36,
             "raw_up_prob": 0.412,
-            "up_prob": 0.42,
+            "up_prob": 0.422,
             "n": 3938,
             "conf": "높음"
           },
@@ -359,18 +365,18 @@
             "car_avg": -0.19,
             "car_med": -1.06,
             "raw_up_prob": 0.433,
-            "up_prob": 0.401,
+            "up_prob": 0.402,
             "n": 3936,
             "conf": "높음"
           },
           "m": {
             "raw_avg": 1.84,
             "raw_med": -0.72,
-            "market_avg": 1.68,
-            "car_avg": 0.15,
-            "car_med": -2.64,
+            "market_avg": 1.57,
+            "car_avg": 0.27,
+            "car_med": -2.63,
             "raw_up_prob": 0.457,
-            "up_prob": 0.394,
+            "up_prob": 0.396,
             "n": 3922,
             "conf": "높음"
           }
@@ -383,11 +389,11 @@
           "d": {
             "raw_avg": -0.48,
             "raw_med": -0.29,
-            "market_avg": 0.01,
-            "car_avg": -0.49,
-            "car_med": -0.53,
+            "market_avg": 0.03,
+            "car_avg": -0.5,
+            "car_med": -0.56,
             "raw_up_prob": 0.363,
-            "up_prob": 0.388,
+            "up_prob": 0.386,
             "n": 1743,
             "conf": "높음"
           },
@@ -396,20 +402,20 @@
             "raw_med": -0.74,
             "market_avg": 0.34,
             "car_avg": -0.42,
-            "car_med": -1.5,
+            "car_med": -1.42,
             "raw_up_prob": 0.386,
-            "up_prob": 0.368,
+            "up_prob": 0.37,
             "n": 1743,
             "conf": "높음"
           },
           "m": {
             "raw_avg": 0.87,
             "raw_med": -0.94,
-            "market_avg": 1.88,
-            "car_avg": -1.01,
-            "car_med": -3.81,
+            "market_avg": 1.8,
+            "car_avg": -0.93,
+            "car_med": -3.7,
             "raw_up_prob": 0.412,
-            "up_prob": 0.361,
+            "up_prob": 0.364,
             "n": 1740,
             "conf": "높음"
           }
@@ -667,33 +673,33 @@
           "d": {
             "raw_avg": 0.74,
             "raw_med": 0.39,
-            "market_avg": 0.3,
-            "car_avg": 0.44,
-            "car_med": 0.13,
+            "market_avg": 0.31,
+            "car_avg": 0.43,
+            "car_med": 0.09,
             "raw_up_prob": 0.537,
-            "up_prob": 0.552,
+            "up_prob": 0.567,
             "n": 67,
             "conf": "보통"
           },
           "w": {
             "raw_avg": 1.07,
             "raw_med": 0.54,
-            "market_avg": 0.15,
-            "car_avg": 0.92,
-            "car_med": 0.51,
+            "market_avg": 0.21,
+            "car_avg": 0.86,
+            "car_med": 0.5,
             "raw_up_prob": 0.522,
-            "up_prob": 0.627,
+            "up_prob": 0.597,
             "n": 67,
             "conf": "보통"
           },
           "m": {
             "raw_avg": 1.95,
             "raw_med": 0.86,
-            "market_avg": 1.71,
-            "car_avg": 0.24,
-            "car_med": -1.09,
+            "market_avg": 1.59,
+            "car_avg": 0.36,
+            "car_med": -0.66,
             "raw_up_prob": 0.552,
-            "up_prob": 0.448,
+            "up_prob": 0.463,
             "n": 67,
             "conf": "보통"
           }
@@ -706,9 +712,9 @@
           "d": {
             "raw_avg": -1.68,
             "raw_med": -1.63,
-            "market_avg": -0.05,
-            "car_avg": -1.64,
-            "car_med": -1.55,
+            "market_avg": -0.03,
+            "car_avg": -1.66,
+            "car_med": -1.51,
             "raw_up_prob": 0.327,
             "up_prob": 0.317,
             "n": 104,
@@ -717,9 +723,9 @@
           "w": {
             "raw_avg": -1.06,
             "raw_med": -2.84,
-            "market_avg": 0.45,
-            "car_avg": -1.51,
-            "car_med": -2.86,
+            "market_avg": 0.47,
+            "car_avg": -1.53,
+            "car_med": -2.99,
             "raw_up_prob": 0.346,
             "up_prob": 0.337,
             "n": 104,
@@ -728,9 +734,9 @@
           "m": {
             "raw_avg": -2.94,
             "raw_med": -5.08,
-            "market_avg": 1.51,
-            "car_avg": -4.45,
-            "car_med": -6.65,
+            "market_avg": 1.56,
+            "car_avg": -4.5,
+            "car_med": -6.62,
             "raw_up_prob": 0.337,
             "up_prob": 0.346,
             "n": 104,
@@ -745,20 +751,20 @@
           "d": {
             "raw_avg": -2.06,
             "raw_med": -1.88,
-            "market_avg": -0.12,
-            "car_avg": -1.95,
-            "car_med": -1.89,
+            "market_avg": -0.11,
+            "car_avg": -1.96,
+            "car_med": -1.92,
             "raw_up_prob": 0.371,
-            "up_prob": 0.382,
+            "up_prob": 0.387,
             "n": 186,
             "conf": "높음"
           },
           "w": {
             "raw_avg": -0.73,
             "raw_med": -1.43,
-            "market_avg": -0.26,
-            "car_avg": -0.48,
-            "car_med": -1.92,
+            "market_avg": -0.24,
+            "car_avg": -0.49,
+            "car_med": -2.06,
             "raw_up_prob": 0.435,
             "up_prob": 0.419,
             "n": 186,
@@ -767,11 +773,11 @@
           "m": {
             "raw_avg": 4.5,
             "raw_med": -4.09,
-            "market_avg": 0.4,
-            "car_avg": 4.1,
-            "car_med": -4.11,
+            "market_avg": 0.39,
+            "car_avg": 4.11,
+            "car_med": -3.99,
             "raw_up_prob": 0.403,
-            "up_prob": 0.43,
+            "up_prob": 0.414,
             "n": 186,
             "conf": "높음"
           }
@@ -899,6 +905,136 @@
           "conf": "높음",
           "scope": "배당"
         }
+      }
+    },
+    "scale_buckets": {
+      "n_total": 8577,
+      "rel_label": "시가배당률",
+      "buckets": {
+        "소<1.5%": {
+          "rel_range": [
+            0,
+            1.5
+          ],
+          "d": {
+            "raw_avg": -0.28,
+            "raw_med": -0.33,
+            "market_avg": -0.05,
+            "car_avg": -0.23,
+            "car_med": -0.32,
+            "raw_up_prob": 0.411,
+            "up_prob": 0.432,
+            "n": 3770,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.09,
+            "raw_med": -0.55,
+            "market_avg": 0.33,
+            "car_avg": -0.43,
+            "car_med": -1.02,
+            "raw_up_prob": 0.446,
+            "up_prob": 0.397,
+            "n": 3770,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 0.91,
+            "raw_med": -1.09,
+            "market_avg": 1.36,
+            "car_avg": -0.46,
+            "car_med": -2.42,
+            "raw_up_prob": 0.447,
+            "up_prob": 0.38,
+            "n": 3770,
+            "conf": "높음"
+          }
+        },
+        "중1.5-3%": {
+          "rel_range": [
+            1.5,
+            3
+          ],
+          "d": {
+            "raw_avg": -0.19,
+            "raw_med": -0.21,
+            "market_avg": -0.05,
+            "car_avg": -0.14,
+            "car_med": -0.23,
+            "raw_up_prob": 0.436,
+            "up_prob": 0.45,
+            "n": 2622,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.01,
+            "raw_med": -0.42,
+            "market_avg": 0.37,
+            "car_avg": -0.38,
+            "car_med": -0.83,
+            "raw_up_prob": 0.444,
+            "up_prob": 0.415,
+            "n": 2622,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 1.42,
+            "raw_med": -0.92,
+            "market_avg": 1.28,
+            "car_avg": 0.14,
+            "car_med": -2.03,
+            "raw_up_prob": 0.453,
+            "up_prob": 0.389,
+            "n": 2622,
+            "conf": "높음"
+          }
+        },
+        "대3%+": {
+          "rel_range": [
+            3,
+            null
+          ],
+          "d": {
+            "raw_avg": 0.1,
+            "raw_med": 0.0,
+            "market_avg": 0.05,
+            "car_avg": 0.05,
+            "car_med": -0.05,
+            "raw_up_prob": 0.491,
+            "up_prob": 0.494,
+            "n": 2185,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": 0.6,
+            "raw_med": 0.15,
+            "market_avg": 0.46,
+            "car_avg": 0.13,
+            "car_med": -0.43,
+            "raw_up_prob": 0.506,
+            "up_prob": 0.449,
+            "n": 2185,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": 1.33,
+            "raw_med": -0.18,
+            "market_avg": 1.04,
+            "car_avg": 0.29,
+            "car_med": -1.09,
+            "raw_up_prob": 0.484,
+            "up_prob": 0.435,
+            "n": 2185,
+            "conf": "높음"
+          }
+        }
+      },
+      "rel_pctl": {
+        "p25": 0.9,
+        "p50": 1.7,
+        "p75": 3.0,
+        "min": 0.0,
+        "max": 35.1
       }
     }
   },
@@ -2228,33 +2364,33 @@
           "d": {
             "raw_avg": 0.16,
             "raw_med": 0.0,
-            "market_avg": -0.01,
-            "car_avg": 0.17,
-            "car_med": 0.09,
+            "market_avg": -0.0,
+            "car_avg": 0.16,
+            "car_med": 0.05,
             "raw_up_prob": 0.489,
-            "up_prob": 0.516,
+            "up_prob": 0.507,
             "n": 219,
             "conf": "높음"
           },
           "w": {
             "raw_avg": -0.61,
             "raw_med": -0.83,
-            "market_avg": 0.07,
-            "car_avg": -0.67,
-            "car_med": -1.38,
+            "market_avg": 0.02,
+            "car_avg": -0.63,
+            "car_med": -1.24,
             "raw_up_prob": 0.406,
-            "up_prob": 0.37,
+            "up_prob": 0.365,
             "n": 219,
             "conf": "높음"
           },
           "m": {
             "raw_avg": -0.3,
             "raw_med": -0.8,
-            "market_avg": 0.68,
-            "car_avg": -0.98,
-            "car_med": -2.17,
+            "market_avg": 0.45,
+            "car_avg": -0.75,
+            "car_med": -1.72,
             "raw_up_prob": 0.463,
-            "up_prob": 0.404,
+            "up_prob": 0.408,
             "n": 218,
             "conf": "높음"
           }
@@ -2267,33 +2403,33 @@
           "d": {
             "raw_avg": -0.24,
             "raw_med": -0.5,
-            "market_avg": -0.03,
-            "car_avg": -0.21,
-            "car_med": -0.4,
+            "market_avg": -0.02,
+            "car_avg": -0.22,
+            "car_med": -0.38,
             "raw_up_prob": 0.413,
-            "up_prob": 0.413,
+            "up_prob": 0.407,
             "n": 504,
             "conf": "높음"
           },
           "w": {
             "raw_avg": 0.23,
             "raw_med": -0.49,
-            "market_avg": 0.48,
-            "car_avg": -0.24,
-            "car_med": -1.11,
+            "market_avg": 0.39,
+            "car_avg": -0.16,
+            "car_med": -0.98,
             "raw_up_prob": 0.46,
-            "up_prob": 0.409,
+            "up_prob": 0.413,
             "n": 504,
             "conf": "높음"
           },
           "m": {
             "raw_avg": 0.64,
             "raw_med": -1.12,
-            "market_avg": 1.35,
-            "car_avg": -0.72,
-            "car_med": -2.6,
+            "market_avg": 1.04,
+            "car_avg": -0.4,
+            "car_med": -2.2,
             "raw_up_prob": 0.448,
-            "up_prob": 0.397,
+            "up_prob": 0.405,
             "n": 504,
             "conf": "높음"
           }
@@ -2306,33 +2442,33 @@
           "d": {
             "raw_avg": -0.93,
             "raw_med": -0.7,
-            "market_avg": -0.04,
-            "car_avg": -0.89,
-            "car_med": -0.68,
+            "market_avg": -0.03,
+            "car_avg": -0.9,
+            "car_med": -0.6,
             "raw_up_prob": 0.379,
-            "up_prob": 0.376,
+            "up_prob": 0.397,
             "n": 383,
             "conf": "높음"
           },
           "w": {
             "raw_avg": -0.83,
             "raw_med": -1.42,
-            "market_avg": 0.26,
-            "car_avg": -1.1,
-            "car_med": -1.79,
+            "market_avg": 0.21,
+            "car_avg": -1.04,
+            "car_med": -1.65,
             "raw_up_prob": 0.386,
-            "up_prob": 0.358,
+            "up_prob": 0.355,
             "n": 383,
             "conf": "높음"
           },
           "m": {
             "raw_avg": -0.64,
             "raw_med": -2.53,
-            "market_avg": 1.89,
-            "car_avg": -2.53,
-            "car_med": -4.61,
+            "market_avg": 1.55,
+            "car_avg": -2.19,
+            "car_med": -4.47,
             "raw_up_prob": 0.397,
-            "up_prob": 0.311,
+            "up_prob": 0.324,
             "n": 383,
             "conf": "높음"
           }

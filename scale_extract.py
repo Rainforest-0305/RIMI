@@ -106,10 +106,14 @@ BUCKETS = {
 #     (버킷별 28/56/65 → 균형, 자사주와 컷 일치)
 #   무상증자(파일럿 n=156): p25=9.7 p50=96.6 p75=100 max=800 (이봉: <10% 소액, ~100% 1:1)
 #     → 소<20 / 중20-100 / 대100+ (버킷별 53/41/62 → 균형, 100%=1주당1주 무상 경계)
+#   배당(파일럿 n=1869, 2026-07): p25=1.0 p50=1.8 p75=3.0 max=22.2
+#     → 소<1.5% / 중1.5-3% / 대3%+ (버킷별 757/636/476 → 균형; 3%+=고배당 top~25%,
+#       p75 경계와 일치. 컷 후보 비교상 (1.5,3)이 표본 최균형)
 BUCKETS_DOC = {
     "공급계약": [(0, 10, "소<10%"),  (10, 30, "중10-30%"),  (30, 1e9, "대30%+")],
     "소각":     [(0, 1, "소<1%"),    (1, 3, "중1-3%"),      (3, 1e9, "대3%+")],
     "무상증자": [(0, 20, "소<20%"),  (20, 100, "중20-100%"), (100, 1e9, "대100%+")],
+    "배당":     [(0, 1.5, "소<1.5%"), (1.5, 3, "중1.5-3%"),  (3, 1e9, "대3%+")],
 }
 # scale_lookup 이 status:ok 시 반환할 rel_label(분모 설명).
 REL_LABELS = {
@@ -1304,7 +1308,7 @@ def _new_type_events(by):
     for it in by.values():
         nm = it.get("report_nm", "")
         dt = doc_route(nm)
-        if dt in ("공급계약", "소각"):
+        if dt in ("공급계약", "소각", "배당"):
             e = dict(it)
             e["stype"] = dt
             out[dt].append(e)
@@ -1347,6 +1351,8 @@ def _doc_rel_cached(stype, e):
         return f.get("rev_pct")
     if stype == "소각":
         return f.get("pct")
+    if stype == "배당":
+        return f.get("yield")   # _scale_only(L808) rel_pct 와 동일 필드(버킷배치==조회 일치)
     return None
 
 
@@ -1433,6 +1439,61 @@ def cmd_fetch_phase1():
     log(f"=== Phase1 fetch 완료: 총 DART콜 {total} "
         f"(무상 {used['무상증자']} + 소각 {used['소각']} + 공급 {used['공급계약']}), "
         f"예산잔여 {budget[0]} ===")
+
+
+PHASE2_DART_CAP = 12000   # Phase2(배당) 배치 DART 콜 상한(9957+마진, 라이브폴링 여유)
+
+
+def cmd_fetch_phase2():
+    """Phase2 배치: 배당(현물배당결정 등 배당 유형) document.xml 문서 full 페치.
+    캐시 우선(재실행시 스킵=재개형). 1콜/이벤트. 예산상한 PHASE2_DART_CAP 엄수.
+    _fetch_doc_text 는 020 백오프가 없어(document.xml은 rate-limit시 PK(zip) 아닌
+    응답→None 반환·캐시안함) _doc_fields_cached None = fetch레벨 실패로 간주하고
+    배치 자체에서 백오프한다(consec_fail>=3 sleep30, >=10 일한도소진 추정 중단)."""
+    budget = [PHASE2_DART_CAP]
+    by = load_events()
+    groups = _new_type_events(by)
+    divs = groups.get("배당", [])
+    ok_n = 0
+    fail_n = 0
+    tried = 0
+    consec_fail = 0
+    backoff_seen = 0   # 020(rate-limit) 백오프 발동 횟수 관측
+    log(f"=== Phase2 fetch 시작: 배당 이벤트 {len(divs)} (DART 상한 {PHASE2_DART_CAP}) ===")
+    for e in divs:
+        rno = e.get("rcept_no")
+        if not rno:
+            continue
+        cf = DOC_CACHE / f"{rno}.json"
+        if cf.exists():
+            continue   # 재개형: 이미 캐시된 건 스킵(0콜)
+        if budget[0] <= 0:
+            log(f"  예산 소진(PHASE2_DART_CAP {PHASE2_DART_CAP}) — 배당 중단"); break
+        fields = _doc_fields_cached(rno, "배당", allow_fetch=True)   # <=1 DART콜(성공시 캐시)
+        budget[0] -= 1
+        tried += 1
+        if fields is None:
+            # fetch레벨 실패(rate-limit/네트워크). 파싱된 빈 doc은 {}로 캐시되므로
+            # None만이 fetch실패 신호다.
+            fail_n += 1
+            consec_fail += 1
+            if consec_fail >= 10:
+                backoff_seen += 1
+                log(f"  연속실패 {consec_fail} — 일한도 소진 추정, 배치 중단"
+                    f"(익일 DOC_CACHE 재개). 예산잔여 {budget[0]}")
+                break
+            if consec_fail >= 3:
+                backoff_seen += 1
+                log(f"  연속실패 {consec_fail}(rate-limit 추정) — sleep30 백오프"
+                    f" (성공 {ok_n} / 실패 {fail_n}, 예산잔여 {budget[0]})")
+                time.sleep(30)
+        else:
+            ok_n += 1
+            consec_fail = 0   # 성공시 리셋
+        if tried % 100 == 0:
+            log(f"  배당 진행 시도 {tried} (성공 {ok_n} / 실패 {fail_n}, 예산잔여 {budget[0]})")
+    log(f"=== Phase2 fetch 완료: 시도 {tried} (성공 {ok_n} / 실패 {fail_n}), "
+        f"020백오프 관측 {backoff_seen}회, 예산잔여 {budget[0]} ===")
 
 
 def cmd_aggregate_doc():
@@ -1558,6 +1619,7 @@ def cmd_aggregate_doc():
             "공급계약": "계약금액/최근연매출 %(rev_pct)",
             "소각": "소각주식/발행총수 %(pct)",
             "무상증자": "무상신주/증자전발행총수 %",
+            "배당": "시가배당률 %(yield)",
         },
         "rel_labels": {k: REL_LABELS[k] for k in out},
         "bucket_bounds": {k: [b[2] for b in v] for k, v in BUCKETS_DOC.items()},
@@ -1604,7 +1666,7 @@ def cmd_merge():
         "added": sorted(sb.keys()),
         "rel_size_def": "유형별 상대규모(분모 상이): 유상/자사/전환=금액/시총%, "
                         "공급계약=계약금액/최근연매출%, 소각=소각주식/발행총수%, "
-                        "무상증자=무상신주/증자전발행총수%. 앱: 이벤트 규모로 "
+                        "무상증자=무상신주/증자전발행총수%, 배당=시가배당률%. 앱: 이벤트 규모로 "
                         "유형.scale_buckets[label] 선택, 버킷 표본부족(conf=참고,n<20) 시 "
                         "유형레벨 통계로 폴백.",
         "bucket_bounds": all_bounds,
@@ -1677,5 +1739,6 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "census"
     {"census": cmd_census, "mcap": cmd_mcap, "amounts": cmd_amounts,
      "aggregate": cmd_aggregate, "merge": cmd_merge,
-     "fetch_phase1": cmd_fetch_phase1, "aggregate_doc": cmd_aggregate_doc,
+     "fetch_phase1": cmd_fetch_phase1, "fetch_phase2": cmd_fetch_phase2,
+     "aggregate_doc": cmd_aggregate_doc,
      "prefetch": cmd_bullet_prefetch}[cmd]()

@@ -293,6 +293,43 @@ def _get_feed(force: bool = False) -> dict:
         return out
 
 
+# ---------------- 콜드스타트 프리웜(startup) ----------------
+# Render 콜드부팅/최초 요청 시 첫 /api/alerts 가 KOSPI+KOSDAQ 전체 폴링을 인라인으로
+# 돌아 수 초 지연된다. startup 에서 데몬 스레드로 _get_feed(force=True) 를 1회 돌려
+# _FEED_CACHE 를 미리 채운다. startup 자체는 스레드를 fire-and-forget 으로 띄우고
+# 즉시 반환하므로 uvicorn 기동을 절대 블록/지연시키지 않는다. 예외는 swallow+print
+# (기동을 깨지 않음). _build_feed 가 내부에서 _warm_enqueue 를 부르므로 별도 bullet
+# 워머 startup 을 만들지 않는다(프리웜 1회 build 로 워머가 자연 기동 = 중복 없음).
+_PREWARM_DONE = False   # 관측용 완료 플래그(/api/health 에 노출, 측정 시 완료시점 판정)
+# GONGSI_PREWARM=0/false 면 프리웜 비활성(콜드빌드 경로 유지 = before 측정용).
+_PREWARM_ENABLED = os.getenv("GONGSI_PREWARM", "1").strip().lower() not in ("0", "false", "no", "")
+
+
+def _prewarm():
+    """백그라운드 데몬: _get_feed(force=True) 로 피드캐시를 미리 채운다.
+    예외는 swallow+print. 완료 시 _PREWARM_DONE=True(관측용)."""
+    global _PREWARM_DONE
+    t0 = time.time()
+    try:
+        data = _get_feed(force=True)
+        print(f"[prewarm] feed cache 채움: alerts={data.get('count')} "
+              f"in {(time.time() - t0) * 1000:.0f}ms")
+    except Exception as e:
+        print(f"[prewarm] 실패(무시, 기동 유지): {e}")
+    finally:
+        _PREWARM_DONE = True
+
+
+@api.on_event("startup")
+def _startup_prewarm():
+    """uvicorn 기동 직후 호출. 프리웜 스레드만 띄우고 즉시 반환(기동 무지연)."""
+    if not _PREWARM_ENABLED:
+        print("[prewarm] 비활성(GONGSI_PREWARM=0) — 콜드빌드 경로 유지")
+        return
+    threading.Thread(target=_prewarm, name="feed-prewarm", daemon=True).start()
+    print("[prewarm] 백그라운드 프리웜 스레드 기동(startup 즉시 반환)")
+
+
 # ---------------- 워치리스트 원자적 저장 ----------------
 def _save_watchlist(stocks, keywords):
     payload = {
@@ -316,6 +353,9 @@ def health():
         "seen_count": len(core.load_seen()),
         "benchmark_ready": impact.has_stats(),   # 버그 B: 실스키마도 정확 판정
         "poll_interval_sec": config.POLL_INTERVAL_SEC,
+        "prewarm_enabled": _PREWARM_ENABLED,     # 콜드스타트 프리웜 활성 여부
+        "prewarm_done": _PREWARM_DONE,           # 프리웜 완료(피드캐시 채워짐) 여부
+        "feed_cached": _FEED_CACHE["data"] is not None,  # 현재 피드캐시 보유 여부
     }
 
 
