@@ -39,6 +39,7 @@ cloudflared 퀵터널은 그런 가입이 없어 더 간단하다.
 ## B. 영구 배포 — Render.com 원클릭 (권장)
 
 레포에 `render.yaml`(청사진)이 있어 Render가 설정을 자동 인식한다.
+> **주의(blueprint):** 이 `render.yaml` 청사진은 **현 라이브 서비스(`rimi-s76t`)와 비연동 상태로 추정**된다(blueprint명↔라이브 호스트 불일치). 실서비스는 Render 대시보드에서 수동 생성·관리되며 GitHub 연동 autoDeploy로 배포된다. **blueprint sync 사용 금지**(미스바인딩 위험) — 서비스 설정 변경은 대시보드 기준으로 한다.
 
 1. 이 폴더를 GitHub 레포로 push (`.env`·`bin/` 은 `.gitignore`로 제외됨).
 2. Render 대시보드 → **New → Blueprint** → 레포 선택 → `render.yaml` 자동 감지.
@@ -46,7 +47,7 @@ cloudflared 퀵터널은 그런 가입이 없어 더 간단하다.
    - 값 발급: https://opendart.fss.or.kr
 4. Deploy. 빌드 `pip install -r requirements.txt`, 구동
    `uvicorn app:api --host 0.0.0.0 --port $PORT`, 헬스체크 `/api/health`.
-5. 발급된 `https://miri-gongsi.onrender.com` 류 URL을 공유.
+5. 발급된 라이브 URL(현재 `https://rimi-s76t.onrender.com`)을 공유.
 
 환경변수(코드 하드코딩 금지 — `config.py`가 런타임에 읽음):
 

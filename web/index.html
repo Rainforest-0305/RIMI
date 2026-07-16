@@ -122,6 +122,22 @@
   .f[aria-selected="true"]{color:var(--t1)}
   .f b{color:var(--blue);margin-left:4px;font-weight:800}
 
+  /* ---------- 소셜 채널 행(텔레그램 등, 향후 X 병렬 확장) ---------- */
+  .social{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px}
+  .soc-btn{flex:1 1 200px;min-width:0;display:inline-flex;align-items:center;gap:11px;
+    text-decoration:none;padding:11px 13px;border-radius:14px;
+    background:var(--card);color:var(--t1);box-shadow:0 0 0 1px var(--line) inset;transition:.14s}
+  .soc-btn:hover{box-shadow:0 0 0 1px var(--blue) inset}
+  .soc-btn:active{transform:translateY(1px)}
+  .soc-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .soc-btn .ic{width:30px;height:30px;flex:none;border-radius:9px;display:grid;place-items:center}
+  .soc-btn .ic svg{width:17px;height:17px}
+  .soc-btn.tg .ic{background:linear-gradient(158deg,#37bbfe,#2aabee 78%)}
+  .soc-btn.x .ic{background:#111418}
+  .soc-btn .txt{min-width:0;display:flex;flex-direction:column;line-height:1.35}
+  .soc-btn .txt .t{font-size:13.5px;font-weight:700;color:var(--t1);letter-spacing:-.01em}
+  .soc-btn .txt .s{font-size:11.5px;font-weight:600;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
   .banner{background:var(--up-soft);color:var(--up);border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600}
   .feedmeta{font-size:12px;color:var(--t3);font-weight:600;padding:2px 6px}
 
@@ -243,6 +259,19 @@
     <div class="formmsg" id="formmsg"></div>
     <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
   </header>
+
+  <div class="social" role="group" aria-label="MIRI 소셜 채널">
+    <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
+       aria-label="MIRI 텔레그램 채널 열기 (새 창)">
+      <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M21.94 4.3 18.5 20.02c-.26 1.15-.94 1.43-1.9.89l-5.24-3.86-2.53 2.43c-.28.28-.51.51-1.05.51l.37-5.3 9.63-8.7c.42-.37-.09-.58-.65-.21L5.13 13.4l-5.13-1.6c-1.11-.35-1.13-1.11.23-1.64L20.5 2.9c.93-.34 1.74.21 1.44 1.4z"/></svg></span>
+      <span class="txt"><span class="t">텔레그램 채널</span><span class="s">실시간 공시 3줄 요약을 텔레그램으로</span></span>
+    </a>
+    <a class="soc-btn x" href="https://x.com/mirialert" target="_blank" rel="noopener noreferrer"
+       aria-label="MIRI X(옛 트위터) 프로필 열기 (새 창)">
+      <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M17.53 3h3.02l-6.6 7.54L21.75 21h-6.09l-4.77-6.23L5.43 21H2.4l7.06-8.07L2.25 3h6.24l4.31 5.7L17.53 3zm-1.06 16.2h1.67L7.6 4.7H5.8l10.67 14.5z"/></svg></span>
+      <span class="txt"><span class="t">X(옛 트위터)</span><span class="s">공시 요약과 업데이트 소식</span></span>
+    </a>
+  </div>
 
   <div id="banner"></div>
   <div class="feedmeta" id="feedmeta"></div>
