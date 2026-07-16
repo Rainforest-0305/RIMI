@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 import config
 import dart_poll
+import watch_store  # 관심종목 영속(Supabase/JSON 폴백) 추상 스토어
 import dedup  # 중복 이벤트(결정/결과·정정/원본) 접기
 import impact
 import scale_extract  # 규모보정 온디맨드 조회(/api/scale)
@@ -331,17 +332,19 @@ def _startup_prewarm():
     print("[prewarm] 백그라운드 프리웜 스레드 기동(startup 즉시 반환)")
 
 
-# ---------------- 워치리스트 원자적 저장 ----------------
-def _save_watchlist(stocks, keywords):
-    payload = {
-        "_comment": "관심종목. stock_code=6자리. keywords=제목 부분매칭 추가 알림(선택).",
-        "stocks": stocks,
-        "keywords": keywords,
+# ---------------- 워치리스트 스냅샷 헬퍼 ----------------
+def _snapshot(state, ok=True):
+    """모든 변이 응답의 공통 형태: 전체 스냅샷."""
+    return {
+        "ok": ok,
+        "stocks": state.get("stocks", []),
+        "keywords": state.get("keywords", []),
+        "groups": state.get("groups", []),
     }
-    tmp = config.WATCHLIST_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    os.replace(tmp, config.WATCHLIST_FILE)  # 원자적 교체
+
+
+def _group_ids(state):
+    return {g["id"] for g in state.get("groups", [])}
 
 
 # ---------------- 엔드포인트 ----------------
@@ -357,6 +360,7 @@ def health():
         "prewarm_enabled": _PREWARM_ENABLED,     # 콜드스타트 프리웜 활성 여부
         "prewarm_done": _PREWARM_DONE,           # 프리웜 완료(피드캐시 채워짐) 여부
         "feed_cached": _FEED_CACHE["data"] is not None,  # 현재 피드캐시 보유 여부
+        "watch_backend": watch_store.backend_name(),  # 관심종목 영속 백엔드(supabase/json)
     }
 
 
@@ -400,13 +404,15 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
 
 @api.get("/api/watchlist")
 def get_watchlist():
-    stocks, keywords = core.load_watchlist()
-    return {"stocks": stocks, "keywords": keywords}
+    state = watch_store.load_watch_state()
+    return {"stocks": state["stocks"], "keywords": state["keywords"],
+            "groups": state["groups"]}
 
 
 class WatchAdd(BaseModel):
     name: str | None = None
     stock_code: str | None = None
+    group: str | None = None
 
 
 @api.post("/api/watchlist")
@@ -415,7 +421,15 @@ def add_watchlist(body: WatchAdd):
     if not raw:
         raise HTTPException(status_code=400, detail="종목명 또는 종목코드를 입력하세요.")
 
-    stocks, keywords = core.load_watchlist()
+    state = watch_store.load_watch_state()
+    stocks = state["stocks"]
+
+    # 대상 그룹 결정(미지정 → default). 존재하지 않는 그룹이면 400.
+    group = (body.group or watch_store.DEFAULT_GROUP_ID).strip() \
+        or watch_store.DEFAULT_GROUP_ID
+    if group not in _group_ids(state):
+        raise HTTPException(status_code=400,
+                            detail=f"존재하지 않는 그룹입니다: {group}")
 
     name = (body.name or "").strip()
     digits = "".join(ch for ch in raw if ch.isdigit())
@@ -447,21 +461,156 @@ def add_watchlist(body: WatchAdd):
         except Exception:
             pass
 
-    stocks.append({"name": name or code, "stock_code": code})
-    _save_watchlist(stocks, keywords)
+    # 그룹 말미에 추가(order = 그룹 내 최대+1; 저장 시 정규화로 0..n 재부여)
+    order = max([s["order"] for s in stocks if s["group"] == group],
+                default=-1) + 1
+    stocks.append({"name": name or code, "stock_code": code,
+                   "group": group, "order": order})
+    state = watch_store.save_watch_state(state)
     _FEED_CACHE["data"] = None  # 다음 조회 시 재구성(is_watched 갱신)
-    return {"ok": True, "stocks": stocks, "keywords": keywords}
+    return _snapshot(state)
 
 
 @api.delete("/api/watchlist/{code}")
 def delete_watchlist(code: str):
-    stocks, keywords = core.load_watchlist()
-    new_stocks = [s for s in stocks if s.get("stock_code") != code]
-    if len(new_stocks) == len(stocks):
+    state = watch_store.load_watch_state()
+    new_stocks = [s for s in state["stocks"] if s.get("stock_code") != code]
+    if len(new_stocks) == len(state["stocks"]):
         raise HTTPException(status_code=404, detail=f"등록되지 않은 종목: {code}")
-    _save_watchlist(new_stocks, keywords)
+    state["stocks"] = new_stocks
+    state = watch_store.save_watch_state(state)
     _FEED_CACHE["data"] = None
-    return {"ok": True, "stocks": new_stocks, "keywords": keywords}
+    return _snapshot(state)
+
+
+class StockPatch(BaseModel):
+    group: str | None = None
+    order: int | None = None
+
+
+@api.patch("/api/watchlist/{code}")
+def patch_watchlist(code: str, body: StockPatch):
+    """종목 그룹이동 / 순서변경."""
+    state = watch_store.load_watch_state()
+    target = next((s for s in state["stocks"]
+                   if s.get("stock_code") == code), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"등록되지 않은 종목: {code}")
+
+    if body.group is not None:
+        grp = body.group.strip()
+        if grp not in _group_ids(state):
+            raise HTTPException(status_code=404,
+                                detail=f"존재하지 않는 그룹입니다: {grp}")
+        target["group"] = grp
+    if body.order is not None:
+        target["order"] = body.order
+
+    state = watch_store.save_watch_state(state)
+    _FEED_CACHE["data"] = None
+    return _snapshot(state)
+
+
+class OrderPut(BaseModel):
+    group: str | None = None
+    order: list[str] | None = None
+
+
+@api.put("/api/watchlist/order")
+def reorder_watchlist(body: OrderPut):
+    """해당 그룹 내 드래그 벌크 재정렬. order=[code, ...] 순서대로 재부여."""
+    group = (body.group or "").strip()
+    if not group:
+        raise HTTPException(status_code=400, detail="group 을 지정하세요.")
+    state = watch_store.load_watch_state()
+    if group not in _group_ids(state):
+        raise HTTPException(status_code=404,
+                            detail=f"존재하지 않는 그룹입니다: {group}")
+    order_list = body.order or []
+    rank = {code: i for i, code in enumerate(order_list)}
+    # 지정된 순서 먼저, 미지정 종목은 뒤로(기존 order 유지). 저장 시 0..n 정규화.
+    base = len(order_list)
+    for s in state["stocks"]:
+        if s["group"] == group:
+            s["order"] = rank.get(s["stock_code"], base + s["order"])
+    state = watch_store.save_watch_state(state)
+    _FEED_CACHE["data"] = None
+    return _snapshot(state)
+
+
+# ---------------- 그룹 관리 ----------------
+class GroupCreate(BaseModel):
+    name: str | None = None
+
+
+class GroupPatch(BaseModel):
+    name: str | None = None
+    order: int | None = None
+
+
+def _new_group_id(state):
+    import uuid
+    existing = _group_ids(state)
+    while True:
+        gid = "g_" + uuid.uuid4().hex[:8]
+        if gid not in existing:
+            return gid
+
+
+@api.post("/api/watchlist/groups")
+def create_group(body: GroupCreate):
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="그룹 이름을 입력하세요.")
+    state = watch_store.load_watch_state()
+    if any(g["name"] == name for g in state["groups"]):
+        raise HTTPException(status_code=409,
+                            detail=f"이미 존재하는 그룹 이름입니다: {name}")
+    order = max([g["order"] for g in state["groups"]], default=-1) + 1
+    state["groups"].append({"id": _new_group_id(state),
+                            "name": name, "order": order})
+    state = watch_store.save_watch_state(state)
+    return _snapshot(state)
+
+
+@api.patch("/api/watchlist/groups/{gid}")
+def patch_group(gid: str, body: GroupPatch):
+    """그룹 이름변경 / 순서변경. default 도 이름/순서변경은 허용(삭제만 금지)."""
+    state = watch_store.load_watch_state()
+    target = next((g for g in state["groups"] if g["id"] == gid), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"존재하지 않는 그룹: {gid}")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="그룹 이름은 비울 수 없습니다.")
+        if any(g["name"] == name and g["id"] != gid for g in state["groups"]):
+            raise HTTPException(status_code=409,
+                                detail=f"이미 존재하는 그룹 이름입니다: {name}")
+        target["name"] = name
+    if body.order is not None:
+        target["order"] = body.order
+
+    state = watch_store.save_watch_state(state)
+    return _snapshot(state)
+
+
+@api.delete("/api/watchlist/groups/{gid}")
+def delete_group(gid: str):
+    """그룹 삭제. 소속 종목은 default 로 이동. default 삭제는 400."""
+    if gid == watch_store.DEFAULT_GROUP_ID:
+        raise HTTPException(status_code=400, detail="기본 그룹은 삭제할 수 없습니다.")
+    state = watch_store.load_watch_state()
+    if not any(g["id"] == gid for g in state["groups"]):
+        raise HTTPException(status_code=404, detail=f"존재하지 않는 그룹: {gid}")
+    state["groups"] = [g for g in state["groups"] if g["id"] != gid]
+    for s in state["stocks"]:
+        if s["group"] == gid:
+            s["group"] = watch_store.DEFAULT_GROUP_ID
+    state = watch_store.save_watch_state(state)
+    _FEED_CACHE["data"] = None
+    return _snapshot(state)
 
 
 # ---------------- 종목 검색 (로컬 인덱스, DART 0콜) ----------------

@@ -27,6 +27,26 @@ if LOCAL_ENV.exists():
 DART_API_KEY = os.getenv("DART_API_KEY", "")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 
+# Supabase(관심종목 영속) — 이름만 참조, 값은 os.getenv 로만 읽는다(하드코딩 0).
+# 값이 비어 있으면 watch_store 가 JSON 폴백으로 동작한다(로컬/키없음 graceful).
+# 키는 로그/응답/예외에 절대 노출 금지.
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+# 서비스롤 키: 로컬 .env 는 SUPABASE_SERVICE_ROLE(접미사 없음)을 쓰지만,
+# 배포환경(예: Supabase 대시보드 복붙)은 SUPABASE_SERVICE_ROLE_KEY 로 줄 수
+# 있어 두 이름 모두 폴백 조회한다(하드코딩 0, os.getenv 만).
+SUPABASE_SERVICE_ROLE = (os.getenv("SUPABASE_SERVICE_ROLE", "")
+                         or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+SUPABASE_ACCESS_TOKEN = os.getenv("SUPABASE_ACCESS_TOKEN", "")
+
+# 관심종목 영속 백엔드 선택. 키가 .env 에 있어도 기본은 'json'(안전).
+# 실 Supabase 연결은 Partner 가 배포환경에서 GONGSI_WATCH_BACKEND=supabase 로
+# 명시 opt-in 할 때만 활성 → 로컬/개발에서 실 DB 오접속 방지(Partner 게이트).
+#   json     : 항상 JSON 파일(watchlist.json). 기본값.
+#   supabase : Supabase REST 사용(키 필요). 실패 시 JSON 폴백.
+#   auto     : 키가 있으면 supabase, 없으면 json.
+WATCH_BACKEND = os.getenv("GONGSI_WATCH_BACKEND", "json").strip().lower()
+
 # 안전장치: 실유저 브로드캐스트 금지.
 # 알림은 본인 테스트 채널로만 나간다. 테스트 채널 chat_id 를 로컬 .env 의
 # GONGSI_TEST_CHAT_ID 로 지정하면 그 값을 쓰고, 없으면 트레이딩 채널 chat_id

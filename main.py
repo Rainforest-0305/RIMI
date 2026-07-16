@@ -20,6 +20,7 @@ from pathlib import Path
 
 import config
 import dart_poll
+import watch_store
 from summarize import summarize
 from notify_alert import send
 try:  # X(트위터) 자동게시 — 추가 모듈. 기본 비활성(X_ENABLED/X_DRYRUN 없으면 no-op).
@@ -57,8 +58,11 @@ def save_seen(seen: set):
 
 
 def load_watchlist():
-    wl = json.loads(config.WATCHLIST_FILE.read_text(encoding="utf-8"))
-    return wl.get("stocks", []), wl.get("keywords", [])
+    # 영속 스토어(Supabase 또는 JSON 폴백) 경유. poll_once 등 하위호환 위해
+    # 기존과 동일하게 (stocks, keywords) 튜플 반환. stocks 항목엔 group/order
+    # 필드가 추가되지만 poll_once 는 name/stock_code 만 사용하므로 무영향.
+    st = watch_store.load_watch_state()
+    return st.get("stocks", []), st.get("keywords", [])
 
 
 # ---------- 핵심 1회 폴링 ----------
