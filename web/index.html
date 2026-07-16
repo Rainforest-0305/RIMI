@@ -9,7 +9,7 @@
 <meta name="description" content="코스피·코스닥 신규 공시를 감지해 핵심 요약 + 과거 유사공시의 평균 등락(1일/1주/1개월)과 상승/하락 확률을 보여주는 공시 알림 웹앱.">
 <!-- 공유 프리뷰(OG) 고정 메타 — 정적 SPA라 스크레이퍼는 JS 미실행, head 리터럴만 읽힘. 동적 기업/공시 정보는 여기 못 넣음(앱 내 navigator.share가 담당). -->
 <!-- 공유 프리뷰 BIO 슬로건 단일 소스: 아래 og:title content 문자열이 유일한 정의처. twitter:title은 두지 않음(부재 시 og:title로 폴백 → 중복 정의 회피). 수정 시 이 한 곳만 고칠 것. -->
-<meta property="og:title" content="미리 MIRI - 미리 알면, 덜 흔들려요.">
+<meta property="og:title" content="미리 MIRI - 미리 알면, 덜 흔들린다.">
 <meta property="og:description" content="코스피·코스닥 신규 공시를 감지해 핵심 요약 + 과거 유사공시의 평균 등락(1일/1주/1개월)과 상승/하락 확률을 보여주는 공시 알림 웹앱.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rimi-s76t.onrender.com/">
@@ -198,6 +198,24 @@
   .btn2:active{transform:translateY(1px)}
   .btn2:focus-visible,.chip:focus-visible,.f:focus-visible,.src:focus-visible,.seg button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .disc{font-size:11px;color:var(--t4);text-align:center;padding:8px 14px 2px;line-height:1.6}
+
+  /* ---------- 베타 대기자(waitlist) 섹션 ---------- */
+  .wl{background:var(--card);border-radius:var(--radius);padding:20px 19px;margin-top:6px}
+  .wl h3{margin:0 0 5px;font-size:16px;font-weight:800;letter-spacing:-.03em;color:var(--t1)}
+  .wl .wl-sub{margin:0 0 15px;font-size:13px;color:var(--t2);font-weight:500;line-height:1.55}
+  .wl-form{display:flex;flex-direction:column;gap:9px}
+  .wl-form input{width:100%;padding:12px 13px;border-radius:12px;border:none;
+    box-shadow:0 0 0 1px var(--line) inset;background:var(--card-2);color:var(--t1);font-size:15px;font-family:inherit}
+  .wl-form input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
+  .wl-form .wl-btn{width:100%;font-family:inherit;font-weight:700;font-size:15px;padding:14px;border-radius:12px;
+    border:none;background:var(--blue);color:#fff;cursor:pointer;transition:.12s;margin-top:2px}
+  .wl-form .wl-btn:active{transform:translateY(1px)}
+  .wl-form .wl-btn:disabled{opacity:.6;cursor:default}
+  .wl-btn:focus-visible,.wl-form input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .wl-msg{font-size:12.5px;padding:2px 2px;min-height:0;color:var(--t3);font-weight:600}
+  .wl-msg.err{color:var(--up)} .wl-msg.ok{color:var(--ok)}
+  .wl-note{font-size:11px;color:var(--t4);margin:11px 2px 0;line-height:1.6}
+
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -247,6 +265,20 @@
     <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
   </div>
   <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
+
+  <section class="wl" aria-labelledby="wlTitle">
+    <h3 id="wlTitle">베타 알림 받기</h3>
+    <p class="wl-sub">정식 오픈과 실시간 공시 알림 기능이 준비되면 가장 먼저 알려드립니다. 대기자 명단에 이메일을 남겨주세요.</p>
+    <form class="wl-form" id="wlForm" novalidate>
+      <input id="wlEmail" type="email" inputmode="email" autocomplete="email"
+             placeholder="이메일 주소" aria-label="이메일 주소" required>
+      <input id="wlTelegram" type="text" autocomplete="off"
+             placeholder="텔레그램 핸들 (선택, 예: @miri)" aria-label="텔레그램 핸들 (선택)">
+      <button type="submit" class="wl-btn" id="wlBtn">알림 받기</button>
+    </form>
+    <div class="wl-msg" id="wlMsg" role="status" aria-live="polite"></div>
+    <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
+  </section>
 </div>
 
 <script>
@@ -837,6 +869,38 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     s.setAttribute('data-domains', location.hostname);   // 자기 도메인만
     document.head.appendChild(s);
   }).catch(function(){});
+})();
+
+/* ---------- 베타 대기자(waitlist) 등록 ---------- */
+(function(){
+  const form=document.getElementById('wlForm');
+  if(!form)return;
+  const emailEl=document.getElementById('wlEmail');
+  const tgEl=document.getElementById('wlTelegram');
+  const btn=document.getElementById('wlBtn');
+  const msg=document.getElementById('wlMsg');
+  function flash(t,cls){msg.textContent=t||'';msg.className='wl-msg'+(cls?' '+cls:'');}
+  form.addEventListener('submit',async function(ev){
+    ev.preventDefault();
+    const email=(emailEl.value||'').trim();
+    const telegram=(tgEl.value||'').trim();
+    if(!email){flash('이메일 주소를 입력하세요.','err');emailEl.focus();return;}
+    btn.disabled=true;flash('등록 중…');
+    try{
+      const d=await jsend('POST',API+'/waitlist',{email:email,telegram:telegram});
+      if(d.status==='already'){
+        flash('이미 등록된 이메일입니다.','ok');
+      }else{
+        flash('등록 완료. 준비되면 이메일로 알려드립니다.','ok');
+        emailEl.value='';tgEl.value='';
+      }
+      track('waitlist_join', {via:'landing', dup:d.status==='already'});
+    }catch(e){
+      flash(e.message||'등록에 실패했습니다. 잠시 후 다시 시도하세요.','err');
+    }finally{
+      btn.disabled=false;
+    }
+  });
 })();
 
 /* ---------- init ---------- */
