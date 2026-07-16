@@ -1034,28 +1034,44 @@ def bullets_from_row(ep, row):
 _NUM = r"([\d,]+(?:\.\d+)?)"
 
 
+_LAST_DOC_STATUS = None   # _fetch_doc_text 마지막 시도 상태(014/020 구분용, 반환불변)
+
+
 def _fetch_doc_text(rcept_no):
     """document.xml 1콜 → 태그제거·공백정규화 텍스트. cp949/utf-8 자동판별.
-    zip 아님(레이트리밋/오류)이면 None(캐시 안함→다음 poll 재시도)."""
+    zip 아님(레이트리밋/오류)이면 None(캐시 안함→다음 poll 재시도).
+    부수효과: 모듈전역 _LAST_DOC_STATUS 기록(반환값 규약 불변)."""
+    global _LAST_DOC_STATUS
     url = "https://opendart.fss.or.kr/api/document.xml"
     for _ in range(3):
         try:
             r = requests.get(url, params={"crtfc_key": KEY, "rcept_no": rcept_no},
                              timeout=25)
         except Exception:
+            _LAST_DOC_STATUS = "neterr"
             time.sleep(1)
             continue
         if r.status_code != 200 or not r.content or not r.content.startswith(b"PK"):
+            _LAST_DOC_STATUS = "other"
+            try:
+                m = re.search(r"<status>(\d+)</status>",
+                              r.content.decode("utf-8", "replace"))
+                if m:
+                    _LAST_DOC_STATUS = m.group(1)
+            except Exception:
+                pass
             return None
         try:
             z = zipfile.ZipFile(io.BytesIO(r.content))
             raw = z.read(z.namelist()[0])
         except Exception:
+            _LAST_DOC_STATUS = "other"
             return None
         try:
             t = raw.decode("utf-8")
         except UnicodeDecodeError:
             t = raw.decode("cp949", "replace")
+        _LAST_DOC_STATUS = "ok"
         return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t))
     return None
 
@@ -1459,6 +1475,7 @@ def cmd_fetch_phase2():
     tried = 0
     consec_fail = 0
     backoff_seen = 0   # 020(rate-limit) 백오프 발동 횟수 관측
+    skip014 = 0        # 014(문서 원래 없음/영구실패) 종결 스킵 카운트
     log(f"=== Phase2 fetch 시작: 배당 이벤트 {len(divs)} (DART 상한 {PHASE2_DART_CAP}) ===")
     for e in divs:
         rno = e.get("rcept_no")
@@ -1473,27 +1490,38 @@ def cmd_fetch_phase2():
         budget[0] -= 1
         tried += 1
         if fields is None:
-            # fetch레벨 실패(rate-limit/네트워크). 파싱된 빈 doc은 {}로 캐시되므로
-            # None만이 fetch실패 신호다.
-            fail_n += 1
-            consec_fail += 1
-            if consec_fail >= 10:
-                backoff_seen += 1
-                log(f"  연속실패 {consec_fail} — 일한도 소진 추정, 배치 중단"
-                    f"(익일 DOC_CACHE 재개). 예산잔여 {budget[0]}")
-                break
-            if consec_fail >= 3:
-                backoff_seen += 1
-                log(f"  연속실패 {consec_fail}(rate-limit 추정) — sleep30 백오프"
-                    f" (성공 {ok_n} / 실패 {fail_n}, 예산잔여 {budget[0]})")
-                time.sleep(30)
+            if _LAST_DOC_STATUS == "014":
+                # 014=문서 원래 없음(영구). rate-limit 아님(정상 HTTP응답) → 빈 마커로
+                # 종결(재시도 방지)·백오프 카운터 리셋(020 오진 방지). 020방어는 아래 보존.
+                cf14 = DOC_CACHE / f"{rno}.json"
+                try:
+                    cf14.write_text("{}", encoding="utf-8")
+                except Exception:
+                    pass
+                skip014 += 1
+                consec_fail = 0
+            else:
+                # fetch레벨 실패(020 rate-limit/네트워크/기타). 기존 백오프 그대로 보존.
+                fail_n += 1
+                consec_fail += 1
+                if consec_fail >= 10:
+                    backoff_seen += 1
+                    log(f"  연속실패 {consec_fail} — 일한도 소진 추정, 배치 중단"
+                        f"(익일 DOC_CACHE 재개). 예산잔여 {budget[0]}")
+                    break
+                if consec_fail >= 3:
+                    backoff_seen += 1
+                    log(f"  연속실패 {consec_fail}(rate-limit 추정) — sleep30 백오프"
+                        f" (성공 {ok_n} / 실패 {fail_n}, 예산잔여 {budget[0]})")
+                    time.sleep(30)
         else:
             ok_n += 1
             consec_fail = 0   # 성공시 리셋
         if tried % 100 == 0:
-            log(f"  배당 진행 시도 {tried} (성공 {ok_n} / 실패 {fail_n}, 예산잔여 {budget[0]})")
-    log(f"=== Phase2 fetch 완료: 시도 {tried} (성공 {ok_n} / 실패 {fail_n}), "
-        f"020백오프 관측 {backoff_seen}회, 예산잔여 {budget[0]} ===")
+            log(f"  배당 진행 시도 {tried} (성공 {ok_n} / 014스킵 {skip014} / "
+                f"실패 {fail_n}, 예산잔여 {budget[0]})")
+    log(f"=== Phase2 fetch 완료: 시도 {tried} (성공 {ok_n} / 014영구스킵 {skip014} / "
+        f"실패 {fail_n}), 020백오프 관측 {backoff_seen}회, 예산잔여 {budget[0]} ===")
 
 
 def cmd_aggregate_doc():
