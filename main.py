@@ -22,6 +22,10 @@ import config
 import dart_poll
 from summarize import summarize
 from notify_alert import send
+try:  # X(트위터) 자동게시 — 추가 모듈. 기본 비활성(X_ENABLED/X_DRYRUN 없으면 no-op).
+    import x_poster  # noqa: F401
+except Exception:
+    x_poster = None
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -82,6 +86,8 @@ def poll_once(mark_seen=True, force=False, limit_per_stock=20, verbose=True):
             item.setdefault("stock_code", code)
             result = summarize(item)
             send(item, result)
+            if x_poster is not None:  # 기본 비활성·fail-open(핵심 폴링 무영향)
+                x_poster.on_new_disclosure(item, result)
             handled += 1
             new_seen.add(rno)
         # 유량 배려: 종목 간 짧은 간격
