@@ -1373,6 +1373,13 @@ async function registerStock(code,btn){
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 }
+/* PWA 설치 프롬프트 추적(track 헬퍼는 아래 analytics 블록에서 정의) */
+window.addEventListener('beforeinstallprompt',function(e){
+  track('install_prompt_shown',{platform:(e && e.platforms && e.platforms[0])||''});
+});
+window.addEventListener('appinstalled',function(){
+  track('install_accepted',{});
+});
 
 /* ---------- analytics (Umami, 설정 있을 때만 로드) ---------- */
 function track(name, data){ try{ if(window.umami && umami.track) umami.track(name, data); }catch(e){} }
