@@ -54,12 +54,17 @@ def _first_existing(paths):
             return Path(p)
     return None
 
+# 레포 번들 폰트(나눔고딕 OFL) 최우선 — 배포(Render 네이티브/도커 무관) CJK 보장.
+# 그다음 Windows(malgun, 로컬 개발), 시스템 설치 폰트 순.
+_BUNDLED = Path(__file__).parent / "fonts"
 _FONT_REG = _first_existing([
-    r"C:\Windows\Fonts\malgun.ttf",
-    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",       # fonts-nanum (Debian slim)
+    _BUNDLED / "NanumGothic-Regular.ttf",                     # 레포 번들(배포 정본)
+    r"C:\Windows\Fonts\malgun.ttf",                           # 로컬 Windows
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 ])
 _FONT_BLD = _first_existing([
+    _BUNDLED / "NanumGothic-Bold.ttf",
     r"C:\Windows\Fonts\malgunbd.ttf",
     "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
