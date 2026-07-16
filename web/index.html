@@ -811,7 +811,7 @@ function cardHTML(a,pfx){
     <div class="impact" id="${pfx}imp-${id}">${impactInner(a)}</div>
     ${scale}
     <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
-      (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">↗ 공유</button>`:'')+
+      (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">공유 ↗</button>`:'')+
       `<a class="src"${ok?' style="margin-left:14px"':''} href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
   </article>`;
 }
