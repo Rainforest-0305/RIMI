@@ -98,7 +98,12 @@
     border:none;background:var(--blue);color:#fff;cursor:pointer}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
-  .searchwrap{padding:8px 2px 2px;position:relative}
+  /* 헤더는 스크롤돼 사라지되, 검색창은 상단에 sticky 고정(빠른 검색 접근).
+     safe-area 위·카드 위(z-index)·풀블리드 배경으로 스크롤 시 카드가 비치지 않게. */
+  .searchwrap{position:sticky;top:env(safe-area-inset-top,0px);z-index:11;
+    padding:8px calc(50vw - 50% + 4px) 8px;
+    margin-inline:calc(50% - 50vw);
+    background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px)}
   .searchwrap input{width:100%;padding:11px 13px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
   .searchwrap input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
@@ -282,6 +287,12 @@
 </head>
 <body>
 <div class="app">
+  <div class="searchwrap">
+    <input id="searchInput" type="search" placeholder="종목명 또는 코드 검색 (예: 삼성, 005930)"
+           autocomplete="off" aria-label="종목 검색">
+    <div class="formmsg" id="searchmsg"></div>
+    <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+  </div>
   <header>
     <div class="hrow">
       <span class="hi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></span>
@@ -290,12 +301,6 @@
       <span class="live"><span class="d"></span>실시간</span>
     </div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
-    <div class="searchwrap">
-      <input id="searchInput" type="search" placeholder="종목명 또는 코드 검색 (예: 삼성, 005930)"
-             autocomplete="off" aria-label="종목 검색">
-      <div class="formmsg" id="searchmsg"></div>
-      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
-    </div>
     <div class="addrow" id="addrow">
       <input id="addInput" placeholder="6자리 종목코드 (예: 005930)" inputmode="numeric"
              autocomplete="off" onkeydown="if(event.key==='Enter')addStock()">
