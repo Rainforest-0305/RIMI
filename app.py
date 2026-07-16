@@ -18,12 +18,13 @@ list.json 단일 호출로 폴링한다. 유저는 아무 코스피 종목이나
 """
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -561,6 +562,78 @@ def get_config():
         "umami_src": os.getenv("UMAMI_SRC", "https://cloud.umami.is/script.js"),
         "umami_website_id": os.getenv("UMAMI_WEBSITE_ID", ""),
     }
+
+
+# ---------------- 베타 대기자 등록(waitlist) 스텁 ----------------
+# 로컬 파일 기록만 한다. 외부 발송(메일·텔레그램·외부 API) 코드는 없다.
+# 저장 파일은 data/ 아래(.gitignore 의 data/* 규칙으로 제외) → 실데이터 미커밋.
+_WAITLIST_FILE = config.DATA / "waitlist.jsonl"
+# 최소 형식 검증용(로컬·비발송). 완전한 RFC 검증이 아니라 오타/빈값 차단 목적.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_WAITLIST_LOCK = threading.Lock()  # append/중복검사 원자성(동시요청 레이스 방지)
+
+
+class WaitlistJoin(BaseModel):
+    email: str | None = None
+    telegram: str | None = None
+
+
+def _load_waitlist_emails() -> set:
+    """기존 waitlist.jsonl 의 이메일 소문자 집합(중복 감지용). 없으면 빈 set.
+    파싱 불가 라인/파일없음은 조용히 건너뛴다(스텁 신뢰성 우선)."""
+    emails = set()
+    try:
+        with open(_WAITLIST_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                e = (rec.get("email") or "").strip().lower()
+                if e:
+                    emails.add(e)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[waitlist] 로드 경고(무시): {e}")
+    return emails
+
+
+@api.post("/api/waitlist")
+def join_waitlist(body: WaitlistJoin, request: Request):
+    """베타 대기자 등록. 이메일 형식 검증 → data/waitlist.jsonl 에 1줄 append.
+
+    - 외부 발송(메일·텔레그램·외부 HTTP) 절대 없음. 로컬 파일 기록만.
+    - 중복 이메일은 조용히 ok 처리(status=already), 신규는 status=ok.
+    - 잘못된 이메일은 400. 저장 실패는 500(파일 문제만). 개인정보 최소 수집.
+    """
+    email = (body.email or "").strip().lower()
+    if not email or len(email) > 254 or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="올바른 이메일 주소를 입력하세요.")
+    telegram = (body.telegram or "").strip().lstrip("@")[:64]
+    ua = request.headers.get("user-agent", "")[:300]
+
+    with _WAITLIST_LOCK:
+        if email in _load_waitlist_emails():
+            return {"ok": True, "status": "already",
+                    "message": "이미 등록된 이메일입니다."}
+        rec = {
+            "email": email,
+            "telegram": telegram,
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ua": ua,
+        }
+        try:
+            with open(_WAITLIST_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"[waitlist] 저장 실패: {e}")
+            raise HTTPException(status_code=500,
+                                detail="등록 처리 중 오류가 발생했습니다.")
+    return {"ok": True, "status": "ok", "message": "대기자 명단에 등록되었습니다."}
 
 
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
