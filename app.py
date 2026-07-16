@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -602,11 +602,32 @@ def _load_waitlist_emails() -> set:
     return emails
 
 
+def _notify_waitlist_tg(rec: dict) -> None:
+    """신규 대기자 등록을 President 텔레그램으로 즉시 전달(best-effort).
+    ★서버(Render) 디스크는 비영속이라 파일 기록은 재배포 시 유실 — 이 전달이 원본 보존 경로다.
+    실패해도 가입 처리는 깨지 않는다(별도 스레드·예외 무시). env 미설정 시 no-op."""
+    tok = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("WAITLIST_TG_CHAT_ID")
+    if not (tok and chat):
+        return
+    def _send():
+        try:
+            import requests as _rq
+            msg = (f"[MIRI 베타 대기자] {rec['email']}"
+                   + (f" · TG @{rec['telegram']}" if rec.get("telegram") else "")
+                   + f" · {rec['ts']}")
+            _rq.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                     json={"chat_id": chat, "text": msg}, timeout=10)
+        except Exception as e:
+            print(f"[waitlist] TG 전달 실패(가입은 정상 처리됨): {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+
 @api.post("/api/waitlist")
 def join_waitlist(body: WaitlistJoin, request: Request):
-    """베타 대기자 등록. 이메일 형식 검증 → data/waitlist.jsonl 에 1줄 append.
+    """베타 대기자 등록. 이메일 형식 검증 → data/waitlist.jsonl 에 1줄 append
+    + President 텔레그램 즉시 전달(_notify_waitlist_tg, best-effort).
 
-    - 외부 발송(메일·텔레그램·외부 HTTP) 절대 없음. 로컬 파일 기록만.
     - 중복 이메일은 조용히 ok 처리(status=already), 신규는 status=ok.
     - 잘못된 이메일은 400. 저장 실패는 500(파일 문제만). 개인정보 최소 수집.
     """
@@ -633,9 +654,29 @@ def join_waitlist(body: WaitlistJoin, request: Request):
             print(f"[waitlist] 저장 실패: {e}")
             raise HTTPException(status_code=500,
                                 detail="등록 처리 중 오류가 발생했습니다.")
+    _notify_waitlist_tg(rec)
     return {"ok": True, "status": "ok", "message": "대기자 명단에 등록되었습니다."}
 
 
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
 _WEB_DIR = Path(__file__).parent / "web"
+
+# ---------------- TWA Digital Asset Links (명시 라우트, 정적마운트보다 먼저) ----------------
+# Android TWA 검증은 배포 도메인의 /.well-known/assetlinks.json 을 application/json
+# 200 으로 서빙하는 데 성패가 달렸다. StaticFiles 마운트가 서빙하더라도 content-type 은
+# 호스트 mimetypes 레지스트리/Starlette 버전 동작에 의존한다(배포 패리티 리스크).
+# 검증 실패는 TWA 전체를 깨므로, 여기서 명시 라우트로 application/json 200 을
+# 결정론적으로 보장한다. 이 라우트는 아래 StaticFiles("/") 마운트보다 먼저 등록되어
+# 우선 매칭된다(라우트 순서 중요). 파일 내용은 3단계(모바일)가 실제 패키지명+SHA256
+# 으로 덮어쓴다 — 여기서는 라우팅만 뚫는다(빈 배열/스켈레톤 유지).
+_ASSETLINKS_FILE = _WEB_DIR / ".well-known" / "assetlinks.json"
+
+
+@api.get("/.well-known/assetlinks.json", include_in_schema=False)
+def assetlinks():
+    if not _ASSETLINKS_FILE.is_file():
+        raise HTTPException(status_code=404, detail="assetlinks.json not found")
+    return FileResponse(str(_ASSETLINKS_FILE), media_type="application/json")
+
+
 api.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")
