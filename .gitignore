@@ -50,3 +50,8 @@ data/*
 
 # === 실험/폐기된 스크래치 산출물 (배포 불필요) ===
 impact_benchmark.biased_kospi200.json
+
+# 로컬 렌더 산출물(재생성 가능, 커밋 제외)
+out/
+out_cards/
+out_review/
