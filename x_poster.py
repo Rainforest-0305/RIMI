@@ -214,6 +214,10 @@ def build_tweet(disclosure: dict, summary_lines=None, impact_block=None):
     title_budget = MAX_WEIGHTED - frame_no_summary
     title = _fit_weighted(title, title_budget)
     text = _assemble(corp, title, "", stat)
+    # 3) 최종 하드클램프: 프레임(종목명·통계·마커) 자체가 커서 여전히 초과하는
+    #    엣지케이스에서도 280 을 절대 보장(전체 텍스트 기준 축약).
+    if weighted_len(text) > MAX_WEIGHTED:
+        text = _fit_weighted(text, MAX_WEIGHTED)
     return text, weighted_len(text)
 
 
@@ -249,7 +253,8 @@ def _atomic_write(d: dict) -> None:
 
 
 def _acquire_lock(retries: int = 50):
-    """원자적 O_EXCL 락파일. 실패해도(경합) None 반환 — RMW 는 원자적 rename 이 최종 방어."""
+    """원자적 O_EXCL 락파일. stale 락(mtime 60초+)은 회수 후 재시도.
+    끝내 실패하면 None 반환 — 호출측(reserve_quota)은 fail-closed(예약 거부)."""
     lock = COUNTER_FILE.with_suffix(".lock")
     import time
     for _ in range(retries):
@@ -257,6 +262,12 @@ def _acquire_lock(retries: int = 50):
             fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             return fd, lock
         except FileExistsError:
+            try:  # stale 락 회수: 보유 프로세스가 죽어 60초+ 방치된 경우
+                if time.time() - lock.stat().st_mtime > 60:
+                    os.remove(lock)
+                    continue
+            except OSError:
+                pass
             time.sleep(0.01)
     return None, lock
 
@@ -275,8 +286,13 @@ def _release_lock(handle):
 def reserve_quota() -> bool:
     """오늘 한도 내면 1 증가 후 True, 도달 시 증가 없이 False.
     날짜 롤오버 시 자동 리셋. 파일락 + 원자적 rename 으로 read-modify-write 보호.
-    실게시 경로의 유일한 카운터 증가 지점."""
+    실게시 경로의 유일한 카운터 증가 지점.
+    락 획득 실패 시 fail-closed: 쿼터는 비용 가드라 무보호 RMW 로 진행하지 않는다."""
     handle = _acquire_lock()
+    if handle[0] is None:
+        # 주의: 남의 락을 지우면 안 되므로 _release_lock 호출 없이 거부만.
+        log.warning("[x-quota] 락 획득 실패(경합/잔존) — 예약 거부(fail-closed)")
+        return False
     try:
         raw = _read_raw()
         today = _today()

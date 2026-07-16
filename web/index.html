@@ -13,10 +13,10 @@
 <meta property="og:description" content="코스피·코스닥 신규 공시를 감지해 핵심 요약 + 과거 유사공시의 평균 등락(1일/1주/1개월)과 상승/하락 확률을 보여주는 공시 알림 웹앱.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rimi-s76t.onrender.com/">
-<meta property="og:image" content="https://rimi-s76t.onrender.com/icon-512.png">
+<meta property="og:image" content="https://rimi-s76t.onrender.com/og_card.png">
 <meta property="og:site_name" content="미리 MIRI">
 <meta property="og:locale" content="ko_KR">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://rimi-s76t.onrender.com/icon-512.png">
 <meta name="theme-color" content="#f1f4f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b0e1a" media="(prefers-color-scheme: dark)">
@@ -284,7 +284,7 @@
 <script>
 const API='/api';
 const WL={d1:'1일',w1:'1주',m1:'1개월'};
-const FILTERS=[['all','전체'],['up','호재'],['down','주의'],['earn','실적'],['watch','관심']];
+const FILTERS=[['all','전체'],['up','상승우위'],['down','하락우위'],['earn','실적'],['watch','관심']];
 let STATE={items:[],stocks:[],meta:'',filter:'all'};
 const WINSEL={};   // rcept_no -> 'd1'|'w1'|'m1'
 const DEFWIN='m1'; // 프로토타입 기본 = 1개월
