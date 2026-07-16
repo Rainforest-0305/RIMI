@@ -214,7 +214,10 @@
   .cardshare:hover{text-decoration:underline}
   .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 4px;background:linear-gradient(0deg,var(--bg) 68%,transparent)}
+  /* 하단 액션바: iPhone 홈 인디케이터(safe-area-inset-bottom)에 안 잘리게 여백 확보 */
+  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;
+    padding:13px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+    background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
   .btn2.pri{background:var(--blue);color:#fff} .btn2.sec{flex:0 0 54px;background:var(--card);color:var(--t2);box-shadow:0 0 0 1px var(--line) inset}
   .btn2:active{transform:translateY(1px)}
