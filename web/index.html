@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <link rel="icon" type="image/svg+xml" href="icon.svg"/>
-<link rel="apple-touch-icon" href="/icon-192.png"/>
+<link rel="icon" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>미리 · MIRI — 미리 알면, 덜 흔들린다.</title>
@@ -53,8 +54,8 @@
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
     min-height:100dvh;display:flex;justify-content:center;
-    /* 상단 여백은 sticky header가 safe-area까지 덮으며 담당 */
-    padding:0 15px calc(22px + env(safe-area-inset-bottom, 0px))}
+    /* 헤더가 스크롤되므로 상단 safe-area(노치/상태바) 여백은 body가 담당 */
+    padding:env(safe-area-inset-top, 0px) 15px calc(22px + env(safe-area-inset-bottom, 0px))}
   .num{font-variant-numeric:tabular-nums}
   .app{width:100%;max-width:460px;display:flex;flex-direction:column;gap:11px}
 
@@ -67,11 +68,11 @@
   .htext .nm .en{font-size:11px;font-weight:700;color:var(--t4);letter-spacing:.16em;margin-left:8px}
   .htext .tg{font-size:13px;color:var(--t2);font-weight:500;margin-top:3px}
 
-  header{position:sticky;top:-1px;z-index:9;background:color-mix(in srgb,var(--bg) 92%,transparent);
-    backdrop-filter:blur(14px);margin-top:-2px;
-    /* 상태바(시계·다이나믹아일랜드) 높이까지 헤더가 배경으로 덮는다 —
-       스크롤 시 콘텐츠가 상태바 밑으로 비치지 않게 */
-    padding:calc(14px + env(safe-area-inset-top, 0px)) calc(50vw - 50% + 2px) 6px;
+  /* 헤더는 더 이상 고정(sticky)하지 않고 콘텐츠와 함께 스크롤된다.
+     상단 safe-area는 body padding-top이 담당. 하단 액션바(.bar-btns)는 sticky 유지. */
+  header{z-index:9;background:color-mix(in srgb,var(--bg) 92%,transparent);
+    backdrop-filter:blur(14px);
+    padding:14px calc(50vw - 50% + 2px) 6px;
     /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
     margin-inline:calc(50% - 50vw)}
   .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 12px}
@@ -232,6 +233,50 @@
   .wl-msg.err{color:var(--up)} .wl-msg.ok{color:var(--ok)}
   .wl-note{font-size:11px;color:var(--t4);margin:11px 2px 0;line-height:1.6}
 
+  /* ---------- 종목 상세뷰(모달 오버레이) — 기존 /api/alerts(STATE.items) 재사용 ---------- */
+  .tk[data-detail],.sres-nm[data-detail]{cursor:pointer}
+  .tk[data-detail]:hover,.sres-nm[data-detail]:hover{text-decoration:underline}
+  .tk[data-detail]:focus-visible,.sres-nm[data-detail]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+  .detail[hidden]{display:none}
+  .detail{position:fixed;inset:0;z-index:50;display:flex;justify-content:center;align-items:flex-end}
+  .detail-back{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+  .detail-panel{position:relative;width:100%;max-width:460px;max-height:92dvh;display:flex;flex-direction:column;
+    background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.32);
+    animation:dup .25s ease both;padding:0 15px calc(18px + env(safe-area-inset-bottom, 0px))}
+  @keyframes dup{from{transform:translateY(26px);opacity:.5}to{transform:none;opacity:1}}
+  .detail-head{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;gap:9px;
+    padding:16px 2px 12px;border-bottom:1px solid var(--line-2);z-index:1}
+  .detail-tt{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1}
+  .detail-tt #detailNm{font-size:18px;font-weight:800;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .detail-tt #detailCd{font-family:var(--mono);font-size:11px;color:var(--t4);font-weight:600;flex:none}
+  .detail-actions{flex:none}
+  .detail-add{font-family:inherit;font-weight:700;font-size:12.5px;padding:8px 13px;border-radius:10px;
+    border:none;background:var(--blue-soft);color:var(--blue);cursor:pointer;transition:.14s}
+  .detail-add:active{transform:translateY(1px)}
+  .detail-add.done,.detail-watched{background:var(--slate-soft);color:var(--t3);font-weight:700;font-size:12.5px;
+    padding:8px 13px;border-radius:10px;display:inline-block}
+  .detail-add:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .detail-x{flex:none;width:34px;height:34px;border-radius:10px;border:none;background:var(--card);
+    color:var(--t2);font-size:14px;cursor:pointer;box-shadow:0 0 0 1px var(--line) inset}
+  .detail-x:active{transform:translateY(1px)}
+  .detail-x:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .detail-body{overflow-y:auto;display:flex;flex-direction:column;gap:11px;padding:12px 0 4px}
+  .detail-empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:44px 12px;line-height:1.7}
+
+  /* ---------- 맨위로 FAB (긴 피드 네비 보조) ---------- */
+  .fab{position:fixed;z-index:40;right:max(14px, calc(50vw - 228px));
+    bottom:calc(86px + env(safe-area-inset-bottom, 0px));
+    width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;
+    background:var(--card);color:var(--t1);font-size:19px;line-height:1;
+    box-shadow:0 4px 16px rgba(0,0,0,.18),0 0 0 1px var(--line) inset;
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;visibility:hidden;transform:translateY(8px);
+    transition:opacity .2s ease, transform .2s ease, visibility .2s ease}
+  .fab.show{opacity:1;visibility:visible;transform:none}
+  .fab:active{transform:scale(.94)}
+  .fab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.fab{transition:none}}
+
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -309,6 +354,22 @@
     <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
   </section>
 </div>
+
+<!-- 종목 상세뷰 오버레이 — STATE.items(로드된 /api/alerts)를 stock_code로 필터해 렌더 -->
+<div class="detail" id="detail" hidden role="dialog" aria-modal="true" aria-label="종목 상세">
+  <div class="detail-back" id="detailBack"></div>
+  <div class="detail-panel">
+    <div class="detail-head">
+      <div class="detail-tt"><span id="detailNm"></span><span id="detailCd" class="num"></span></div>
+      <div class="detail-actions" id="detailActions"></div>
+      <button class="detail-x" id="detailX" type="button" aria-label="상세 닫기">✕</button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- 맨위로 FAB — 일정 스크롤 이상에서 노출 -->
+<button class="fab" id="toTop" type="button" aria-label="맨 위로" title="맨 위로">↑</button>
 
 <script>
 const API='/api';
@@ -435,8 +496,11 @@ function impactInner(item){
     ${bar}
     <div class="plain">${plain}</div>`;
 }
-function setWin(rno,k){WINSEL[rno]=k;const box=document.getElementById('imp-'+cssId(rno));
-  if(box)box.innerHTML=impactInner(STATE.items.find(x=>x.rcept_no===rno));}
+function setWin(rno,k){WINSEL[rno]=k;
+  const item=STATE.items.find(x=>x.rcept_no===rno);if(!item)return;
+  // 피드(imp-) + 상세뷰(dimp-) 양쪽 박스를 동기 갱신
+  ['imp-','dimp-'].forEach(pfx=>{const box=document.getElementById(pfx+cssId(rno));
+    if(box)box.innerHTML=impactInner(item);});}
 
 /* ---------- 규모보정(온탭 /api/scale) ---------- */
 /* 규모 대상 = bullet 대상과 동일(백엔드 scale_eligible 플래그). 두 목록 자동 일치. */
@@ -475,11 +539,12 @@ function scaleInner(d){
     <div class="plain" style="margin-top:0;margin-bottom:8px">이벤트 금액 <b>${esc(d.amount_txt||'-')}</b> · 유사 규모(<b>${esc(d.bucket||'')}</b>) 과거 <b class="num">${esc(d.n||0)}건</b> 평균</div>
     ${rows}`;
 }
-async function loadScale(rno){
+async function loadScale(rno,pfx){
+  pfx=pfx||'';   // ''=피드, 'd'=상세뷰(ID 충돌 방지)
   track('scale_view', {rcept: rno});
   const item=STATE.items.find(x=>x.rcept_no===rno);
-  const box=document.getElementById('scale-'+cssId(rno));
-  const btn=document.getElementById('scbtn-'+cssId(rno));
+  const box=document.getElementById(pfx+'scale-'+cssId(rno));
+  const btn=document.getElementById(pfx+'scbtn-'+cssId(rno));
   if(!item||!box)return;
   if(box.classList.contains('open')){
     box.classList.remove('open');if(btn)btn.textContent='📏 이 공시 규모로 보기';return;
@@ -715,6 +780,48 @@ function setValmode(v){
 })();
 
 /* ---------- feed ---------- */
+/* 카드 1장 HTML 생성 (피드·상세뷰 공용). pfx='' 피드 / pfx='d' 상세뷰 → ID 충돌 방지.
+   피드에서는 종목명(.tk)이 data-detail을 달고 클릭 시 상세뷰를 연다(상세뷰 내부 카드는 미부착). */
+function cardHTML(a,pfx){
+  pfx=pfx||'';
+  const star=a.is_watched?'<span class="star" title="관심종목">★</span>':'';
+  const mkt=a.market?`<span class="mk">· ${esc(a.market)}</span>`:'';
+  const newpill=a.is_new?'<span class="newpill">NEW</span>':'';
+  const facts=(a.bullets||[]).map(l=>`<li><span>${boldNums(esc(l))}</span></li>`).join('');
+  const ok=a.impact&&a.impact.status==='ok';
+  const id=cssId(a.rcept_no);
+  const scale=hasScale(a)?
+    `<button class="scaletog" id="${pfx}scbtn-${id}" onclick="loadScale('${esc(a.rcept_no)}','${pfx}')">📏 이 공시 규모로 보기</button>`+
+    `<div class="impact scalebox" id="${pfx}scale-${id}" data-loaded="0"></div>`:'';
+  const tk=pfx
+    ? `<span class="tk">${esc(a.corp_name)}</span>`
+    : `<span class="tk" role="button" tabindex="0" data-detail="${esc(a.stock_code)}" data-nm="${esc(a.corp_name)}" title="${esc(a.corp_name)} 상세 보기">${esc(a.corp_name)}</span>`;
+  return `<article class="card${a.is_watched?' watched':''}">
+    <div class="top">
+      ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}
+      <span class="tm">${newpill} ${esc(a.date||a.rcept_dt)}</span>
+    </div>
+    <h3 class="ttl">${esc(a.report_nm)}</h3>
+    ${facts?`<ul class="facts">${facts}</ul>`:''}
+    <div class="impact" id="${pfx}imp-${id}">${impactInner(a)}</div>
+    ${scale}
+    <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
+      (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">↗ 공유</button>`:'')+
+      `<a class="src"${ok?' style="margin-left:14px"':''} href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
+  </article>`;
+}
+/* seg(1일/1주/1개월) 토글 위임 — 피드/상세뷰 컨테이너 공용. imp-/dimp- 양쪽 매칭. */
+function attachSegToggle(container){
+  container.querySelectorAll('.impact[id*="imp-"]').forEach(box=>{
+    box.addEventListener('click',e=>{
+      const b=e.target.closest('.seg button');if(!b)return;
+      const m=box.id.match(/imp-(.+)$/);if(!m)return;
+      const rno=m[1];   // cssId 손실 대비: 실아이템에서 원 rcept 매칭
+      const item=STATE.items.find(x=>cssId(x.rcept_no)===rno);
+      if(item)setWin(item.rcept_no,b.dataset.h);
+    });
+  });
+}
 function renderFeed(){
   const el=document.getElementById('feed');
   const items=STATE.items.filter(a=>passFilter(a,STATE.filter));
@@ -724,41 +831,59 @@ function renderFeed(){
         :'최근 공시가 없습니다. 새로고침해 보세요.')+'</div>';
     return;
   }
-  el.innerHTML=items.map(a=>{
-    const star=a.is_watched?'<span class="star" title="관심종목">★</span>':'';
-    const mkt=a.market?`<span class="mk">· ${esc(a.market)}</span>`:'';
-    const newpill=a.is_new?'<span class="newpill">NEW</span>':'';
-    const facts=(a.bullets||[]).map(l=>`<li><span>${boldNums(esc(l))}</span></li>`).join('');
-    const ok=a.impact&&a.impact.status==='ok';
-    const id=cssId(a.rcept_no);
-    const scale=hasScale(a)?
-      `<button class="scaletog" id="scbtn-${id}" onclick="loadScale('${esc(a.rcept_no)}')">📏 이 공시 규모로 보기</button>`+
-      `<div class="impact scalebox" id="scale-${id}" data-loaded="0"></div>`:'';
-    return `<article class="card${a.is_watched?' watched':''}">
-      <div class="top">
-        ${star}<span class="tk">${esc(a.corp_name)}</span><span class="cd num">${esc(a.stock_code)}</span>${mkt}
-        <span class="tm">${newpill} ${esc(a.date||a.rcept_dt)}</span>
-      </div>
-      <h3 class="ttl">${esc(a.report_nm)}</h3>
-      ${facts?`<ul class="facts">${facts}</ul>`:''}
-      <div class="impact" id="imp-${id}">${impactInner(a)}</div>
-      ${scale}
-      <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
-        (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">↗ 공유</button>`:'')+
-        `<a class="src"${ok?' style="margin-left:14px"':''} href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
-    </article>`;
-  }).join('');
-  // seg 토글 위임
-  el.querySelectorAll('.impact[id^="imp-"]').forEach(box=>{
-    box.addEventListener('click',e=>{
-      const b=e.target.closest('.seg button');if(!b)return;
-      const rno=box.id.slice(4);
-      // cssId 는 손실적일 수 있어 실아이템에서 원 rcept 매칭
-      const item=STATE.items.find(x=>cssId(x.rcept_no)===rno);
-      if(item)setWin(item.rcept_no,b.dataset.h);
-    });
-  });
+  el.innerHTML=items.map(a=>cardHTML(a,'')).join('');
+  attachSegToggle(el);
 }
+
+/* ---------- 종목 상세뷰 (STATE.items를 stock_code로 필터 — 신규 API 없음) ---------- */
+let DETAIL_CODE=null;
+function detailActionHTML(code){
+  const watched=(STATE.stocks||[]).some(s=>String(s.stock_code)===String(code));
+  return watched
+    ? `<span class="detail-watched">★ 관심종목</span>`
+    : `<button class="detail-add" type="button" onclick="registerStock('${esc(code)}',this)">＋ 관심추가</button>`;
+}
+function openDetail(code,name){
+  code=String(code||'');if(!code)return;
+  DETAIL_CODE=code;
+  const items=STATE.items.filter(a=>String(a.stock_code)===code);
+  const fromStocks=(STATE.stocks||[]).find(s=>String(s.stock_code)===code);
+  const nm=name||(items[0]&&items[0].corp_name)||(fromStocks&&fromStocks.name)||code;
+  document.getElementById('detailNm').textContent=nm;
+  document.getElementById('detailCd').textContent=code;
+  document.getElementById('detailActions').innerHTML=detailActionHTML(code);
+  const body=document.getElementById('detailBody');
+  if(!items.length){
+    body.innerHTML=`<div class="detail-empty">이 종목의 최근 공시가 아직 없습니다.<br>새 공시가 감지되면 여기에 표시됩니다.</div>`;
+  }else{
+    body.innerHTML=items.map(a=>cardHTML(a,'d')).join('');
+    attachSegToggle(body);
+  }
+  body.scrollTop=0;
+  const ov=document.getElementById('detail');
+  ov.hidden=false;
+  document.body.style.overflow='hidden';
+  track('detail_open',{code:code,n:items.length});
+}
+function closeDetail(){
+  const ov=document.getElementById('detail');if(!ov||ov.hidden)return;
+  ov.hidden=true;DETAIL_CODE=null;document.body.style.overflow='';
+}
+(function(){
+  const ov=document.getElementById('detail');if(!ov)return;
+  document.getElementById('detailX').addEventListener('click',closeDetail);
+  document.getElementById('detailBack').addEventListener('click',closeDetail);
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDetail();});
+  // 종목명(.tk / .sres-nm) 클릭·키보드 → 상세뷰
+  document.addEventListener('click',e=>{
+    const t=e.target.closest('[data-detail]');if(t)openDetail(t.dataset.detail,t.dataset.nm||'');
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    const t=e.target.closest('[data-detail]');if(!t)return;
+    e.preventDefault();openDetail(t.dataset.detail,t.dataset.nm||'');
+  });
+})();
 
 function absorb(d){
   STATE.items=d.alerts||[];
@@ -850,7 +975,7 @@ function renderSearchResults(list){
       ? `<button class="sres-add done" disabled>등록됨</button>`
       : `<button class="sres-add" onclick="registerStock('${esc(code)}',this)">＋ 등록</button>`;
     return `<div class="sres-row"><div class="sres-info">`+
-      `<span class="sres-nm">${esc(r.name)}</span>`+
+      `<span class="sres-nm" role="button" tabindex="0" data-detail="${esc(code)}" data-nm="${esc(r.name)}" title="${esc(r.name)} 상세 보기">${esc(r.name)}</span>`+
       `<span class="sres-cd num">${esc(code)}</span>${mk}</div>${btn}</div>`;
   }).join('');
   box.classList.add('show');
@@ -930,6 +1055,17 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
       btn.disabled=false;
     }
   });
+})();
+
+/* ---------- 맨위로 FAB ---------- */
+(function(){
+  const fab=document.getElementById('toTop');
+  if(!fab)return;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  fab.addEventListener('click',()=>window.scrollTo({top:0,behavior:reduce?'auto':'smooth'}));
+  const onScroll=()=>{ (window.scrollY>420)?fab.classList.add('show'):fab.classList.remove('show'); };
+  window.addEventListener('scroll',onScroll,{passive:true});
+  onScroll();
 })();
 
 /* ---------- init ---------- */
