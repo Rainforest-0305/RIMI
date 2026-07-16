@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "kr.miri.gongsi",
+      "sha256_cert_fingerprints": [
+        "BA:4C:1D:AF:29:4B:F8:67:8F:AE:FE:3E:D0:84:58:75:21:28:09:4F:DD:A9:E6:F8:B2:3A:D0:06:D0:FB:A5:5B"
+      ]
+    }
+  }
+]

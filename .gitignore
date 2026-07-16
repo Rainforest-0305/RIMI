@@ -5,6 +5,19 @@
 *.token
 *.key
 
+# === Android/TWA 서명 키스토어 (절대 커밋 금지) ===
+*.keystore
+*.jks
+*.p12
+*.pepk
+android.keystore
+upload-keystore.jks
+signing-key-list.txt
+keystore-passwords.txt
+playstore/keystore/
+playstore/*.keystore
+playstore/*.jks
+
 # === 대용량 배포 도구 (각 환경에서 내려받음) ===
 bin/
 bin/cloudflared.exe
