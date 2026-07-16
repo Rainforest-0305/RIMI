@@ -54,8 +54,8 @@
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
     min-height:100dvh;display:flex;justify-content:center;
-    /* 헤더가 스크롤되므로 상단 safe-area(노치/상태바) 여백은 body가 담당 */
-    padding:env(safe-area-inset-top, 0px) 15px calc(22px + env(safe-area-inset-bottom, 0px))}
+    /* 상단 safe-area는 sticky 헤더가 담당(중복 방지). 좌우·하단만 body. */
+    padding:0 15px calc(22px + env(safe-area-inset-bottom, 0px))}
   .num{font-variant-numeric:tabular-nums}
   .app{width:100%;max-width:460px;display:flex;flex-direction:column;gap:11px}
 
@@ -68,11 +68,11 @@
   .htext .nm .en{font-size:11px;font-weight:700;color:var(--t4);letter-spacing:.16em;margin-left:8px}
   .htext .tg{font-size:13px;color:var(--t2);font-weight:500;margin-top:3px}
 
-  /* 헤더는 더 이상 고정(sticky)하지 않고 콘텐츠와 함께 스크롤된다.
-     상단 safe-area는 body padding-top이 담당. 하단 액션바(.bar-btns)는 sticky 유지. */
-  header{z-index:9;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  /* 꼭대기(로고)부터 검색창까지 헤더 블록 전체를 상단 고정. safe-area 위에 스틱. */
+  header{position:sticky;top:0;z-index:10;
+    background:color-mix(in srgb,var(--bg) 92%,transparent);
     backdrop-filter:blur(14px);
-    padding:14px calc(50vw - 50% + 2px) 6px;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) calc(50vw - 50% + 2px) 8px;
     /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
     margin-inline:calc(50% - 50vw)}
   .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 12px}
@@ -98,12 +98,7 @@
     border:none;background:var(--blue);color:#fff;cursor:pointer}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
-  /* 헤더는 스크롤돼 사라지되, 검색창은 상단에 sticky 고정(빠른 검색 접근).
-     safe-area 위·카드 위(z-index)·풀블리드 배경으로 스크롤 시 카드가 비치지 않게. */
-  .searchwrap{position:sticky;top:env(safe-area-inset-top,0px);z-index:11;
-    padding:8px calc(50vw - 50% + 4px) 8px;
-    margin-inline:calc(50% - 50vw);
-    background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px)}
+  .searchwrap{padding:8px 2px 2px;position:relative}
   .searchwrap input{width:100%;padding:11px 13px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
   .searchwrap input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
@@ -214,10 +209,7 @@
   .cardshare:hover{text-decoration:underline}
   .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  /* 하단 액션바: iPhone 홈 인디케이터(safe-area-inset-bottom)에 안 잘리게 여백 확보 */
-  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;
-    padding:13px 0 calc(10px + env(safe-area-inset-bottom, 0px));
-    background:linear-gradient(0deg,var(--bg) 68%,transparent)}
+  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 4px;background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
   .btn2.pri{background:var(--blue);color:#fff} .btn2.sec{flex:0 0 54px;background:var(--card);color:var(--t2);box-shadow:0 0 0 1px var(--line) inset}
   .btn2:active{transform:translateY(1px)}
@@ -290,12 +282,6 @@
 </head>
 <body>
 <div class="app">
-  <div class="searchwrap">
-    <input id="searchInput" type="search" placeholder="종목명 또는 코드 검색 (예: 삼성, 005930)"
-           autocomplete="off" aria-label="종목 검색">
-    <div class="formmsg" id="searchmsg"></div>
-    <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
-  </div>
   <header>
     <div class="hrow">
       <span class="hi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></span>
@@ -304,6 +290,12 @@
       <span class="live"><span class="d"></span>실시간</span>
     </div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
+    <div class="searchwrap">
+      <input id="searchInput" type="search" placeholder="종목명 또는 코드 검색 (예: 삼성, 005930)"
+             autocomplete="off" aria-label="종목 검색">
+      <div class="formmsg" id="searchmsg"></div>
+      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+    </div>
     <div class="addrow" id="addrow">
       <input id="addInput" placeholder="6자리 종목코드 (예: 005930)" inputmode="numeric"
              autocomplete="off" onkeydown="if(event.key==='Enter')addStock()">
