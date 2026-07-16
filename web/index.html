@@ -639,8 +639,7 @@ function renderChips(){
     el.innerHTML=`<div class="chips-empty">`+
       `<span class="ce-t">이 그룹은 아직 비어 있어요</span>`+
       `<button class="ce-cta" type="button" onclick="openSearchSheet()">＋ 종목 담기</button>`+
-      `</div>`+
-      `<button class="chip editbtn" type="button" onclick="openGroupSheet()">✎ 그룹</button>`;
+      `</div>`;
     return;
   }
   const chips=list.map((s,i)=>{
