@@ -102,9 +102,12 @@
   .searchwrap input{width:100%;padding:11px 13px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
   .searchwrap input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
-  .searchres{display:none;flex-direction:column;margin-top:6px;background:var(--card);border-radius:12px;
-    box-shadow:0 0 0 1px var(--line) inset;overflow:hidden;max-height:280px;overflow-y:auto}
+  /* 검색 결과는 sticky 헤더 아래에 오버레이(헤더를 밀어 늘리지 않게 absolute). */
+  .searchres{display:none;flex-direction:column;position:absolute;left:0;right:0;top:calc(100% - 2px);z-index:20;
+    background:var(--card);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.28),0 0 0 1px var(--line) inset;
+    overflow:hidden;max-height:340px;overflow-y:auto}
   .searchres.show{display:flex}
+  .sheet-hint{color:var(--t2);font-size:13px;line-height:1.5;padding:2px 2px 10px}
   .sres-row{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line-2)}
   .sres-row:first-child{border-top:none}
   .sres-info{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1}
@@ -395,6 +398,12 @@
     <div class="wl-grouprow" id="wlGroups" role="tablist" aria-label="관심종목 그룹"></div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
     <div class="formmsg" id="formmsg"></div>
+    <div class="searchwrap">
+      <input id="searchInput" type="search" placeholder="종목 검색 (예: 삼성, 005930) — 공시 보기·관심 담기"
+             autocomplete="off" aria-label="종목 검색">
+      <div class="formmsg" id="searchmsg"></div>
+      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+    </div>
     <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
   </header>
 
@@ -455,19 +464,13 @@
   <div class="sheet-panel">
     <span class="sheet-grip" aria-hidden="true"></span>
     <div class="sheet-head">
-      <h3 class="sheet-tt">종목 검색해서 담기</h3>
+      <h3 class="sheet-tt">종목 코드로 담기</h3>
       <button class="sheet-x" type="button" data-sheet-close="sheetSearch" aria-label="닫기">✕</button>
     </div>
     <div class="sheet-target" id="sheetSearchTarget"></div>
     <div class="sheet-body">
-      <div class="searchwrap">
-        <input id="searchInput" type="search" placeholder="종목명 또는 코드 검색 (예: 삼성, 005930)"
-               autocomplete="off" aria-label="종목 검색">
-        <div class="formmsg" id="searchmsg"></div>
-        <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
-      </div>
-      <button class="sheet-alt" type="button" onclick="toggleAdd()">코드로 직접 입력</button>
-      <div class="addrow" id="addrow">
+      <p class="sheet-hint">위쪽 검색창에서 종목명으로도 담을 수 있어요. 여기선 6자리 코드로 바로 추가합니다.</p>
+      <div class="addrow show" id="addrow">
         <input id="addInput" placeholder="6자리 종목코드 (예: 005930)" inputmode="numeric"
                autocomplete="off" onkeydown="if(event.key==='Enter')addStock()">
         <button class="btn" onclick="addStock()">추가</button>
@@ -692,15 +695,21 @@ function closeSheet(id){
     const dt=document.getElementById('detail');
     if(!anySheetOpen()&&(!dt||dt.hidden))document.body.style.overflow='';},240);
 }
+/* "+종목"/"+종목 담기" → 항상 보이는 상단 검색창으로 스크롤·포커스(검색이 주 경로). */
 function openSearchSheet(){
+  const inp=document.getElementById('searchInput');
+  if(inp){try{inp.scrollIntoView({block:'start',behavior:'smooth'});}catch(e){}
+    setTimeout(()=>{try{inp.focus();}catch(e){}},120);}
+  const box=document.getElementById('searchResults');if(box){box.innerHTML='';box.classList.remove('show');}
+  searchFlash('');
+  track('watchlist_search_open',{group:WLSTATE.activeGroup});
+}
+/* 코드로 직접 담기(부가 경로) 시트. */
+function openCodeSheet(){
   openSheet('sheetSearch');
   const tgt=document.getElementById('sheetSearchTarget');
   if(tgt){const g=WLSTATE.groups.find(x=>x.id===String(WLSTATE.activeGroup));
     tgt.textContent='담는 그룹 · '+grpName(g);}
-  const box=document.getElementById('searchResults');if(box){box.innerHTML='';box.classList.remove('show');}
-  const inp=document.getElementById('searchInput');if(inp){inp.value='';setTimeout(()=>{try{inp.focus();}catch(e){}},90);}
-  searchFlash('');
-  track('watchlist_search_open',{group:WLSTATE.activeGroup});
 }
 (function(){
   document.addEventListener('click',e=>{
