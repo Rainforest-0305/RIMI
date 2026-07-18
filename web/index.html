@@ -326,7 +326,11 @@
   @media (prefers-reduced-motion:reduce){.fab{transition:none}}
 
   /* ---------- 관심종목 그룹/칩 (토스식) ---------- */
-  .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px}
+  .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;align-items:center}
+  .wl-ghide{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
+    background:none;border:none;cursor:pointer;padding:4px 2px 4px 8px;white-space:nowrap}
+  .wl-gshow{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
+    background:none;border:none;cursor:pointer;padding:2px 2px;white-space:nowrap}
   .wl-grouprow::-webkit-scrollbar{display:none}
   .wl-gtab{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;
     font-size:13.5px;font-weight:700;padding:8px 14px;border-radius:999px;border:none;cursor:pointer;
@@ -697,7 +701,19 @@ function renderGroups(){
     return `<button class="wl-gtab${on?' on':''}" role="tab" aria-selected="${on}" aria-expanded="${on}" `+
       `onclick="switchGroup('${esc(g.id)}')">${esc(grpName(g))}<span class="gcnt num">${c[g.id]||0}</span></button>`;
   }).join('');
-  el.innerHTML=tabs+`<button class="wl-gmanage" type="button" onclick="openGroupSheet()" aria-label="그룹 편집">✎ 그룹</button>`;
+  if(localStorage.getItem('miri-grouprow-hidden')==='1'){
+    el.innerHTML=`<button class="wl-gshow" type="button" onclick="toggleGroupRow()">그룹 보기</button>`;
+    return;
+  }
+  el.innerHTML=tabs+`<button class="wl-gmanage" type="button" onclick="openGroupSheet()" aria-label="그룹 편집">✎ 그룹</button>`+
+    `<button class="wl-ghide" type="button" onclick="toggleGroupRow()" aria-label="그룹 줄 숨기기">그룹 숨기기</button>`;
+}
+/* 그룹 줄 접기/펼치기 (기기별 기억) */
+function toggleGroupRow(){
+  const hidden=localStorage.getItem('miri-grouprow-hidden')==='1';
+  localStorage.setItem('miri-grouprow-hidden',hidden?'0':'1');
+  if(!hidden){WLSTATE.expanded=null;}   // 숨기면 펼친 그룹도 접기
+  renderGroups();renderChips();
 }
 /* 그룹 탭 = 아코디언 토글: 같은 그룹 재탭 → 접힘, 다른 그룹 → 펼침(+추가대상 갱신). */
 function switchGroup(id){
