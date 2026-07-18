@@ -8,7 +8,8 @@ price_source.py  (WS-32C ③ 시세 소스 우선순위 체인)
 체인(순서 고정):
   1순위 pykrx  : stock.get_market_ohlcv_by_date 최근 종가 (로그인/앱키 불요, KRX/Naver egress)
   2순위 toss   : kis-trading/toss_data.py 의 price()/candles() (KIS-독립 OAuth 소스)
-  3순위 None   : 명확한 sentinel(None) + WARNING 로그. 폴백 실패도 반드시 드러난다.
+  3순위 fdr    : FinanceDataReader.DataReader 최근 종가 (KIS-독립, pip finance-datareader)
+  4순위 None   : 명확한 sentinel(None) + WARNING 로그. 폴백 실패도 반드시 드러난다.
 
 ★안전: 이 모듈은 GET/조회만 한다. 주문·계좌 변경 없음.
        toss_data.py 는 절대 수정하지 않고 import만 한다.
@@ -94,12 +95,43 @@ def _try_toss(ticker):
     return None
 
 
+def _try_fdr(ticker, lookback_days=15):
+    """3순위. FinanceDataReader 최근 종가 (pykrx·toss 모두 실패 시 폴백, KIS-독립).
+       성공 시 (price:float, asof:'YYYY-MM-DD'), 실패 시 None."""
+    try:
+        import FinanceDataReader as fdr
+    except Exception as e:
+        logger.warning("[price_source] FinanceDataReader import 실패: %r → 다음 순위 폴백", e)
+        return None
+    try:
+        end = _dt.date.today()
+        start = end - _dt.timedelta(days=lookback_days)
+        df = fdr.DataReader(ticker, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+    except Exception as e:
+        logger.warning("[price_source] fdr 호출 실패 %s: %r → 다음 순위 폴백", ticker, e)
+        return None
+    if df is None or len(df) == 0:
+        logger.info("[price_source] fdr 데이터 0건 %s → 다음 순위 폴백", ticker)
+        return None
+    try:
+        close = float(df["Close"].iloc[-1])
+        asof = df.index[-1].strftime("%Y-%m-%d")
+    except (KeyError, ValueError, TypeError, IndexError) as e:
+        logger.warning("[price_source] fdr 파싱 실패 %s: %r → 다음 순위 폴백", ticker, e)
+        return None
+    if close <= 0:
+        logger.info("[price_source] fdr 종가<=0 %s → 다음 순위 폴백", ticker)
+        return None
+    return close, asof
+
+
 # 소스 이름 → 시도 함수. get_price(sources=...) 로 순서/부분집합 지정 가능(테스트/폴백검증용).
 _DISPATCH = {
     "pykrx": _try_pykrx,
     "toss": _try_toss,
+    "fdr": _try_fdr,
 }
-_DEFAULT_CHAIN = ("pykrx", "toss")
+_DEFAULT_CHAIN = ("pykrx", "toss", "fdr")
 
 
 def get_price(ticker, sources=_DEFAULT_CHAIN):
@@ -107,13 +139,13 @@ def get_price(ticker, sources=_DEFAULT_CHAIN):
 
     Args:
         ticker: 종목코드 문자열 (예 '005930').
-        sources: 시도 순서. 기본 ('pykrx','toss'). 각 소스 실패 시 다음으로 폴백.
+        sources: 시도 순서. 기본 ('pykrx','toss','fdr'). 각 소스 실패 시 다음으로 폴백.
 
     Returns:
         dict: {
           'ticker': str,
           'price':  float | None,          # None = 3순위 폴백(모든 소스 실패)
-          'source': 'pykrx'|'toss'|None,   # 실제 응답한 소스 라벨 (None = 폴백)
+          'source': 'pykrx'|'toss'|'fdr'|None,  # 실제 응답한 소스 라벨 (None = 폴백)
           'asof':   'YYYY-MM-DD' | None,   # 시세 기준일(가능한 경우)
           'chain':  [{'source':..,'ok':bool}, ...],  # 시도 궤적(관측용)
         }
@@ -146,10 +178,10 @@ if __name__ == "__main__":
     import json
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s %(message)s", stream=sys.stderr)
-    ap = argparse.ArgumentParser(description="시세 우선순위 체인 헬퍼 (pykrx→toss→None)")
+    ap = argparse.ArgumentParser(description="시세 우선순위 체인 헬퍼 (pykrx→toss→fdr→None)")
     ap.add_argument("--ticker", default="005930")
-    ap.add_argument("--sources", default="pykrx,toss",
-                    help="시도 순서 콤마구분 (예 'pykrx,toss' | 'toss' | 'toss,pykrx')")
+    ap.add_argument("--sources", default="pykrx,toss,fdr",
+                    help="시도 순서 콤마구분 (예 'pykrx,toss,fdr' | 'fdr' | 'toss,fdr')")
     args = ap.parse_args()
     src = tuple(s.strip() for s in args.sources.split(",") if s.strip())
     out = get_price(args.ticker, sources=src)
