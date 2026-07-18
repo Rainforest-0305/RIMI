@@ -100,9 +100,9 @@
       "proposed_labels_ko": {
         "bull": "강세",
         "neutral": "중립/보합",
-        "crash": "급락"
+        "crash": "약세"
       },
-      "labels_status": "제안(미확정). 최종 한글 wording은 President 전담. 중요: neutral(-8%<r20<+3%)은 완만한 상승(+0~+3%)을 포함하므로 '약세'로 표기 금지.",
+      "labels_status": "President 확정(2026-07-18): 강세/중립·보합/약세. 약세=r20<=-8%, 중립·보합=-8%<r20<+3%(완만한 상승 포함), 강세=r20>=+3%.",
       "president_note": "President 원문 라벨은 강세/약세/급락 3자. 본 구현 중간대(neutral)를 '약세'로 쓰려면 경계를 r20<0 등으로 재정의 필요(데이터 근거 별도 산출). 현재 제안: 강세=r20>=+3%, 급락=r20<=-8%, 중간대='중립/보합'.",
       "baseline_note": "레짐 ETF(069500/229200)는 국면 라벨 전용. CAR baseline은 시장별 EW 자체구축 지수(index_proxy 참조)로 별개 계열."
     },

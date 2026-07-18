@@ -498,7 +498,7 @@
       <button role="tab" data-v="car" aria-selected="false">보정값</button>
     </div>
   </div>
-  <p class="disc disc-top" style="text-align:left;padding:0 6px 2px">평균값=원자료 · 중앙값=이상치완화 · 보정값=시장대비 초과등락 · 과거 통계일 뿐 예측·투자권유 아님 · 출처 DART</p>
+  <p class="disc disc-top" style="text-align:left;padding:0 6px 2px">평균값=원자료 · 중앙값=이상치완화 · 보정값=시장대비 초과등락<br>과거 통계일 뿐 예측·투자권유 아님 · 출처 DART</p>
 
   <div class="feed" id="feed" role="feed">
     <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
@@ -611,7 +611,7 @@ let STATE={items:[],stocks:[],meta:'',filter:'all'};
 const WINSEL={};   // rcept_no -> 'd1'|'w1'|'m1'
 const DEFWIN='m1'; // 프로토타입 기본 = 1개월
 // 대표값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본 평균값.
-let VALMODE=(localStorage.getItem('miri-valmode')||'avg');
+let VALMODE=(localStorage.getItem('miri-valmode2')||'car'); // 기본=보정값(President 확정 2026-07-18)
 const VALCAP={avg:'평균 등락',med:'중앙값 등락',car:'시장대비 초과등락'};
 const VALWORD={avg:'평균',med:'중앙값',car:'시장대비'};
 function valPick(w){ // 창 객체 -> {val, up} (선택 대표값 + 해당 상승확률). 폴백 안전.
@@ -1249,7 +1249,7 @@ function syncValmode(){
 }
 function setValmode(v){
   if(v===VALMODE)return;
-  VALMODE=v;localStorage.setItem('miri-valmode',v);
+  VALMODE=v;localStorage.setItem('miri-valmode2',v);
   syncValmode();renderFeed();   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
 }
 (function(){
