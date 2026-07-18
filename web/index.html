@@ -183,7 +183,11 @@
   @keyframes rs{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
   .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600}
-  .star{color:#f5a524;font-size:13px}
+  .star{background:none;border:none;padding:0 3px 0 0;cursor:pointer;font-family:inherit;
+    font-size:15px;line-height:1;color:#b6bfca;transition:color .12s,transform .12s}
+  .star.on{color:#f5a524}
+  .star:active{transform:scale(1.25)}
+  .star:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
   .mk{font-size:11px;color:var(--t3);font-weight:600} .tm{margin-left:auto;font-size:12px;color:var(--t4);font-weight:500}
   .newpill{font-size:10px;font-weight:800;color:#fff;background:var(--up);border-radius:6px;padding:1px 6px}
   .ttl{font-weight:700;font-size:16px;line-height:1.4;margin:0 0 10px;text-wrap:balance}
@@ -1337,7 +1341,11 @@ function setValmode(v){
    피드에서는 종목명(.tk)이 data-detail을 달고 클릭 시 상세뷰를 연다(상세뷰 내부 카드는 미부착). */
 function cardHTML(a,pfx){
   pfx=pfx||'';
-  const star=a.is_watched?'<span class="star" title="관심종목">★</span>':'';
+  // 별 = 관심종목 토글 버튼(항상 표시). 상세뷰 내부 카드(pfx='d')는 자체 담기 버튼이 있어 표시만.
+  const star=(!pfx&&a.stock_code)
+    ? `<button class="star${a.is_watched?' on':''}" data-wstar="${esc(a.stock_code)}" onclick="toggleWatch(this)" `+
+      `aria-label="관심종목 토글" title="${a.is_watched?'관심종목 해제':'관심종목 담기'}">★</button>`
+    : (a.is_watched?'<span class="star on" title="관심종목" style="cursor:default">★</span>':'');
   const mkt=a.market?`<span class="mk">· ${esc(a.market)}</span>`:'';
   const newpill=a.is_new?'<span class="newpill">NEW</span>':'';
   const facts=(a.bullets||[]).map(l=>`<li><span>${boldNums(esc(l))}</span></li>`).join('');
@@ -1476,6 +1484,46 @@ function closeDetail(){
     e.preventDefault();openDetail(t.dataset.detail,t.dataset.nm||'');
   });
 })();
+
+/* 카드 별(★) 탭 = 관심종목 토글. 스크롤 유지를 위해 피드 재렌더 없이
+   별·강조·헤더(그룹/칩)만 제자리 갱신한다(정렬 반영은 다음 자연 렌더). */
+async function toggleWatch(btn){
+  const code=btn&&btn.dataset?btn.dataset.wstar:'';
+  if(!code||btn.disabled)return;
+  const on=btn.classList.contains('on');
+  btn.disabled=true;
+  try{
+    let d={};
+    if(on){
+      const r=await fetch(API+'/watchlist/'+encodeURIComponent(code),
+        {method:'DELETE',headers:wlHeaders(API+'/watchlist/'+code,{})});
+      d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));
+    }else{
+      const r=await fetch(API+'/watchlist',{method:'POST',
+        headers:wlHeaders(API+'/watchlist',{'Content-Type':'application/json'}),
+        body:JSON.stringify({stock_code:code,group:WLSTATE.activeGroup||'default'})});
+      d=await r.json().catch(()=>({}));
+      if(!r.ok&&r.status!==409)throw new Error(d.detail||('HTTP '+r.status));
+    }
+    if(d&&d.stocks){
+      WLSTATE.stocks=(d.stocks||[]).map(s=>({name:s.name,stock_code:String(s.stock_code),
+        group:String(s.group||'default'),order:(typeof s.order==='number'?s.order:0)}));
+      STATE.stocks=WLSTATE.stocks;
+      renderGroups();renderChips();
+    }
+    const ws=new Set((WLSTATE.stocks||[]).map(s=>String(s.stock_code)));
+    const now=ws.has(String(code));
+    (STATE.items||[]).forEach(a=>{a.is_watched=!!a.stock_code&&ws.has(String(a.stock_code));});
+    document.querySelectorAll('.star[data-wstar="'+code+'"]').forEach(b=>{
+      b.classList.toggle('on',now);
+      b.title=now?'관심종목 해제':'관심종목 담기';
+      const card=b.closest('article.card');if(card)card.classList.toggle('watched',now);
+    });
+    if(typeof track==='function')track(now?'watchlist_add':'watch_remove',{code:code,via:'star'});
+  }catch(e){console.error('toggleWatch',e);}
+  finally{btn.disabled=false;}
+}
 
 /* 기기별 is_watched 계산 + 관심종목 상단정렬. 서버 전역 피드는 is_watched=false
    로만 오므로(캐시 오염 방지), 이 기기 관심목록(WLSTATE.stocks)으로 여기서 매긴다.
@@ -1672,7 +1720,7 @@ function renderPushToggle(){
     ? '<button class="pushbtn on" type="button" onclick="disablePush()">🔔 알림 켜짐 · 끄기</button>'+
       '<span class="pushnote">관심종목 새 공시를 알려드려요.</span>'
     : '<button class="pushbtn" type="button" onclick="enablePush()">🔔 알림 받기</button>'+
-      '<span class="pushnote">관심종목 새 공시 알림 (실시간 아님, 주기 확인).</span>';
+      '<span class="pushnote">관심종목 새 공시 알림</span>';
 }
 async function initPush(){
   if(!PUSH_SUPPORTED){renderPushToggle();return;}
