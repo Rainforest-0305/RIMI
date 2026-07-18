@@ -51,6 +51,7 @@
     --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a}
 
   *{box-sizing:border-box}
+  html{background:var(--bg)}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
     min-height:100dvh;display:flex;justify-content:center;
@@ -223,7 +224,7 @@
   .cardshare:hover{text-decoration:underline}
   .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 4px;background:linear-gradient(0deg,var(--bg) 68%,transparent)}
+  .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 calc(4px + env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
   .btn2.pri{background:var(--blue);color:#fff} .btn2.sec{flex:0 0 54px;background:var(--card);color:var(--t2);box-shadow:0 0 0 1px var(--line) inset}
   .btn2:active{transform:translateY(1px)}
@@ -1524,9 +1525,19 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
 /* ---------- 첫 로딩 스플래시(아이콘+이메일) ---------- */
 (function(){
   const sp=document.getElementById('splash');if(!sp)return;
+  const t0=Date.now();
   const hide=()=>{sp.classList.add('hide');setTimeout(()=>sp.remove(),400);};
-  if(localStorage.getItem('miri_splash_done')){setTimeout(hide,600);return;}
-  sp.classList.add('ask');
+  if(!localStorage.getItem('miri_splash_done'))sp.classList.add('ask');
+  /* 로딩 완료 감지 → 자동 메인 진입 (최소 0.9s 노출, 최대 6s 안전장치).
+     이메일 입력 중(포커스/입력값)일 때만 자동 진입을 보류한다. */
+  (function tryAuto(){
+    if(!document.getElementById('splash'))return;
+    const em=document.getElementById('spEmail');
+    const typing=em&&(document.activeElement===em||em.value.trim());
+    const loaded=!!document.querySelector('#feed .card')||(Date.now()-t0>6000);
+    if(loaded&&!typing){setTimeout(hide,Math.max(0,900-(Date.now()-t0)));return;}
+    setTimeout(tryAuto,300);
+  })();
   document.getElementById('spSkip').addEventListener('click',()=>{
     localStorage.setItem('miri_splash_done','1');
     if(typeof track==='function')track('splash_skip',{});
