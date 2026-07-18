@@ -571,7 +571,9 @@ def delete_watchlist(code: str):
     state = watch_store.load_watch_state()
     new_stocks = [s for s in state["stocks"] if s.get("stock_code") != code]
     if len(new_stocks) == len(state["stocks"]):
-        raise HTTPException(status_code=404, detail=f"등록되지 않은 종목: {code}")
+        # 멱등 삭제: 피드 캐시(60s)가 낡은 관심 상태를 들고 있으면 이미 빠진
+        # 종목에 해제 요청이 올 수 있다 — 404 대신 현 상태를 돌려준다.
+        return _snapshot(state)
     state["stocks"] = new_stocks
     state = watch_store.save_watch_state(state)
     _FEED_CACHE["data"] = None

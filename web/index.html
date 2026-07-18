@@ -474,6 +474,25 @@
   <!-- 필터 행: sticky 제외(검색창까지만 고정). 스크롤 시 함께 올라감. -->
   <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
 
+  <div id="banner"></div>
+  <div class="feedmeta" id="feedmeta"></div>
+
+  <div class="valwrap">
+    <span class="vlab">대표값</span>
+    <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
+      <button role="tab" data-v="avg" aria-selected="true">평균값</button>
+      <button role="tab" data-v="med" aria-selected="false">중앙값</button>
+      <button role="tab" data-v="car" aria-selected="false">보정값</button>
+    </div>
+  </div>
+  <div class="feed" id="feed" role="feed">
+    <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
+  </div>
+
+  <div class="bar-btns">
+    <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐</button>
+    <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
+  </div>
   <div class="social" role="group" aria-label="MIRI 소셜 채널">
     <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
        aria-label="MIRI 텔레그램 채널 열기 (새 창)">
@@ -487,27 +506,6 @@
     </a>
   </div>
 
-  <div id="banner"></div>
-  <div class="feedmeta" id="feedmeta"></div>
-
-  <div class="valwrap">
-    <span class="vlab">대표값</span>
-    <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
-      <button role="tab" data-v="avg" aria-selected="true">평균값</button>
-      <button role="tab" data-v="med" aria-selected="false">중앙값</button>
-      <button role="tab" data-v="car" aria-selected="false">보정값</button>
-    </div>
-  </div>
-  <p class="disc disc-top" style="text-align:left;padding:0 6px 2px">평균값=원자료 · 중앙값=이상치완화 · 보정값=시장대비 초과등락<br>과거 통계일 뿐 예측·투자권유 아님 · 출처 DART</p>
-
-  <div class="feed" id="feed" role="feed">
-    <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
-  </div>
-
-  <div class="bar-btns">
-    <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐</button>
-    <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
-  </div>
   <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
 
   <section class="wl" aria-labelledby="wlTitle">
