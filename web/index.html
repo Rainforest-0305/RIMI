@@ -72,10 +72,10 @@
   header{position:sticky;top:0;z-index:10;
     background:color-mix(in srgb,var(--bg) 92%,transparent);
     backdrop-filter:blur(14px);
-    padding:calc(env(safe-area-inset-top,0px) + 12px) calc(50vw - 50% + 2px) 8px;
+    padding:calc(env(safe-area-inset-top,0px) + 10px) calc(50vw - 50% + 2px) 6px;
     /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
     margin-inline:calc(50% - 50vw)}
-  .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 12px}
+  .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 8px}
   .hi{width:23px;height:23px;border-radius:7px;background:var(--blue);display:grid;place-items:center;flex:none}
   .hi svg{width:14px;height:14px}
   .hnm{font-weight:800;font-size:15px;letter-spacing:-.03em}
@@ -98,7 +98,7 @@
     border:none;background:var(--blue);color:#fff;cursor:pointer}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
-  .searchwrap{padding:8px 2px 2px;position:relative}
+  .searchwrap{padding:6px 2px 2px;position:relative}
   .searchwrap input{width:100%;padding:11px 13px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
   .searchwrap input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
@@ -152,28 +152,28 @@
   .valmode button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .valmode button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .feed{display:flex;flex-direction:column;gap:11px}
+  .feed{display:flex;flex-direction:column;gap:9px}
   .scan{display:none;align-items:center;gap:8px;justify-content:center;color:var(--t3);font-size:13px;font-weight:600;padding:12px}
   .scan.on{display:flex}
   .scan i{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
   @keyframes sp{to{transform:rotate(360deg)}}
   .empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:40px 10px}
 
-  .card{background:var(--card);border-radius:var(--radius);padding:20px 19px 16px;animation:rs .3s ease both}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .3s ease both}
   .card.watched{box-shadow:0 0 0 1.5px var(--blue)}
   @keyframes rs{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
-  .top{display:flex;align-items:center;gap:7px;margin-bottom:11px;flex-wrap:wrap}
+  .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
   .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--t4);font-weight:600}
   .star{color:#f5a524;font-size:13px}
   .mk{font-size:11px;color:var(--t3);font-weight:600} .tm{margin-left:auto;font-size:12px;color:var(--t4);font-weight:500}
   .newpill{font-size:10px;font-weight:800;color:#fff;background:var(--up);border-radius:6px;padding:1px 6px}
-  .ttl{font-weight:700;font-size:16px;line-height:1.4;margin:0 0 13px;text-wrap:balance}
-  .facts{list-style:none;margin:0 0 15px;padding:0;display:flex;flex-direction:column;gap:8px}
+  .ttl{font-weight:700;font-size:16px;line-height:1.4;margin:0 0 10px;text-wrap:balance}
+  .facts{list-style:none;margin:0 0 11px;padding:0;display:flex;flex-direction:column;gap:6px}
   .facts li{display:flex;gap:9px;font-size:13.5px;color:var(--t2);align-items:baseline}
   .facts li::before{content:"";flex:none;width:3px;height:3px;border-radius:50%;background:var(--t4);transform:translateY(-3px)}
   .facts b{color:var(--t1);font-weight:700}
 
-  .impact{background:var(--card-2);border-radius:16px;padding:15px}
+  .impact{background:var(--card-2);border-radius:16px;padding:13px}
   .il{font-size:11.5px;font-weight:700;color:var(--t3);margin-bottom:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .il b{color:var(--t2)}
   .conf{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700}
@@ -181,10 +181,10 @@
   .conf.high{color:var(--ok)} .conf.high .dots i{background:var(--ok)}
   .conf.mid{color:var(--blue-ink)} .conf.mid .dots i:nth-child(-n+2){background:var(--blue)}
   .conf.ref{color:var(--t3)} .conf.ref .dots i:nth-child(1){background:var(--t3)}
-  .seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;margin-bottom:16px}
+  .seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;margin-bottom:12px}
   .seg button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:8px 0;border-radius:8px;cursor:pointer;transition:.14s}
   .seg button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-  .avg{display:flex;align-items:baseline;gap:9px;margin-bottom:14px}
+  .avg{display:flex;align-items:baseline;gap:9px;margin-bottom:11px}
   .pct{font-size:32px;font-weight:800;letter-spacing:-.04em;line-height:.9}
   .pct.up{color:var(--up)} .pct.down{color:var(--down)} .pct.flat{color:var(--t3)}
   .avgcap{font-size:12.5px;color:var(--t3);font-weight:600}
@@ -214,7 +214,7 @@
   .slab{font-size:12.5px;color:var(--t3);font-weight:600}
   .sup{font-size:11px;color:var(--t3);font-weight:600;margin-left:6px}
 
-  .foot{display:flex;align-items:center;margin-top:15px;padding-top:13px;border-top:1px solid var(--line-2)}
+  .foot{display:flex;align-items:center;margin-top:12px;padding-top:11px;border-top:1px solid var(--line-2)}
   .rc{font-family:var(--mono);font-size:10.5px;color:var(--t4)}
   .src{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--blue);text-decoration:none} .src:hover{text-decoration:underline}
   .cardshare{margin-left:auto;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
@@ -291,7 +291,7 @@
   @media (prefers-reduced-motion:reduce){.fab{transition:none}}
 
   /* ---------- 관심종목 그룹/칩 (토스식) ---------- */
-  .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 8px}
+  .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px}
   .wl-grouprow::-webkit-scrollbar{display:none}
   .wl-gtab{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;
     font-size:13.5px;font-weight:700;padding:8px 14px;border-radius:999px;border:none;cursor:pointer;
@@ -414,8 +414,10 @@
       <div class="formmsg" id="searchmsg"></div>
       <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
     </div>
-    <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
   </header>
+
+  <!-- 필터 행: sticky 제외(검색창까지만 고정). 스크롤 시 함께 올라감. -->
+  <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
 
   <div class="social" role="group" aria-label="MIRI 소셜 채널">
     <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
@@ -591,7 +593,7 @@ function toggleTheme(){const cur=document.documentElement.getAttribute('data-the
 /* ---------- 관심종목: 그룹 모델 + 칩 (토스식) ----------
    진실원본 = GET /api/watchlist 및 모든 변이의 전체 스냅샷 {stocks,keywords,groups}.
    STATE.stocks 는 검색·상세의 is_watched 판정 호환을 위해 WLSTATE.stocks 로 동기화. */
-let WLSTATE={stocks:[],keywords:[],groups:[],activeGroup:'default',loaded:false};
+let WLSTATE={stocks:[],keywords:[],groups:[],activeGroup:'default',expanded:null,loaded:false};
 let CHIP_EDIT=false;
 
 function grpName(g){return (g&&(String(g.id)==='default'?(g.name||'기본'):g.name))||'기본';}
@@ -610,6 +612,8 @@ function applyWatchlist(d){
   WLSTATE.groups=normGroups(d.groups);
   WLSTATE.loaded=true;
   if(!WLSTATE.groups.some(g=>g.id===String(WLSTATE.activeGroup)))WLSTATE.activeGroup='default';
+  // 펼친 그룹이 삭제됐으면 접힘으로 복귀(아코디언 안전)
+  if(WLSTATE.expanded!=null&&!WLSTATE.groups.some(g=>g.id===String(WLSTATE.expanded)))WLSTATE.expanded=null;
   STATE.stocks=WLSTATE.stocks;      // is_watched 판정 호환(검색/상세)
   renderGroups();renderChips();
 }
@@ -632,13 +636,19 @@ function renderGroups(){
   if(!WLSTATE.loaded){el.innerHTML='<span class="wl-gtab sk">·</span><span class="wl-gtab sk">·</span>';return;}
   const c=grpCounts();
   const tabs=WLSTATE.groups.map(g=>{
-    const on=g.id===String(WLSTATE.activeGroup);
-    return `<button class="wl-gtab${on?' on':''}" role="tab" aria-selected="${on}" `+
+    const on=g.id===String(WLSTATE.expanded);   // 펼쳐진(열린) 그룹만 강조
+    return `<button class="wl-gtab${on?' on':''}" role="tab" aria-selected="${on}" aria-expanded="${on}" `+
       `onclick="switchGroup('${esc(g.id)}')">${esc(grpName(g))}<span class="gcnt num">${c[g.id]||0}</span></button>`;
   }).join('');
   el.innerHTML=tabs+`<button class="wl-gmanage" type="button" onclick="openGroupSheet()" aria-label="그룹 편집">✎ 그룹</button>`;
 }
-function switchGroup(id){WLSTATE.activeGroup=String(id);CHIP_EDIT=false;renderGroups();renderChips();}
+/* 그룹 탭 = 아코디언 토글: 같은 그룹 재탭 → 접힘, 다른 그룹 → 펼침(+추가대상 갱신). */
+function switchGroup(id){
+  id=String(id);
+  if(String(WLSTATE.expanded)===id){WLSTATE.expanded=null;}      // 재탭 → 접힘
+  else{WLSTATE.expanded=id;WLSTATE.activeGroup=id;}              // 펼침 + 담기 대상 갱신
+  CHIP_EDIT=false;renderGroups();renderChips();
+}
 function toggleChipEdit(){CHIP_EDIT=!CHIP_EDIT;renderChips();}
 function chipAddBtns(){
   return `<button class="chip add" type="button" onclick="openSearchSheet()">＋ 종목</button>`+
@@ -646,8 +656,11 @@ function chipAddBtns(){
 }
 function renderChips(){
   const el=document.getElementById('chips');if(!el)return;
+  // 아코디언: 펼친 그룹이 없으면(기본) 칩 영역 자체를 숨겨 고정헤드 슬림 유지
+  if(WLSTATE.expanded==null){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='';
   if(!WLSTATE.loaded){el.innerHTML=skeletonChips();return;}
-  const list=groupStocks(WLSTATE.activeGroup);
+  const list=groupStocks(WLSTATE.expanded);
   if(!list.length){
     el.innerHTML=`<div class="chips-empty">`+
       `<span class="ce-t">이 그룹은 아직 비어 있어요</span>`+
@@ -759,7 +772,7 @@ async function createGroup(){
   try{const d=await jsend('POST',API+'/watchlist/groups',{name});
     applyWatchlist(d);inp.value='';
     const added=WLSTATE.groups.find(g=>g.name===name);
-    if(added){WLSTATE.activeGroup=added.id;renderGroups();renderChips();}
+    if(added){WLSTATE.activeGroup=added.id;WLSTATE.expanded=added.id;renderGroups();renderChips();}
     renderGroupSheet();
     flashSheetMsg('✔ 그룹을 추가했어요.','ok');track('watchlist_group_add',{});}
   catch(e){flashSheetMsg('추가 실패: '+e.message,'err');}
@@ -802,7 +815,7 @@ function openMoveSheet(code){
 }
 async function moveStockToGroup(code,group){
   try{const d=await jsend('PATCH',API+'/watchlist/'+encodeURIComponent(code),{group});
-    WLSTATE.activeGroup=String(group);CHIP_EDIT=false;
+    WLSTATE.activeGroup=String(group);WLSTATE.expanded=String(group);CHIP_EDIT=false;
     applyWatchlist(d);closeSheet('sheetMove');
     track('watchlist_move',{group});}
   catch(e){flashForm('이동 실패: '+e.message,'err');}
@@ -1328,6 +1341,7 @@ async function addStock(){
   setMsg('담는 중…');
   try{
     const d=await jsend('POST',API+'/watchlist',{stock_code:v,group:WLSTATE.activeGroup});
+    WLSTATE.expanded=String(WLSTATE.activeGroup);   // 담은 그룹 펼쳐 새 칩 노출
     applyWatchlist(d);inp.value='';
     setMsg('✔ 담기 완료. 피드를 갱신합니다.','ok');
     track('watchlist_add', {code: v, via:'input', group:WLSTATE.activeGroup});
@@ -1400,6 +1414,7 @@ async function registerStock(code,btn){
       setDone();searchFlash(d.detail||'이미 담긴 종목입니다.','err');return;
     }
     if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));
+    WLSTATE.expanded=String(WLSTATE.activeGroup);   // 담은 그룹 펼쳐 새 칩 노출
     applyWatchlist(d);                          // 스냅샷 재렌더(그룹·칩·STATE.stocks)
     setDone();
     track('watchlist_add', {code: code, via:'search', group:WLSTATE.activeGroup});
