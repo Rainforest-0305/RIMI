@@ -107,6 +107,13 @@
     border:none;background:var(--blue);color:#fff;cursor:pointer}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
+  .pushrow{display:flex;align-items:center;gap:8px;padding:2px 4px 4px;flex-wrap:wrap}
+  .pushbtn{flex:none;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid var(--bd);
+    background:var(--card);color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .pushbtn:hover{border-color:var(--acc)}
+  .pushbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .pushbtn:disabled{opacity:.6;cursor:default}
+  .pushnote{font-size:11.5px;color:var(--t3);line-height:1.35}
   .searchwrap{padding:6px 2px 2px;position:relative}
   .searchwrap .sicon{position:absolute;left:14px;top:28px;transform:translateY(-50%);
     width:15px;height:15px;pointer-events:none;color:var(--t3)}
@@ -470,6 +477,7 @@
     </div>
     <div class="wl-grouprow" id="wlGroups" role="tablist" aria-label="관심종목 그룹"></div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
+    <div class="pushrow" id="pushRow" hidden></div>
     <div class="formmsg" id="formmsg"></div>
     <div class="searchwrap">
       <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
@@ -669,10 +677,10 @@ function initDeviceId(){
   return id;
 }
 const DEVICE_ID=initDeviceId();
-/* watchlist 계열 요청에만 X-Device-Id 를 붙인다(그 외 API 불변). */
+/* watchlist / push 계열 요청에만 X-Device-Id 를 붙인다(그 외 API 불변). */
 function wlHeaders(u,base){
   const h=Object.assign({},base||{});
-  if(typeof u==='string'&&u.indexOf('/watchlist')!==-1)h['X-Device-Id']=DEVICE_ID;
+  if(typeof u==='string'&&(u.indexOf('/watchlist')!==-1||u.indexOf('/push')!==-1))h['X-Device-Id']=DEVICE_ID;
   return h;
 }
 
@@ -1365,17 +1373,52 @@ function attachSegToggle(container){
     });
   });
 }
+/* 점진 렌더(페이지네이션): 필터결과를 20장씩 렌더하고, 하단 센티널이 뷰포트에
+   근접하면 IntersectionObserver 가 다음 20장을 이어붙인다. fetch 는 기존 1회 그대로
+   (서버 무변경) — DOM 노드만 점진 생성해 초기 렌더 부하를 줄인다.
+   renderFeed() 는 항상 1페이지로 리셋되므로 필터/대표값/새로고침/관심변경 정합. */
+const FEED_PAGE_SIZE=20;
+let FEED_FILTERED=[];   // 현재 필터 적용된 렌더대상
+let FEED_SHOWN=0;       // 지금까지 붙인 카드 수
+let FEED_OBSERVER=null; // 센티널 관찰자(리셋마다 재생성)
+function feedRenderChunk(){
+  const el=document.getElementById('feed');
+  const sentinel=document.getElementById('feedSentinel');
+  if(!el||!sentinel)return;
+  const next=FEED_FILTERED.slice(FEED_SHOWN,FEED_SHOWN+FEED_PAGE_SIZE);
+  if(!next.length)return;
+  // 임시 래퍼에 새 카드만 그려 seg 토글을 새 카드에만 바인딩(중복 바인딩 방지),
+  // 노드 이동(appendChild)은 리스너를 보존하므로 센티널 앞에 순서대로 삽입.
+  const frag=document.createElement('div');
+  frag.innerHTML=next.map(a=>cardHTML(a,'')).join('');
+  attachSegToggle(frag);
+  while(frag.firstChild)el.insertBefore(frag.firstChild,sentinel);
+  FEED_SHOWN+=next.length;
+  if(FEED_SHOWN>=FEED_FILTERED.length&&FEED_OBSERVER){FEED_OBSERVER.disconnect();FEED_OBSERVER=null;}
+}
 function renderFeed(){
   const el=document.getElementById('feed');
-  const items=STATE.items.filter(a=>passFilter(a,STATE.filter));
-  if(!items.length){
+  if(FEED_OBSERVER){FEED_OBSERVER.disconnect();FEED_OBSERVER=null;}
+  FEED_FILTERED=STATE.items.filter(a=>passFilter(a,STATE.filter));
+  FEED_SHOWN=0;
+  if(!FEED_FILTERED.length){
     el.innerHTML='<div class="empty">'+
       (STATE.filter==='watch'?'관심종목의 최근 공시가 없습니다. 종목을 추가해 보세요.'
         :'최근 공시가 없습니다. 새로고침해 보세요.')+'</div>';
     return;
   }
-  el.innerHTML=items.map(a=>cardHTML(a,'')).join('');
-  attachSegToggle(el);
+  el.innerHTML='<div id="feedSentinel" aria-hidden="true" style="height:1px"></div>';
+  feedRenderChunk();   // 최초 20장
+  if(FEED_SHOWN>=FEED_FILTERED.length)return;   // 20장 이하면 관찰 불요
+  const sentinel=document.getElementById('feedSentinel');
+  if('IntersectionObserver' in window){
+    FEED_OBSERVER=new IntersectionObserver(entries=>{
+      if(entries.some(e=>e.isIntersecting))feedRenderChunk();
+    },{rootMargin:'600px 0px'});   // 하단 근접(600px 전) 프리로드
+    FEED_OBSERVER.observe(sentinel);
+  }else{
+    while(FEED_SHOWN<FEED_FILTERED.length)feedRenderChunk();   // IO 미지원 폴백: 전량
+  }
 }
 
 /* ---------- 종목 상세뷰 (STATE.items를 stock_code로 필터 — 신규 API 없음) ---------- */
@@ -1574,9 +1617,108 @@ async function registerStock(code,btn){
   if(el)el.addEventListener('input',debounce(function(e){doSearch(e.target.value);},250));
 })();
 
+/* ---------- 웹푸시(관심종목 신규 공시 알림) ----------
+   관심종목 공시만 발송(시장 브로드캐스트 아님). 폴링 주기가 있어 '실시간'은 아님.
+   미지원 브라우저는 우아 폴백(토글 숨김/안내). iOS 는 홈 화면 설치 후에만 가능. */
+const PUSH_SUPPORTED=('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window);
+let PUSH_STATE={key:null,checked:false,busy:false};
+function isIOS(){return /iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
+function isStandalone(){return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}
+function urlB64ToUint8(base64){
+  const pad='='.repeat((4-base64.length%4)%4);
+  const b64=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(b64);const out=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+async function pushVapidKey(){
+  if(PUSH_STATE.key!==null)return PUSH_STATE.key;
+  try{const d=await jget(API+'/push/key');PUSH_STATE.key=(d&&d.key)||'';}
+  catch(e){PUSH_STATE.key='';}
+  return PUSH_STATE.key;
+}
+async function pushCurrentSub(){
+  try{const reg=await navigator.serviceWorker.ready;return await reg.pushManager.getSubscription();}
+  catch(e){return null;}
+}
+function renderPushToggle(){
+  const row=document.getElementById('pushRow');if(!row)return;
+  // 미지원: iOS 미설치면 설치 안내 1줄, 그 외엔 완전 숨김(우아 폴백).
+  if(!PUSH_SUPPORTED){
+    if(isIOS()&&!isStandalone()){
+      row.hidden=false;
+      row.innerHTML='<span class="pushnote">🔔 알림은 홈 화면에 앱을 추가한 뒤 켤 수 있어요 (공유 → 홈 화면에 추가).</span>';
+    }else{row.hidden=true;row.innerHTML='';}
+    return;
+  }
+  if(!PUSH_STATE.key){   // 서버 VAPID 미설정 → 기능 비활성(우아 숨김)
+    row.hidden=true;row.innerHTML='';return;
+  }
+  row.hidden=false;
+  const perm=(window.Notification&&Notification.permission)||'default';
+  if(perm==='denied'){
+    row.innerHTML='<button class="pushbtn" type="button" disabled>🔔 알림 차단됨</button>'+
+      '<span class="pushnote">브라우저 설정에서 이 사이트 알림을 허용하면 켤 수 있어요.</span>';
+    return;
+  }
+  const on=PUSH_STATE.subscribed;
+  row.innerHTML=on
+    ? '<button class="pushbtn on" type="button" onclick="disablePush()">🔔 알림 켜짐 · 끄기</button>'+
+      '<span class="pushnote">관심종목 새 공시를 알려드려요.</span>'
+    : '<button class="pushbtn" type="button" onclick="enablePush()">🔔 알림 받기</button>'+
+      '<span class="pushnote">관심종목 새 공시 알림 (실시간 아님, 주기 확인).</span>';
+}
+async function initPush(){
+  if(!PUSH_SUPPORTED){renderPushToggle();return;}
+  await pushVapidKey();
+  if(!PUSH_STATE.key){renderPushToggle();return;}
+  const sub=await pushCurrentSub();
+  PUSH_STATE.subscribed=!!sub;
+  PUSH_STATE.checked=true;
+  renderPushToggle();
+}
+async function enablePush(){
+  if(PUSH_STATE.busy)return;PUSH_STATE.busy=true;
+  try{
+    const key=await pushVapidKey();
+    if(!key){renderPushToggle();return;}
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){renderPushToggle();return;}
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){
+      sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8(key)});
+    }
+    const r=await fetch(API+'/push',{method:'POST',
+      headers:wlHeaders(API+'/push',{'Content-Type':'application/json'}),
+      body:JSON.stringify(sub.toJSON())});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    PUSH_STATE.subscribed=true;
+    track('push_enable',{});
+    showToast('🔔 관심종목 알림을 켰어요.');
+  }catch(e){console.error('enablePush',e);showToast('알림 설정에 실패했어요.');}
+  finally{PUSH_STATE.busy=false;renderPushToggle();}
+}
+async function disablePush(){
+  if(PUSH_STATE.busy)return;PUSH_STATE.busy=true;
+  try{
+    const sub=await pushCurrentSub();
+    const endpoint=sub?sub.endpoint:'';
+    try{await fetch(API+'/push',{method:'DELETE',
+      headers:wlHeaders(API+'/push',{'Content-Type':'application/json'}),
+      body:JSON.stringify({endpoint})});}catch(e){}
+    if(sub){try{await sub.unsubscribe();}catch(e){}}
+    PUSH_STATE.subscribed=false;
+    track('push_disable',{});
+    showToast('알림을 껐어요.');
+  }catch(e){console.error('disablePush',e);}
+  finally{PUSH_STATE.busy=false;renderPushToggle();}
+}
+
 /* ---------- PWA ---------- */
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js')
+    .then(()=>{try{initPush();}catch(e){}}).catch(()=>{}));
 }
 /* PWA 설치 프롬프트 추적(track 헬퍼는 아래 analytics 블록에서 정의) */
 window.addEventListener('beforeinstallprompt',function(e){
@@ -1701,6 +1843,9 @@ document.addEventListener('click',e=>{
 renderGroups();renderChips();   // 로딩 스켈레톤 먼저 노출
 loadWatchlist();                // 진실원본: GET /api/watchlist (X-Device-Id 스코프)
 loadFeed(false);
+/* 웹푸시 토글: SW 등록 성공 콜백에서도 initPush 하지만, SW 가 이미 등록된
+   재방문/즉시 상황을 위해 여기서도 1회 시도(멱등 — 상태만 반영). */
+try{if(PUSH_SUPPORTED)initPush();}catch(e){}
 /* claim(/?claim=<TOKEN>) 채택 시 1회성 안내 토스트 */
 if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목록에 연결했어요.');}catch(e){}},1300);}
 </script>

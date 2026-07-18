@@ -32,6 +32,7 @@ from pydantic import BaseModel
 import config
 import dart_poll
 import watch_store  # 관심종목 영속(Supabase/JSON 폴백) 추상 스토어
+import push_store   # 웹푸시 구독 영속(Supabase/JSON 폴백) — watch_store 패턴
 import dedup  # 중복 이벤트(결정/결과·정정/원본) 접기
 import impact
 import scale_extract  # 규모보정 온디맨드 조회(/api/scale)
@@ -140,6 +141,134 @@ def _warm_worker():
                 # 처리한 rcept 는 SEEN 에서 제거: 재요청 시 캐시히트라 재추출 안 함(안전).
                 _WARM_SEEN.discard(rno)
         time.sleep(0.15)  # DART 레이트리밋
+
+
+# ---------------- 웹푸시(관심종목 신규 공시 알림) ----------------
+# VAPID 키는 .env(하드코딩 0, os.getenv 만). 미설정이면 푸시 기능 전체 no-op
+# (엔드포인트는 200 으로 살아있되 key='' → 프론트가 우아하게 토글 비활성).
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+VAPID_SUB = os.getenv("VAPID_SUB", "mailto:urimk0305@gmail.com").strip()
+_PUSH_ENABLED = bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)
+
+# 발송 dedup / 재시작 스팸방지(baseline-seed):
+#   - 프로세스 최초 피드빌드는 '현 시점 전체 공시'를 baseline 으로 흡수만 하고 발송 0
+#     (재배포/재시작 때 최근 7일치가 통째로 재발송되는 스팸을 원천 차단).
+#   - 이후 빌드에서 '처음 관측된 rcept_no' 만 신규로 감지 → 관심 등록 기기에만 발송.
+#   - 기기당 동일 rcept 1회(_PUSH_SENT). 관심종목만, 시장 브로드캐스트 금지.
+_PUSH_LOCK = threading.Lock()
+_PUSH_SEEN_RCEPTS = set()   # 지금까지 관측한 모든 rcept_no(전역 dedup)
+_PUSH_SENT = set()          # (device_id, rcept_no) 발송완료(기기당 1회 보장)
+_PUSH_BASELINE_DONE = False
+
+
+def _push_dispatch(items):
+    """피드빌드 결과에서 신규 관심공시를 감지해 발송(fire-and-forget).
+
+    동기 구간은 dedup 집합 갱신(네트워크 0)만. 실제 발송(구독조회+HTTP)은 별
+    스레드로 던져 요청/빌드 지연 0. 예외는 삼켜 빌드를 절대 깨지 않는다."""
+    if not _PUSH_ENABLED:
+        return
+    global _PUSH_BASELINE_DONE
+    new = []
+    with _PUSH_LOCK:
+        for a in items:
+            rno = (a.get("rcept_no") or "").strip()
+            if not rno:
+                continue
+            if rno not in _PUSH_SEEN_RCEPTS:
+                _PUSH_SEEN_RCEPTS.add(rno)
+                new.append({
+                    "rcept_no": rno,
+                    "stock_code": (a.get("stock_code") or "").strip(),
+                    "corp_name": a.get("corp_name") or "",
+                    "report_nm": a.get("report_nm") or "",
+                })
+        if not _PUSH_BASELINE_DONE:
+            _PUSH_BASELINE_DONE = True   # 최초 빌드: 흡수만, 발송 없음
+            return
+    if not new:
+        return
+    threading.Thread(target=_push_send_new, args=(new,),
+                     name="push-sender", daemon=True).start()
+
+
+def _push_send_new(new):
+    """신규 관심공시를 구독 기기에 발송. 구독 있는 기기만 관심목록 조회(작업 최소화).
+
+    - 발송 실패 410/404(만료/해지) 구독은 endpoint 로 자동 정리.
+    - 기기당 동일 rcept 1회(_PUSH_SENT). 예외 전방위 격리(발송 실패가 서버 무영향)."""
+    try:
+        subs = push_store.all_subs()
+    except Exception as e:
+        print(f"[push] 구독 조회 실패(무시): {type(e).__name__}")
+        return
+    if not subs:
+        return
+    by_dev = {}
+    for s in subs:
+        by_dev.setdefault(s.get("device_id") or "", []).append(s)
+    for dev, dsubs in by_dev.items():
+        if not dev:
+            continue
+        try:
+            st = watch_store.load_watch_state(dev)
+            codes = {str(x.get("stock_code"))
+                     for x in (st.get("stocks") or []) if x.get("stock_code")}
+        except Exception as e:
+            print(f"[push] 관심목록 조회 실패(dev 스킵): {type(e).__name__}")
+            continue
+        if not codes:
+            continue
+        for item in new:
+            code = str(item.get("stock_code") or "")
+            if not code or code not in codes:
+                continue
+            key = (dev, item["rcept_no"])
+            with _PUSH_LOCK:
+                if key in _PUSH_SENT:
+                    continue
+                _PUSH_SENT.add(key)
+            title = (item.get("corp_name") or "관심종목").strip()
+            report = (item.get("report_nm") or "새 공시").strip()
+            payload = {
+                "title": f"{title} · {report}"[:120],
+                "body": "관심종목 새 공시 · 탭하여 MIRI에서 확인",
+                "url": "/",                      # 클릭 시 앱 열기(외부 링크 아님)
+                "rcept": item["rcept_no"],
+            }
+            for sub in dsubs:
+                _push_one(sub, payload)
+
+
+def _push_one(sub_row, payload):
+    """단건 발송. pywebpush 는 지연 import(미설치 환경도 서버 기동 무붕괴)."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except Exception as e:
+        print(f"[push] pywebpush 미설치(발송 불가): {type(e).__name__}")
+        return
+    try:
+        webpush(
+            subscription_info=sub_row["sub"],
+            data=json.dumps(payload, ensure_ascii=False),
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": VAPID_SUB},
+            timeout=10,
+        )
+    except WebPushException as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status in (404, 410):
+            # 만료/해지 구독 자동정리(레포트만, 상세 노출 금지)
+            try:
+                push_store.delete_endpoint(sub_row.get("endpoint") or "")
+            except Exception:
+                pass
+            print(f"[push] 만료구독 정리(status={status})")
+        else:
+            print(f"[push] 발송 실패(status={status})")
+    except Exception as e:
+        print(f"[push] 발송 예외(무시): {type(e).__name__}")
 
 
 def _fmt_date(rcept_dt: str) -> str:
@@ -349,6 +478,12 @@ def _build_feed(force: bool = False) -> dict:
     except Exception as e:
         print(f"[warm] enqueue skip: {e}")
 
+    # 웹푸시: 신규 관심공시 감지→발송(fire-and-forget). 발송 실패가 빌드를 안 깬다.
+    try:
+        _push_dispatch(items)
+    except Exception as e:
+        print(f"[push] dispatch skip: {e}")
+
     return {
         "count": len(items),
         "market": "KOSPI+KOSDAQ",
@@ -467,6 +602,8 @@ def health():
         "prewarm_done": _PREWARM_DONE,           # 프리웜 완료(피드캐시 채워짐) 여부
         "feed_cached": _FEED_CACHE["data"] is not None,  # 현재 피드캐시 보유 여부
         "watch_backend": watch_store.backend_name(),  # 관심종목 영속 백엔드(supabase/json)
+        "push_enabled": _PUSH_ENABLED,                 # VAPID 설정(웹푸시 활성) 여부
+        "push_backend": push_store.backend_name(),     # 구독 영속 백엔드(supabase/json)
     }
 
 
@@ -829,6 +966,56 @@ def get_config():
         "umami_src": os.getenv("UMAMI_SRC", "https://cloud.umami.is/script.js"),
         "umami_website_id": os.getenv("UMAMI_WEBSITE_ID", ""),
     }
+
+
+# ---------------- 웹푸시 구독 엔드포인트 ----------------
+@api.get("/api/push/key")
+def push_key():
+    """VAPID 공개키 서빙(프론트 pushManager.subscribe 용). 미설정이면 빈 문자열
+    → 프론트가 토글을 우아하게 비활성. 공개키라 노출 안전."""
+    return {"key": VAPID_PUBLIC_KEY if _PUSH_ENABLED else ""}
+
+
+class PushSub(BaseModel):
+    endpoint: str | None = None
+    keys: dict | None = None
+    expirationTime: object | None = None
+
+
+@api.post("/api/push")
+def push_subscribe(body: PushSub, request: Request):
+    """웹푸시 구독 등록(기기별, X-Device-Id 스코프). 엔드포인트 기준 upsert."""
+    device_id = _device_id(request)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="기기 식별 헤더가 필요합니다.")
+    endpoint = (body.endpoint or "").strip()
+    if not endpoint or not isinstance(body.keys, dict):
+        raise HTTPException(status_code=400, detail="유효한 구독 정보가 아닙니다.")
+    sub = {"endpoint": endpoint, "keys": body.keys}
+    if body.expirationTime is not None:
+        sub["expirationTime"] = body.expirationTime
+    try:
+        push_store.save_sub(device_id, sub)
+    except Exception:
+        raise HTTPException(status_code=500, detail="구독 저장에 실패했습니다.")
+    return {"ok": True}
+
+
+class PushUnsub(BaseModel):
+    endpoint: str | None = None
+
+
+@api.delete("/api/push")
+def push_unsubscribe(body: PushUnsub, request: Request):
+    """웹푸시 구독 해제(그 기기+엔드포인트). endpoint 없으면 기기 전체 해제. 멱등."""
+    device_id = _device_id(request)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="기기 식별 헤더가 필요합니다.")
+    try:
+        push_store.delete_device_endpoint(device_id, (body.endpoint or "").strip())
+    except Exception:
+        raise HTTPException(status_code=500, detail="구독 해제에 실패했습니다.")
+    return {"ok": True}
 
 
 # ---------------- 베타 대기자 등록(waitlist) 스텁 ----------------
