@@ -61,7 +61,11 @@ def load_watchlist():
     # 영속 스토어(Supabase 또는 JSON 폴백) 경유. poll_once 등 하위호환 위해
     # 기존과 동일하게 (stocks, keywords) 튜플 반환. stocks 항목엔 group/order
     # 필드가 추가되지만 poll_once 는 name/stock_code 만 사용하므로 무영향.
-    st = watch_store.load_watch_state()
+    #
+    # 관심종목은 이제 기기별로 격리되지만, 서버 폴러(텔레그램 알림)는 기기
+    # 컨텍스트가 없다 → 전 기기 union 을 폴링해 '어느 기기든 담은 종목'을 계속
+    # 알린다(비파괴: 기존 단일 watchlist 알림 유지). 알림은 본인 테스트 채널로만.
+    st = watch_store.load_all_watch_state()
     return st.get("stocks", []), st.get("keywords", [])
 
 

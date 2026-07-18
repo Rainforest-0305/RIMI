@@ -635,10 +635,46 @@ function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,
   c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,'');}
 
-async function jget(u){const r=await fetch(u);const d=await r.json();
+/* ---------- 기기 익명 ID (관심종목 기기별 분리) ----------
+   첫 방문 시 crypto.randomUUID()로 기기 ID 생성→localStorage 저장. 이후 모든
+   /api/watchlist* 요청에 X-Device-Id 헤더로 실어 그 기기 데이터만 조회/변경한다.
+   스플래시/피드/검색 등 다른 API 는 헤더를 붙이지 않는다(무변경).
+   claim: /?claim=<TOKEN> 접속 시 그 토큰을 기기 ID 로 채택(레거시 데이터 이관용). */
+const DEVICE_KEY='miri-device-id';
+let CLAIM_APPLIED=false;
+function initDeviceId(){
+  try{
+    const p=new URLSearchParams(location.search);
+    const claim=(p.get('claim')||'').trim();
+    if(claim){
+      localStorage.setItem(DEVICE_KEY,claim);   // 토큰을 이 기기 ID 로 채택
+      CLAIM_APPLIED=true;
+      p.delete('claim');                         // URL 에서 토큰 제거(재적용·노출 방지)
+      const q=p.toString();
+      try{history.replaceState(null,'',location.pathname+(q?('?'+q):'')+location.hash);}catch(e){}
+    }
+  }catch(e){}
+  let id=null;
+  try{id=localStorage.getItem(DEVICE_KEY);}catch(e){}
+  if(!id){
+    id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID()
+       :('dev-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2));
+    try{localStorage.setItem(DEVICE_KEY,id);}catch(e){}
+  }
+  return id;
+}
+const DEVICE_ID=initDeviceId();
+/* watchlist 계열 요청에만 X-Device-Id 를 붙인다(그 외 API 불변). */
+function wlHeaders(u,base){
+  const h=Object.assign({},base||{});
+  if(typeof u==='string'&&u.indexOf('/watchlist')!==-1)h['X-Device-Id']=DEVICE_ID;
+  return h;
+}
+
+async function jget(u){const r=await fetch(u,{headers:wlHeaders(u,{})});const d=await r.json();
   if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
 async function jsend(m,u,body){
-  const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},
+  const r=await fetch(u,{method:m,headers:wlHeaders(u,{'Content-Type':'application/json'}),
     body:body?JSON.stringify(body):undefined});
   const d=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(d.detail||('HTTP '+r.status));return d;}
@@ -677,6 +713,9 @@ function applyWatchlist(d){
   if(WLSTATE.expanded!=null&&!WLSTATE.groups.some(g=>g.id===String(WLSTATE.expanded)))WLSTATE.expanded=null;
   STATE.stocks=WLSTATE.stocks;      // is_watched 판정 호환(검색/상세)
   renderGroups();renderChips();
+  // 기기별 관심상태 반영: 피드 카드의 ★/강조/상단정렬을 이 기기 기준으로 갱신.
+  // (서버 전역 피드는 is_watched 를 담지 않으므로 프론트가 계산 — 캐시 오염 없음)
+  if(STATE.items&&STATE.items.length){recomputeWatched();renderFilter();renderFeed();}
 }
 async function loadWatchlist(){
   try{const d=await jget(API+'/watchlist');applyWatchlist(d);}
@@ -1384,11 +1423,25 @@ function closeDetail(){
   });
 })();
 
+/* 기기별 is_watched 계산 + 관심종목 상단정렬. 서버 전역 피드는 is_watched=false
+   로만 오므로(캐시 오염 방지), 이 기기 관심목록(WLSTATE.stocks)으로 여기서 매긴다.
+   서버가 이미 최신순 정렬해 보내므로 원 인덱스를 안정키로 써 그룹 내 최신순 유지. */
+function recomputeWatched(){
+  const ws=new Set((WLSTATE.stocks||[]).map(s=>String(s.stock_code)));
+  const items=STATE.items||[];
+  items.forEach(a=>{a.is_watched=!!a.stock_code&&ws.has(String(a.stock_code));});
+  STATE.items=items.map((a,i)=>[a,i]).sort((x,y)=>{
+    const aw=x[0].is_watched?1:0,bw=y[0].is_watched?1:0;
+    if(aw!==bw)return bw-aw;   // 관심종목 먼저
+    return x[1]-y[1];          // 그 외 원래(최신)순 유지
+  }).map(p=>p[0]);
+}
 function absorb(d){
   STATE.items=d.alerts||[];
   if(!WLSTATE.loaded){   // watchlist API 응답 전이면 피드 stocks로 임시 시드(그래이스풀)
     applyWatchlist({stocks:d.stocks||[],keywords:d.keywords||[],groups:d.groups||[]});
   }
+  recomputeWatched();    // 기기 관심상태로 ★·강조·상단정렬 매김
   STATE.meta=`${STATE.items.length}건 · ${d.market||'KOSPI+KOSDAQ'} · ${d.generated_at||''}${d.cached?' (캐시)':''}`;
   document.getElementById('feedmeta').textContent=STATE.meta;
   renderChips();
@@ -1488,7 +1541,7 @@ async function registerStock(code,btn){
   if(btn){btn.disabled=true;btn.textContent='담는 중…';}
   try{
     const r=await fetch(API+'/watchlist',{method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:wlHeaders(API+'/watchlist',{'Content-Type':'application/json'}),
       body:JSON.stringify({stock_code:code,group:WLSTATE.activeGroup})});
     const d=await r.json().catch(()=>({}));
     if(r.status===409){                        // 중복 — 이미 관심종목
@@ -1637,8 +1690,10 @@ document.addEventListener('click',e=>{
 
 /* ---------- init ---------- */
 renderGroups();renderChips();   // 로딩 스켈레톤 먼저 노출
-loadWatchlist();                // 진실원본: GET /api/watchlist
+loadWatchlist();                // 진실원본: GET /api/watchlist (X-Device-Id 스코프)
 loadFeed(false);
+/* claim(/?claim=<TOKEN>) 채택 시 1회성 안내 토스트 */
+if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목록에 연결했어요.');}catch(e){}},1300);}
 </script>
 </body>
 </html>

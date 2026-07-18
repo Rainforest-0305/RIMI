@@ -24,9 +24,20 @@
     "stocks":  [{"name": str, "stock_code": str, "group": str, "order": int}],
     "keywords": [str],
   }
+
+기기별 분리(device_id):
+  관심종목/그룹/키워드는 **기기 단위**로 격리된다. 웹 API 는 요청의 X-Device-Id
+  헤더에서 device_id 를 받아 그 기기 데이터만 읽고/쓴다.
+    - load_watch_state(device_id)   : 그 기기 상태(빈 device_id → 임시 빈 상태, 미영속).
+    - save_watch_state(state, dev)  : 그 기기만 스냅샷 교체(빈 device_id → 미영속).
+    - load_all_watch_state()        : 전 기기 union(서버 폴러/알림용, main.poll_once).
+  Supabase 는 3개 테이블에 device_id 컬럼(+인덱스)을 두고 device_id 로 필터한다.
+  JSON 폴백은 {"devices": {"<device_id>": {groups,stocks,keywords}}} 구조로 격리한다.
+  구(舊) 단일공유 watchlist.json(평면 스키마)은 로드 시 device_id='legacy' 로 이관한다.
 """
 import json
 import os
+from urllib.parse import quote as _urlquote
 
 import config
 
@@ -38,6 +49,9 @@ except Exception:  # pragma: no cover
 
 DEFAULT_GROUP_ID = "default"
 DEFAULT_GROUP_NAME = "기본"
+
+# 구(舊) 단일공유 데이터의 기기 라벨. 스키마 default 및 JSON 이관 대상과 일치.
+LEGACY_DEVICE_ID = "legacy"
 
 _HTTP_TIMEOUT = 8  # 초. Supabase REST 호출 상한(요청 블로킹 방지).
 
@@ -163,16 +177,21 @@ def _supabase_rest():
     return base, headers
 
 
-def _sb_get(table, base, headers):
-    r = requests.get(base + "/" + table + "?select=*",
-                     headers=headers, timeout=_HTTP_TIMEOUT)
+def _sb_get(table, base, headers, device_id=None):
+    q = base + "/" + table + "?select=*"
+    if device_id is not None:
+        # 그 기기 행만. device_id=None 이면 필터 없음(전 기기 union) → 폴러용.
+        q += "&device_id=eq." + _urlquote(str(device_id), safe="")
+    r = requests.get(q, headers=headers, timeout=_HTTP_TIMEOUT)
     r.raise_for_status()
     return r.json()
 
 
-def _sb_delete_all(table, pk, base, headers):
-    # PostgREST 는 삭제에 필터가 필수 → pk not null(=전체 매칭)로 전삭.
-    r = requests.delete(base + "/" + table + "?" + pk + "=not.is.null",
+def _sb_delete_device(table, base, headers, device_id):
+    # 삭제는 항상 device_id 로 스코프. 필터가 곧 그 기기 전용이라 타 기기 데이터를
+    # 절대 건드리지 않는다(PostgREST 삭제 필수 필터 요건도 충족).
+    r = requests.delete(base + "/" + table + "?device_id=eq."
+                        + _urlquote(str(device_id), safe=""),
                         headers=headers, timeout=_HTTP_TIMEOUT)
     r.raise_for_status()
 
@@ -187,11 +206,16 @@ def _sb_insert(table, rows, base, headers):
     r.raise_for_status()
 
 
-def _supabase_load():
+def _supabase_load(device_id=None):
+    """device_id 스코프 로드. device_id=None 이면 전 기기 union(폴러용).
+
+    union 시 normalize_state 가 중복 stock_code/keyword/group-id 를 정리한다
+    (여러 기기의 'default' 그룹은 하나로 접힘 — 폴러는 종목/키워드만 사용).
+    """
     base, headers = _supabase_rest()
-    groups = _sb_get("watch_groups", base, headers)
-    stocks = _sb_get("watch_stocks", base, headers)
-    keywords = _sb_get("watch_keywords", base, headers)
+    groups = _sb_get("watch_groups", base, headers, device_id)
+    stocks = _sb_get("watch_stocks", base, headers, device_id)
+    keywords = _sb_get("watch_keywords", base, headers, device_id)
     raw = {
         "groups": [{"id": g.get("id"), "name": g.get("name"),
                     "order": g.get("sort_order", 0)} for g in groups],
@@ -203,49 +227,93 @@ def _supabase_load():
     return normalize_state(raw)
 
 
-def _supabase_save(state):
-    """스냅샷 전체 교체(데이터 소량 → delete-all + bulk insert 로 단순·정합).
+def _supabase_save(state, device_id):
+    """그 기기(device_id)만 스냅샷 전체 교체(delete-scoped + bulk insert).
 
-    순서: 자식(stocks) 먼저 지우고 부모(groups) 삭제 → FK 있어도 안전.
-    삽입은 groups 먼저(부모) → stocks(자식).
+    순서: 자식(stocks) 먼저 지우고 부모(groups) 삭제 → 삽입은 groups(부모) 먼저.
+    삭제/삽입 모두 device_id 로 스코프되어 타 기기 데이터는 불변.
     """
     base, headers = _supabase_rest()
-    _sb_delete_all("watch_stocks", "stock_code", base, headers)
-    _sb_delete_all("watch_keywords", "keyword", base, headers)
-    _sb_delete_all("watch_groups", "id", base, headers)
+    _sb_delete_device("watch_stocks", base, headers, device_id)
+    _sb_delete_device("watch_keywords", base, headers, device_id)
+    _sb_delete_device("watch_groups", base, headers, device_id)
 
     _sb_insert("watch_groups",
-               [{"id": g["id"], "name": g["name"], "sort_order": g["order"]}
+               [{"device_id": device_id, "id": g["id"], "name": g["name"],
+                 "sort_order": g["order"]}
                 for g in state["groups"]], base, headers)
     _sb_insert("watch_stocks",
-               [{"stock_code": s["stock_code"], "name": s["name"],
-                 "group_id": s["group"], "sort_order": s["order"]}
+               [{"device_id": device_id, "stock_code": s["stock_code"],
+                 "name": s["name"], "group_id": s["group"],
+                 "sort_order": s["order"]}
                 for s in state["stocks"]], base, headers)
     _sb_insert("watch_keywords",
-               [{"keyword": k} for k in state["keywords"]], base, headers)
+               [{"device_id": device_id, "keyword": k}
+                for k in state["keywords"]], base, headers)
 
 
 # ============================================================
 # JSON 폴백 백엔드
 # ============================================================
-def _json_load():
+def _json_load_raw():
+    """watchlist.json 원본 dict 을 {"devices": {id: {...}}} 형태로 반환.
+
+    하위호환: 구(舊) 평면 스키마({groups,stocks,keywords})는 device_id='legacy'
+    로 이관해 반환한다(파일은 다음 저장 때 새 구조로 재기록됨).
+    """
     f = config.WATCHLIST_FILE
     if not f.exists():
-        return normalize_state({})
+        return {"devices": {}}
     try:
         raw = json.loads(f.read_text(encoding="utf-8"))
     except Exception:
-        raw = {}
-    return normalize_state(raw)
+        return {"devices": {}}
+    if not isinstance(raw, dict):
+        return {"devices": {}}
+    if isinstance(raw.get("devices"), dict):
+        return raw
+    # 구 평면 스키마 → legacy 기기로 이관(그 안에 실데이터가 있을 때만).
+    if raw.get("stocks") or raw.get("groups") or raw.get("keywords"):
+        return {"devices": {LEGACY_DEVICE_ID: {
+            "groups": raw.get("groups") or [],
+            "stocks": raw.get("stocks") or [],
+            "keywords": raw.get("keywords") or [],
+        }}}
+    return {"devices": {}}
 
 
-def _json_save(state):
-    payload = {
-        "_comment": ("관심종목. stock_code=6자리. group=소속그룹 id. "
-                     "keywords=제목 부분매칭 추가 알림(선택)."),
+def _json_load(device_id):
+    devices = _json_load_raw().get("devices") or {}
+    return normalize_state(devices.get(device_id) or {})
+
+
+def _json_load_union():
+    """전 기기 union(폴러용). normalize 가 중복을 정리한다."""
+    devices = _json_load_raw().get("devices") or {}
+    merged = {"groups": [], "stocks": [], "keywords": []}
+    for st in devices.values():
+        if not isinstance(st, dict):
+            continue
+        merged["groups"].extend(st.get("groups") or [])
+        merged["stocks"].extend(st.get("stocks") or [])
+        merged["keywords"].extend(st.get("keywords") or [])
+    return normalize_state(merged)
+
+
+def _json_save(state, device_id):
+    raw = _json_load_raw()
+    devices = raw.get("devices")
+    if not isinstance(devices, dict):
+        devices = {}
+    devices[device_id] = {
         "groups": state["groups"],
         "stocks": state["stocks"],
         "keywords": state["keywords"],
+    }
+    payload = {
+        "_comment": ("기기별 관심종목. devices[<device_id>] = {groups,stocks,"
+                     "keywords}. stock_code=6자리. group=소속그룹 id."),
+        "devices": devices,
     }
     tmp = config.WATCHLIST_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
@@ -262,30 +330,58 @@ def _log_fallback(op, exc):
           + type(exc).__name__)
 
 
-def load_watch_state():
-    """전체 상태 조회. Supabase 우선, 실패/미설정 시 JSON 폴백."""
+def _norm_device(device_id):
+    return (str(device_id).strip() if device_id is not None else "")
+
+
+def load_watch_state(device_id=None):
+    """그 기기(device_id) 상태 조회. Supabase 우선, 실패/미설정 시 JSON 폴백.
+
+    device_id 미제공(빈 문자열/None) → 임시 빈 상태(default 그룹만) 반환(에러 없음,
+    미영속). 프론트는 항상 X-Device-Id 를 보내므로 이 경로는 비프론트/헬스용.
+    """
+    dev = _norm_device(device_id)
+    if not dev:
+        return normalize_state({})
     if supabase_enabled():
         try:
-            return _supabase_load()
+            return _supabase_load(dev)
         except Exception as e:
             _log_fallback("load", e)
-    return _json_load()
+    return _json_load(dev)
 
 
-def save_watch_state(state):
-    """전체 상태 저장(정규화 후). Supabase 성공 시에도 로컬 JSON 미러링은 하지 않음.
+def load_all_watch_state():
+    """전 기기 union 상태(서버 폴러/알림 main.poll_once 용).
 
-    반환: 정규화된 state(스냅샷). Supabase 저장 실패 시 JSON 으로 폴백 저장하여
-    데이터 유실을 막는다(graceful).
+    한 채널(본인 테스트 채널)로만 나가는 서버 폴러가 '어느 기기든 관심 등록한
+    종목'을 계속 알리도록 union 을 쓴다(비파괴: 기존 legacy 종목 알림 유지).
     """
-    state = normalize_state(state)
     if supabase_enabled():
         try:
-            _supabase_save(state)
+            return _supabase_load(None)
+        except Exception as e:
+            _log_fallback("load(all)", e)
+    return _json_load_union()
+
+
+def save_watch_state(state, device_id=None):
+    """그 기기(device_id) 상태만 저장(정규화 후). Supabase 성공 시에도 JSON 미러 없음.
+
+    device_id 미제공 → 영속하지 않고 정규화 스냅샷만 반환(임시 세션, 에러 없음).
+    Supabase 저장 실패 시 JSON 으로 폴백 저장하여 유실을 막는다(graceful).
+    """
+    state = normalize_state(state)
+    dev = _norm_device(device_id)
+    if not dev:
+        return state
+    if supabase_enabled():
+        try:
+            _supabase_save(state, dev)
             return state
         except Exception as e:
             _log_fallback("save", e)
-    _json_save(state)
+    _json_save(state, dev)
     return state
 
 

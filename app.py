@@ -252,9 +252,11 @@ def _attach_regime(imp: dict, tags) -> dict:
 
 def _build_feed(force: bool = False) -> dict:
     """KOSPI+KOSDAQ 시장 전체 최근 공시를 조회·요약·과거영향 매핑해 피드로 만든다.
-    개별 공시 하나가 malformed 여도 그 항목만 건너뛰고 피드 전체는 살린다."""
-    stocks, keywords = core.load_watchlist()
-    watched_codes = {s.get("stock_code", "") for s in stocks}
+    개별 공시 하나가 malformed 여도 그 항목만 건너뛰고 피드 전체는 살린다.
+
+    피드는 전역 캐시(단일 스냅샷)라 특정 기기의 관심상태를 절대 담지 않는다.
+    is_watched(★·강조·상단정렬)는 기기별로 다르므로 프론트가 자기 기기의
+    /api/watchlist 로 계산한다 → 서버 피드캐시 오염 방지."""
     seen = core.load_seen()
 
     # KOSPI(Y)+KOSDAQ(K) 페이지네이션 병합. errors 는 시장별 실패 사유.
@@ -318,7 +320,8 @@ def _build_feed(force: bool = False) -> dict:
                                          res["tags"]),
                 "url": dart_poll.dart_url(rno),
                 "is_new": rno not in seen,
-                "is_watched": bool(code) and code in watched_codes,
+                # is_watched 는 기기별 → 프론트가 계산. 전역 피드엔 항상 False.
+                "is_watched": False,
             })
         except Exception as e:
             # malformed 공시 1건이 피드 전체를 깨지 못하게 격리(로그만).
@@ -329,11 +332,9 @@ def _build_feed(force: bool = False) -> dict:
     # 을 묶어 정보량 큰 대표 1건만 남긴다(규칙: dedup.py). 정렬 전에 접는다.
     items = dedup.dedup(items)
 
-    # 정렬: 관심종목(watchlist) 소속 공시를 최상단 → 그 아래 최신순(접수일+접수번호 desc).
-    # is_watched 를 1/0 으로 최우선 키로 두고 전부 내림차순: 관심종목 그룹이 먼저,
-    # 각 그룹 안에서 최신 공시가 위로.
-    items.sort(key=lambda x: (1 if x.get("is_watched") else 0,
-                              x.get("rcept_dt", ""), x.get("rcept_no", "")),
+    # 정렬: 최신순(접수일+접수번호 desc). 관심종목 상단정렬은 기기별이라 프론트가
+    # 자기 기기 관심목록으로 재정렬한다(전역 피드는 관심상태 무관 = 캐시 공유 안전).
+    items.sort(key=lambda x: (x.get("rcept_dt", ""), x.get("rcept_no", "")),
                reverse=True)
 
     errors = list(fetch_errors)
@@ -351,8 +352,10 @@ def _build_feed(force: bool = False) -> dict:
     return {
         "count": len(items),
         "market": "KOSPI+KOSDAQ",
-        "stocks": stocks,
-        "keywords": keywords,
+        # 관심목록은 기기별 → 전역 피드 payload 에 담지 않는다(타 기기 유출 방지).
+        # 프론트는 /api/watchlist(기기 스코프)로 관심상태를 얻는다.
+        "stocks": [],
+        "keywords": [],
         "benchmark_ready": bench_ready,
         "benchmark_source": impact.benchmark_source(),
         "errors": errors,
@@ -442,6 +445,14 @@ def _group_ids(state):
     return {g["id"] for g in state.get("groups", [])}
 
 
+def _device_id(request: Request) -> str:
+    """요청의 X-Device-Id 헤더(기기 익명 ID). 미제공이면 빈 문자열.
+
+    watch_store 는 빈 device_id 를 '임시 빈 상태(미영속)'로 취급하므로, 헤더 없는
+    비프론트 호출도 에러 없이 빈 관심목록을 받는다(전역 공유 결함 제거)."""
+    return (request.headers.get("x-device-id") or "").strip()
+
+
 # ---------------- 엔드포인트 ----------------
 @api.get("/api/health")
 def health():
@@ -498,8 +509,8 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
 
 
 @api.get("/api/watchlist")
-def get_watchlist():
-    state = watch_store.load_watch_state()
+def get_watchlist(request: Request):
+    state = watch_store.load_watch_state(_device_id(request))
     return {"stocks": state["stocks"], "keywords": state["keywords"],
             "groups": state["groups"]}
 
@@ -511,12 +522,13 @@ class WatchAdd(BaseModel):
 
 
 @api.post("/api/watchlist")
-def add_watchlist(body: WatchAdd):
+def add_watchlist(body: WatchAdd, request: Request):
     raw = (body.stock_code or body.name or "").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="종목명 또는 종목코드를 입력하세요.")
 
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     stocks = state["stocks"]
 
     # 대상 그룹 결정(미지정 → default). 존재하지 않는 그룹이면 400.
@@ -561,22 +573,21 @@ def add_watchlist(body: WatchAdd):
                 default=-1) + 1
     stocks.append({"name": name or code, "stock_code": code,
                    "group": group, "order": order})
-    state = watch_store.save_watch_state(state)
-    _FEED_CACHE["data"] = None  # 다음 조회 시 재구성(is_watched 갱신)
+    state = watch_store.save_watch_state(state, device_id)
+    # 피드는 이제 기기 관심상태와 무관(is_watched 프론트 계산) → 캐시 무효화 불요.
     return _snapshot(state)
 
 
 @api.delete("/api/watchlist/{code}")
-def delete_watchlist(code: str):
-    state = watch_store.load_watch_state()
+def delete_watchlist(code: str, request: Request):
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     new_stocks = [s for s in state["stocks"] if s.get("stock_code") != code]
     if len(new_stocks) == len(state["stocks"]):
-        # 멱등 삭제: 피드 캐시(60s)가 낡은 관심 상태를 들고 있으면 이미 빠진
-        # 종목에 해제 요청이 올 수 있다 — 404 대신 현 상태를 돌려준다.
+        # 멱등 삭제: 이미 빠진 종목에 해제 요청이 와도 404 대신 현 상태 반환.
         return _snapshot(state)
     state["stocks"] = new_stocks
-    state = watch_store.save_watch_state(state)
-    _FEED_CACHE["data"] = None
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
@@ -586,9 +597,10 @@ class StockPatch(BaseModel):
 
 
 @api.patch("/api/watchlist/{code}")
-def patch_watchlist(code: str, body: StockPatch):
+def patch_watchlist(code: str, body: StockPatch, request: Request):
     """종목 그룹이동 / 순서변경."""
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     target = next((s for s in state["stocks"]
                    if s.get("stock_code") == code), None)
     if target is None:
@@ -603,8 +615,7 @@ def patch_watchlist(code: str, body: StockPatch):
     if body.order is not None:
         target["order"] = body.order
 
-    state = watch_store.save_watch_state(state)
-    _FEED_CACHE["data"] = None
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
@@ -614,12 +625,13 @@ class OrderPut(BaseModel):
 
 
 @api.put("/api/watchlist/order")
-def reorder_watchlist(body: OrderPut):
+def reorder_watchlist(body: OrderPut, request: Request):
     """해당 그룹 내 드래그 벌크 재정렬. order=[code, ...] 순서대로 재부여."""
     group = (body.group or "").strip()
     if not group:
         raise HTTPException(status_code=400, detail="group 을 지정하세요.")
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     if group not in _group_ids(state):
         raise HTTPException(status_code=404,
                             detail=f"존재하지 않는 그룹입니다: {group}")
@@ -630,8 +642,7 @@ def reorder_watchlist(body: OrderPut):
     for s in state["stocks"]:
         if s["group"] == group:
             s["order"] = rank.get(s["stock_code"], base + s["order"])
-    state = watch_store.save_watch_state(state)
-    _FEED_CACHE["data"] = None
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
@@ -655,25 +666,27 @@ def _new_group_id(state):
 
 
 @api.post("/api/watchlist/groups")
-def create_group(body: GroupCreate):
+def create_group(body: GroupCreate, request: Request):
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="그룹 이름을 입력하세요.")
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     if any(g["name"] == name for g in state["groups"]):
         raise HTTPException(status_code=409,
                             detail=f"이미 존재하는 그룹 이름입니다: {name}")
     order = max([g["order"] for g in state["groups"]], default=-1) + 1
     state["groups"].append({"id": _new_group_id(state),
                             "name": name, "order": order})
-    state = watch_store.save_watch_state(state)
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
 @api.patch("/api/watchlist/groups/{gid}")
-def patch_group(gid: str, body: GroupPatch):
+def patch_group(gid: str, body: GroupPatch, request: Request):
     """그룹 이름변경 / 순서변경. default 도 이름/순서변경은 허용(삭제만 금지)."""
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     target = next((g for g in state["groups"] if g["id"] == gid), None)
     if target is None:
         raise HTTPException(status_code=404, detail=f"존재하지 않는 그룹: {gid}")
@@ -689,24 +702,24 @@ def patch_group(gid: str, body: GroupPatch):
     if body.order is not None:
         target["order"] = body.order
 
-    state = watch_store.save_watch_state(state)
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
 @api.delete("/api/watchlist/groups/{gid}")
-def delete_group(gid: str):
+def delete_group(gid: str, request: Request):
     """그룹 삭제. 소속 종목은 default 로 이동. default 삭제는 400."""
     if gid == watch_store.DEFAULT_GROUP_ID:
         raise HTTPException(status_code=400, detail="기본 그룹은 삭제할 수 없습니다.")
-    state = watch_store.load_watch_state()
+    device_id = _device_id(request)
+    state = watch_store.load_watch_state(device_id)
     if not any(g["id"] == gid for g in state["groups"]):
         raise HTTPException(status_code=404, detail=f"존재하지 않는 그룹: {gid}")
     state["groups"] = [g for g in state["groups"] if g["id"] != gid]
     for s in state["stocks"]:
         if s["group"] == gid:
             s["group"] = watch_store.DEFAULT_GROUP_ID
-    state = watch_store.save_watch_state(state)
-    _FEED_CACHE["data"] = None
+    state = watch_store.save_watch_state(state, device_id)
     return _snapshot(state)
 
 
