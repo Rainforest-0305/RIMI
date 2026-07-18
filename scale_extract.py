@@ -84,6 +84,8 @@ DOC_ROUTES = [
     ("공급계약체결", "공급계약"),   # 단일판매ㆍ공급계약체결
     ("현물배당결정", "배당"),       # 현금ㆍ현물배당결정
     ("소각결정",     "소각"),       # 주식소각결정
+    ("소송등의제기", "소송"),       # 소송등의제기ㆍ신청(청구·경영권분쟁 등, 판결/결정 제외)
+    ("전환청구권행사", "전환청구"),  # 전환청구권행사(제N회차 포함). 전환사채(발행결정)와 별개.
 ]
 
 # 규모버킷 경계(상대규모 = 금액/시총, %). 유형별 적정 경계.
@@ -109,11 +111,20 @@ BUCKETS = {
 #   배당(파일럿 n=1869, 2026-07): p25=1.0 p50=1.8 p75=3.0 max=22.2
 #     → 소<1.5% / 중1.5-3% / 대3%+ (버킷별 757/636/476 → 균형; 3%+=고배당 top~25%,
 #       p75 경계와 일치. 컷 후보 비교상 (1.5,3)이 표본 최균형)
+#   합병:     rel = 합병교부신주(보통) / 합병전 발행주식총수(보통) %
+#     (WS-32B: cmpMgDecsn.mgnstk_ostk_cnt / 발행총수. 발행총수는 AMT_CACHE 재활용
+#      또는 stockTotqySttus. pykrx KRX로그인 차단으로 시총경로 불가에 따른 대체.)
+#   소송:     rel = 소가(청구금액) / 자기자본 %   (KRX 표준양식 native '자기자본대비(%)' 우선)
+#   전환청구: rel = 전환주식수 / 발행주식총수 %   (native '발행주식총수 대비(%)' 우선)
+# 신규 3유형 경계는 STEP4 census(p25/p50/p75)로 확정 — 아래는 확정치.
 BUCKETS_DOC = {
     "공급계약": [(0, 10, "소<10%"),  (10, 30, "중10-30%"),  (30, 1e9, "대30%+")],
     "소각":     [(0, 1, "소<1%"),    (1, 3, "중1-3%"),      (3, 1e9, "대3%+")],
     "무상증자": [(0, 20, "소<20%"),  (20, 100, "중20-100%"), (100, 1e9, "대100%+")],
     "배당":     [(0, 1.5, "소<1.5%"), (1.5, 3, "중1.5-3%"),  (3, 1e9, "대3%+")],
+    "합병":     [(0, 8, "소<8%"),    (8, 40, "중8-40%"),      (40, 1e9, "대40%+")],
+    "소송":     [(0, 6, "소<6%"),    (6, 12, "중6-12%"),      (12, 1e9, "대12%+")],
+    "전환청구": [(0, 1.7, "소<1.7%"), (1.7, 3.5, "중1.7-3.5%"), (3.5, 1e9, "대3.5%+")],
 }
 # scale_lookup 이 status:ok 시 반환할 rel_label(분모 설명).
 REL_LABELS = {
@@ -121,9 +132,14 @@ REL_LABELS = {
     "소각":     "발행주식 대비",
     "배당":     "시가배당률",
     "무상증자": "무상신주 비율",
+    "합병":     "발행주식 대비 신주",
+    "소송":     "자기자본 대비",
+    "전환청구": "발행주식 대비",
 }
-# stype(집계 라벨) -> impact_benchmark.json 최상위 키. 소각만 라벨 상이.
-STYPE_BENCH_KEY = {"소각": "주식소각"}
+# stype(집계 라벨) -> impact_benchmark.json 최상위 키. 라벨 상이한 것만.
+#   소각→주식소각, 합병→합병분할. (전환청구는 bench에 최상위 키 없음=기타공시 분류
+#   →merge 시 방어적 스킵. 소송은 동명 키 존재.)
+STYPE_BENCH_KEY = {"소각": "주식소각", "합병": "합병분할"}
 
 MIN_N = 20  # 버킷 자기표본 최소. 미만이면 conf=참고(앱은 유형레벨로 폴백 가능).
 
@@ -180,6 +196,197 @@ def doc_route(report_nm):
 def bullet_eligible(report_nm):
     """숫자 bullet 생성 가능 유형인가(구조화 or 문서파싱). 피드 게이트용."""
     return bool(struct_route(report_nm)[0]) or bool(doc_route(report_nm))
+
+
+# ---------------- 합병(WS-32B 신규 구조화 유형) ----------------
+# 합병은 cmpMgDecsn(구조화)에서 합병교부신주(mgnstk_ostk_cnt)를 얻고, 분모인
+# 합병전 발행주식총수는 EP/문서 어디에도 없다(실측 2026-07). pykrx도 KRX 로그인
+# 차단으로 시총/상장주식수 산출 불가 → 발행총수를 (1) AMT_CACHE 재활용(접수일
+# 근접 구조화행의 발행총수, 날짜근사) 또는 (2) stockTotqySttus(정시)로 확보한다.
+MERGER_EP = "cmpMgDecsn"
+# 합병신주 > 발행총수(rel>100%) = 우회상장/SPAC합병(스팩 등 신주가 기존 총수를 초과).
+# 통상적 지분희석 신호가 아니므로 rel 버킷에서 제외(pending). 실측: 기존기업 흡수합병
+# rel 최대 ~96%, >100%는 전부 SPAC/우회상장(실측 2026-07, denom 정시값 기준 6000~18000%).
+MERGER_REL_MAX = 100.0
+# 소송 rel 상한: 소가>자기자본 대다수는 대형소송(유효)이나 자본잠식(자기자본≈0/음수)은
+# rel 이 수천~수백억%로 폭주(실측 max 4.2e10%) → 500% 초과만 자본잠식으로 보아 제외.
+LITIG_REL_MAX = 500.0
+# 전환청구 rel 상한: 전환주식수>발행총수(rel>100%)는 데이터/극소주식 이상 → 제외(실측 1건).
+CONV_REL_MAX = 100.0
+# stype -> rel 버킷 상한(초과분 제외). 합병/소송/전환청구 전용.
+REL_MAX_NEW = {"합병": MERGER_REL_MAX, "소송": LITIG_REL_MAX, "전환청구": CONV_REL_MAX}
+# 발행총수 소스로 재활용 가능한 구조화 EP(발행총수 산출 가능한 것만).
+_SHARES_SRC_EPS = ("piicDecsn", "fricDecsn", "cvbdIsDecsn", "bdwtIsDecsn",
+                   "exbdIsDecsn", "tsstkAqDecsn", "tsstkDpDecsn",
+                   "tsstkAqTrctrCcDecsn")
+
+
+def is_merger(report_nm):
+    """회사합병결정(주요사항보고서)만 rel 버킷 대상. 종속회사/자회사 경영사항,
+    회사분할합병(별도구조)은 제외(이번 스코프 아님). 분할·주식교환도 제외."""
+    n = (report_nm or "").replace(" ", "")
+    return ("회사합병결정" in n and "종속회사" not in n and "자회사" not in n
+            and "회사분할합병" not in n)
+
+
+def _shares_of_row(ep, row):
+    """구조화 상세행의 발행주식총수(보통주 기준) 산출. piic/fric 는 증자전 발행총수
+    직접(bfic_tisstk_ostk), 그 외는 shares_from_row 역산. 실패 시 None."""
+    if ep in ("piicDecsn", "fricDecsn"):
+        return _num(row.get("bfic_tisstk_ostk"))
+    return shares_from_row(ep, row)
+
+
+def _merger_shares_from_cache(corp, merger_dt):
+    """AMT_CACHE 재활용: corp 의 구조화 캐시행 중 발행총수 산출 가능하고 접수일이
+    merger_dt 에 가장 가까운 것 → (shares, gap_days). 없으면 (None, None). DART 0콜."""
+    if not corp:
+        return None, None
+    try:
+        md = datetime.strptime(str(merger_dt), "%Y%m%d")
+    except (ValueError, TypeError):
+        md = None
+    best = None  # (gap_days, shares)
+    for ep in _SHARES_SRC_EPS:
+        cf = AMT_CACHE / f"{ep}_{corp}.json"
+        if not cf.exists():
+            continue
+        try:
+            rows = json.loads(cf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for rno, row in rows.items():
+            if not isinstance(row, dict):
+                continue
+            sh = _shares_of_row(ep, row)
+            if not sh or sh <= 0:
+                continue
+            rdt = str(rno)[:8]
+            if md and len(rdt) == 8 and rdt.isdigit():
+                try:
+                    gap = abs((datetime.strptime(rdt, "%Y%m%d") - md).days)
+                except ValueError:
+                    gap = 10 ** 6
+            else:
+                gap = 10 ** 6
+            if best is None or gap < best[0]:
+                best = (gap, sh)
+    if best is None:
+        return None, None
+    return best[1], best[0]
+
+
+def _merger_shares_stocktot(corp, merger_dt, budget=None):
+    """stockTotqySttus 로 발행총수(보통주) 확보. merger_dt 직전 사업보고서 우선.
+    <=budget DART콜. (shares, None) 또는 (None, None)."""
+    try:
+        yr = int(str(merger_dt)[:4])
+    except (ValueError, TypeError):
+        yr = datetime.now().year
+    url = "https://opendart.fss.or.kr/api/stockTotqySttus.json"
+    # 직전 사업연도(11011) → 그 전년 → 당해 3분기(11014) 순으로 시도(≤3콜).
+    attempts = [(yr - 1, "11011"), (yr - 2, "11011"), (yr, "11014")]
+    for by_yr, rc in attempts:
+        if budget is not None and budget[0] <= 0:
+            return None, None
+        try:
+            d = requests.get(url, params={"crtfc_key": KEY, "corp_code": corp,
+                                          "bsns_year": str(by_yr),
+                                          "reprt_code": rc}, timeout=20).json()
+        except Exception:
+            if budget is not None:
+                budget[0] -= 1
+            time.sleep(1)
+            continue
+        if budget is not None:
+            budget[0] -= 1
+        time.sleep(0.1)
+        if d.get("status") == "020":
+            time.sleep(30)
+            continue
+        if d.get("status") != "000":
+            continue
+        for r in d.get("list", []):
+            se_ = (r.get("se") or "").replace(" ", "")
+            if se_.startswith("보통") or se_ == "합계":
+                sh = _num(r.get("istc_totqy"))
+                if sh and sh > 0:
+                    return sh, None
+    return None, None
+
+
+def _nearest_cmpmg_row(rows, rno, event_dt):
+    """cmpMgDecsn rows(원 주요사항보고서 rcept로 키됨)에서 이벤트 row 선택. 정정/첨부
+    이벤트는 자신 rcept 가 rows 에 없으므로 접수일 최근접 row(같은 합병건)로 매칭."""
+    r = rows.get(rno)
+    if r:
+        return r, True
+    if not rows:
+        return None, False
+    try:
+        ed = datetime.strptime(str(event_dt)[:8], "%Y%m%d")
+    except (ValueError, TypeError):
+        ed = None
+    best = None
+    for k, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        kd = str(k)[:8]
+        if ed and len(kd) == 8 and kd.isdigit():
+            try:
+                gap = abs((datetime.strptime(kd, "%Y%m%d") - ed).days)
+            except ValueError:
+                gap = 10 ** 6
+        else:
+            gap = 10 ** 6
+        if best is None or gap < best[0]:
+            best = (gap, row)
+    return (best[1], False) if best else (None, False)
+
+
+def merger_rel_fields(row, corp, merger_dt, allow_stocktot=True, budget=None):
+    """합병 1건의 rel 필드 dict 산출. row=cmpMgDecsn 상세행.
+    분모=발행총수(AMT_CACHE 재활용 우선, 이상치/부재 시 stockTotqySttus 폴백).
+    반환: {stype, new_shares, mg_rt, denom_shares, denom_source, denom_date_approx,
+           denom_gap_days, rel} (rel 산출 실패 시 rel 키 없음)."""
+    f = {"stype": "합병"}
+    new = _num(row.get("mgnstk_ostk_cnt"))
+    if row.get("mg_rt"):
+        f["mg_rt"] = str(row.get("mg_rt"))[:120]
+    if not new or new <= 0:
+        f["reason"] = "합병신주(mgnstk_ostk_cnt) 미기재"
+        return f
+    f["new_shares"] = new
+    reuse, gap = _merger_shares_from_cache(corp, merger_dt)
+
+    # 이상치 가드(재활용에만 적용): rel>200% / <=0 / 발행총수<합병신주 = 날짜불일치 추정.
+    def _outlier(sh):
+        if not sh or sh <= 0:
+            return True
+        rel = new / sh * 100.0
+        return rel > 200.0 or rel <= 0.0 or sh < new
+
+    shares = source = approx = None
+    if reuse and not _outlier(reuse):
+        shares, source, approx = reuse, "amt_cache_reuse", True
+    else:
+        # 재활용 부재/이상치 → stockTotqySttus(정시·권위) 폴백. 폴백 성공값은
+        # rel 크기와 무관하게 채택(권위, 역합병 등 대규모 희석도 정시값이 진실).
+        if allow_stocktot:
+            sh2, _ = _merger_shares_stocktot(corp, merger_dt, budget)
+            if sh2 and sh2 > 0:
+                shares, source, approx, gap = sh2, "stockTotqySttus", False, None
+    if not shares or shares <= 0:
+        f["reason"] = ("발행총수 이상치·폴백예산소진" if reuse
+                       else "발행총수 확보 실패")
+        return f
+    f["denom_shares"] = shares
+    f["denom_source"] = source
+    f["denom_date_approx"] = approx
+    if gap is not None and source == "amt_cache_reuse":
+        f["denom_gap_days"] = gap
+    f["rel"] = round(new / shares * 100.0, 2)
+    return f
 
 
 # ---------------- 이벤트 로드(로컬 캐시) ----------------
@@ -791,7 +998,42 @@ def _scale_only(report_nm, rcept_no, corp_code, stock_code, rcept_dt=None):
                             "준비중 — 위 유형 통계를 참고하세요."}
         return {"status": "pending", "stype": "무상증자",
                 "reason": "무상신주/발행총수 미기재"}
-    # 문서파싱 유형(공급계약/배당/소각)
+    # 합병(cmpMgDecsn 구조화 + 발행총수 외부확보). 캐시(배치 산출) 우선, 없으면 <=1콜.
+    if is_merger(report_nm):
+        cf = DOC_CACHE / f"{rcept_no}.json"
+        f = None
+        if cf.exists():
+            try:
+                f = json.loads(cf.read_text(encoding="utf-8"))
+            except Exception:
+                f = None
+        if not f or f.get("rel") is None:
+            row = None
+            if corp_code:
+                try:
+                    row = detail_row_for(MERGER_EP, corp_code, rcept_no, rcept_dt)
+                except Exception:
+                    row = None
+            if not row:
+                return {"status": "pending", "stype": "합병",
+                        "reason": "합병 구조화 상세 미반영(신규)"}
+            f = merger_rel_fields(row, corp_code, rcept_dt or str(rcept_no)[:8],
+                                  allow_stocktot=True, budget=None)
+            try:
+                cf.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+        if f.get("rel") is None:
+            return {"status": "pending", "stype": "합병",
+                    "reason": f.get("reason", "발행총수 확보 실패")}
+        if f.get("rel") > MERGER_REL_MAX:
+            return {"status": "pending", "stype": "합병",
+                    "reason": "합병신주>발행총수(우회상장/SPAC) — 통상 희석 아님"}
+        return {"status": "scale_only", "stype": "합병",
+                "rel_label": "발행주식 대비 신주", "rel_pct": f.get("rel"),
+                "note": "합병규모는 합병교부신주의 발행주식 대비 비율로 표시"
+                        "(합병비율은 보조). 규모별 과거통계는 위 유형 통계를 참고하세요."}
+    # 문서파싱 유형(공급계약/배당/소각/소송/전환청구)
     dtype = doc_route(report_nm)
     if not dtype:
         return None
@@ -819,6 +1061,26 @@ def _scale_only(report_nm, rcept_no, corp_code, stock_code, rcept_dt=None):
                 "rel_label": "발행주식 대비 소각비율", "rel_pct": fields.get("pct"),
                 "note": "소각 규모는 소각금액·발행주식대비로 표시. 규모별 과거통계는 "
                         "준비중 — 위 유형 통계를 참고하세요."}
+    if dtype == "소송":
+        rel = fields.get("rel")
+        if rel is not None and rel > LITIG_REL_MAX:
+            return {"status": "pending", "stype": "소송",
+                    "reason": "소가/자기자본 극단(자본잠식 추정) — 규모 신뢰불가"}
+        amt = fields.get("claim")
+        return {"status": "scale_only", "stype": "소송",
+                "amount": amt, "amount_txt": _eok(amt) if amt else "-",
+                "rel_label": "자기자본 대비", "rel_pct": rel,
+                "note": "소송 규모는 소가(청구금액)·자기자본대비로 표시(판결/가처분 등 "
+                        "소가無는 제외). 규모별 과거통계는 위 유형 통계를 참고하세요."}
+    if dtype == "전환청구":
+        rel = fields.get("rel")
+        if rel is not None and rel > CONV_REL_MAX:
+            return {"status": "pending", "stype": "전환청구",
+                    "reason": "전환주식수>발행총수 — 규모 신뢰불가"}
+        return {"status": "scale_only", "stype": "전환청구",
+                "rel_label": "발행주식 대비", "rel_pct": rel,
+                "note": "전환청구 규모는 전환주식수의 발행주식 대비 비율로 표시. "
+                        "규모별 과거통계는 위 유형 통계를 참고하세요."}
     return None
 
 
@@ -1122,6 +1384,31 @@ def parse_doc(doctype, txt):
             f["pct"] = round(canc_o / tot_o * 100, 2)
         elif canc_e and tot_e and tot_e > 0:
             f["pct"] = round(canc_e / tot_e * 100, 2)
+    elif doctype == "소송":
+        # KRX 표준양식 native 필드: 청구금액(원)/자기자본(원)/자기자본대비(%).
+        # rel = 자기자본대비% native 우선, 없으면 소가/자기자본 역산.
+        # 판결/결정·가처분·경영권분쟁 등 소가無 → rel 없음(pending, 버킷 제외).
+        f["claim"] = _last_num(r"청구금액\s*\(원\)", txt)
+        f["equity"] = _last_num(r"자기자본\s*\(원\)", txt)
+        rel = _last_num(r"자기자본\s*대비\s*\(%\)", txt, hi=100000)
+        if rel is None and f.get("claim") and f.get("equity") and f["equity"] > 0:
+            rel = round(f["claim"] / f["equity"] * 100, 2)
+        if rel is not None:
+            f["rel"] = rel
+    elif doctype == "전환청구":
+        # native '발행주식총수 대비(%)' = 전환주식수/발행총수. 전환사채(발행결정)의
+        # '발행주식총수 대비 비율(%)' 라벨과 문자열 비충돌. native 우선·역산 폴백.
+        rel = _last_num(r"발행주식총수\s*대비\s*\(%\)", txt, hi=100000)
+        cnt = _last_num(r"행사주식수\s*누계\s*\(주\)\s*(?:\([^)]*\)\s*)?", txt)
+        tot = _last_num(r"발행주식총수\s*\(주\)", txt)
+        if cnt:
+            f["conv_shares"] = cnt
+        if tot:
+            f["total_shares"] = tot
+        if rel is None and cnt and tot and tot > 0:
+            rel = round(cnt / tot * 100, 2)
+        if rel is not None:
+            f["rel"] = rel
     # ----- 구조화 주요정보 API가 아직 미반영(013)인 신규 공시 대비: 표준양식 파싱 -----
     elif doctype == "유상증자":
         # 조달금액 = 자금목적 6개 항목 합(있는 것만). 라벨은 '…자금 (원) N'.
@@ -1181,6 +1468,22 @@ def bullets_from_doc(doctype, f):
             parts.append("발행주식의 " + b(f"{f['pct']:g}%"))
         if parts:
             B.append(" — ".join(parts))
+    elif doctype == "소송":
+        parts = []
+        if f.get("claim"):
+            parts.append("청구금액 " + b(_eok(f["claim"])))
+        if f.get("rel") is not None:
+            parts.append("자기자본 대비 " + b(f"{f['rel']:g}%"))
+        if parts:
+            B.append(" · ".join(parts))
+    elif doctype == "전환청구":
+        parts = []
+        if f.get("conv_shares"):
+            parts.append("전환주식 " + b(f"{f['conv_shares']:,.0f}주"))
+        if f.get("rel") is not None:
+            parts.append("발행주식 대비 " + b(f"{f['rel']:g}%"))
+        if parts:
+            B.append(" · ".join(parts))
     elif doctype == "유상증자":
         new = f.get("new")
         pre = f.get("pre")
@@ -1319,15 +1622,21 @@ def bullets_for_item(corp_code, stock_code, report_nm, rcept_no, rcept_dt="",
 
 # ---------------- 신규유형(문서/구조화) 규모버킷 집계 ----------------
 def _new_type_events(by):
-    """공급계약/소각(문서파싱) + 무상증자(구조화 fricDecsn) 이벤트. stype 부여."""
+    """공급계약/소각/소송/전환청구(문서파싱) + 무상증자(구조화 fricDecsn) + 합병
+    (구조화 cmpMgDecsn) 이벤트. stype 부여. (WS-32B: 소송/전환청구/합병 추가)"""
     out = defaultdict(list)
     for it in by.values():
         nm = it.get("report_nm", "")
         dt = doc_route(nm)
-        if dt in ("공급계약", "소각", "배당"):
+        if dt in ("공급계약", "소각", "배당", "소송", "전환청구"):
             e = dict(it)
             e["stype"] = dt
             out[dt].append(e)
+            continue
+        if is_merger(nm):
+            e = dict(it)
+            e["stype"] = "합병"
+            out["합병"].append(e)
             continue
         ep, _ = struct_route(nm)
         if ep == "fricDecsn":
@@ -1369,6 +1678,8 @@ def _doc_rel_cached(stype, e):
         return f.get("pct")
     if stype == "배당":
         return f.get("yield")   # _scale_only(L808) rel_pct 와 동일 필드(버킷배치==조회 일치)
+    if stype in ("소송", "전환청구", "합병"):
+        return f.get("rel")     # 소송=자기자본대비%, 전환청구=발행총수대비%, 합병=신주/발행총수%
     return None
 
 
@@ -1668,6 +1979,313 @@ def cmd_aggregate_doc():
     return result
 
 
+# ---------------- WS-32B 신규 3유형 배치(합병/소송/전환청구) ----------------
+WS32B_DOC_CAP = 5000       # 배치당 문서 DART 콜 상한(소송/전환청구 각각, ≤5000)
+MERGER_STOCKTOT_CAP = 250  # 합병 stockTotqySttus 헤드룸(예상80 + 이상치폴백≤117 + 마진)
+
+
+def _fetch_doc_batch(stype, cap=WS32B_DOC_CAP):
+    """문서파싱 유형(소송/전환청구) document.xml full 페치. cmd_fetch_phase2 와 동일
+    020 백오프·014종결·재개형(DOC_CACHE 스킵). 배치당 cap 콜 상한."""
+    budget = [cap]
+    by = load_events()
+    groups = _new_type_events(by)
+    evs = groups.get(stype, [])
+    ok_n = fail_n = tried = consec_fail = backoff_seen = skip014 = 0
+    log(f"=== {stype} fetch 시작: 이벤트 {len(evs)} (DART 상한 {cap}) ===")
+    for e in evs:
+        rno = e.get("rcept_no")
+        if not rno:
+            continue
+        cf = DOC_CACHE / f"{rno}.json"
+        if cf.exists():
+            continue   # 재개형(0콜)
+        if budget[0] <= 0:
+            log(f"  예산 소진({cap}) — {stype} 중단"); break
+        fields = _doc_fields_cached(rno, stype, allow_fetch=True)   # <=1콜(성공시 캐시)
+        budget[0] -= 1
+        tried += 1
+        if fields is None:
+            if _LAST_DOC_STATUS == "014":
+                try:
+                    cf.write_text("{}", encoding="utf-8")
+                except Exception:
+                    pass
+                skip014 += 1
+                consec_fail = 0
+            else:
+                fail_n += 1
+                consec_fail += 1
+                if consec_fail >= 10:
+                    backoff_seen += 1
+                    log(f"  연속실패 {consec_fail} — 일한도 소진 추정, 중단"
+                        f"(익일 DOC_CACHE 재개). 예산잔여 {budget[0]}")
+                    break
+                if consec_fail >= 3:
+                    backoff_seen += 1
+                    log(f"  연속실패 {consec_fail}(rate-limit 추정) — sleep30 "
+                        f"(성공 {ok_n}/실패 {fail_n}, 예산잔여 {budget[0]})")
+                    time.sleep(30)
+        else:
+            ok_n += 1
+            consec_fail = 0
+        if tried % 100 == 0:
+            log(f"  {stype} 진행 시도 {tried} (성공 {ok_n}/014스킵 {skip014}/"
+                f"실패 {fail_n}, 예산잔여 {budget[0]})")
+    log(f"=== {stype} fetch 완료: 시도 {tried} (성공 {ok_n}/014스킵 {skip014}/"
+        f"실패 {fail_n}), 020백오프 {backoff_seen}회, DART콜 {tried}, 예산잔여 {budget[0]} ===")
+
+
+def cmd_fetch_litigation():
+    """소송(소송등의제기ㆍ신청) document.xml 배치."""
+    _fetch_doc_batch("소송")
+
+
+def cmd_fetch_conv():
+    """전환청구(전환청구권행사) document.xml 배치."""
+    _fetch_doc_batch("전환청구")
+
+
+def cmd_fetch_merger():
+    """합병(cmpMgDecsn) 배치: corp당 구조화 full(1콜) + 이벤트별 발행총수 확보
+    (AMT_CACHE 재활용 우선, 이상치/부재 시 stockTotqySttus 폴백, 헤드룸 상한).
+    이벤트별 rel 필드를 DOC_CACHE/{rcept}.json 에 캐시(재개형). free RAM 미측정."""
+    by = load_events()
+    groups = _new_type_events(by)
+    mergers = groups.get("합병", [])
+    bycorp = defaultdict(list)
+    for e in mergers:
+        if e.get("corp_code"):
+            bycorp[e["corp_code"]].append(e)
+    stock_budget = [MERGER_STOCKTOT_CAP]
+    cmpmg_calls = 0
+    rel_ok = pending = 0
+    src = Counter()          # denom_source 분포
+    outlier_fb = 0           # 이상치→stockTotqy 폴백 성공 건
+    log(f"=== 합병 fetch 시작: 이벤트 {len(mergers)}, 고유corp {len(bycorp)} "
+        f"(stockTotqy 헤드룸 {MERGER_STOCKTOT_CAP}) ===")
+    done = 0
+    for corp, evs in bycorp.items():
+        # cmpMgDecsn 풀스팬(캐시 없으면 1콜). AMT_CACHE 캐시 재실행시 0콜.
+        cf_ep = AMT_CACHE / f"{MERGER_EP}_{corp}.json"
+        had = cf_ep.exists()
+        try:
+            rows = dart_detail(MERGER_EP, corp)   # 캐시 우선
+        except Exception as ex:
+            log(f"  cmpMgDecsn fail {corp}: {repr(ex)[:60]}")
+            rows = {}
+        if not had:
+            cmpmg_calls += 1
+        for e in evs:
+            rno = e.get("rcept_no")
+            cf = DOC_CACHE / f"{rno}.json"
+            if cf.exists():
+                try:
+                    fprev = json.loads(cf.read_text(encoding="utf-8"))
+                    if fprev.get("rel") is not None:
+                        rel_ok += 1; src[fprev.get("denom_source")] += 1
+                    else:
+                        pending += 1
+                except Exception:
+                    pass
+                continue   # 재개형(0콜)
+            edt = e.get("rcept_dt") or str(rno)[:8]
+            row, exact = _nearest_cmpmg_row(rows, rno, edt)
+            if not row:
+                try:
+                    cf.write_text(json.dumps(
+                        {"stype": "합병", "reason": "cmpMgDecsn 상세 없음"},
+                        ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+                pending += 1
+                continue
+            reuse_before, _ = _merger_shares_from_cache(corp, edt)
+            f = merger_rel_fields(row, corp, edt,
+                                  allow_stocktot=(stock_budget[0] > 0),
+                                  budget=stock_budget)
+            if not exact:
+                f["row_match"] = "nearest_by_date"   # 정정/첨부 → 최근접 원보고서 매칭
+            try:
+                cf.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+            if f.get("rel") is not None:
+                rel_ok += 1
+                src[f.get("denom_source")] += 1
+                if f.get("denom_source") == "stockTotqySttus" and reuse_before:
+                    outlier_fb += 1   # 재활용 있었으나 이상치→stockTotqy 채택
+            else:
+                pending += 1
+        done += 1
+        if done % 50 == 0:
+            log(f"  합병 corp 진행 {done}/{len(bycorp)} "
+                f"(rel_ok {rel_ok}/pending {pending}, stockTotqy잔여 {stock_budget[0]})")
+    log(f"=== 합병 fetch 완료: cmpMgDecsn콜 {cmpmg_calls} + stockTotqy콜 "
+        f"{MERGER_STOCKTOT_CAP - stock_budget[0]} = DART {cmpmg_calls + (MERGER_STOCKTOT_CAP - stock_budget[0])}. "
+        f"rel_ok {rel_ok} / pending {pending}. 분모출처 {dict(src)}, "
+        f"이상치→stockTotqy폴백 {outlier_fb}건. stockTotqy헤드룸잔여 {stock_budget[0]} ===")
+    if stock_budget[0] <= 0:
+        log("  ※ stockTotqy 헤드룸 소진 — 잔여 이상치/무재활용 건은 pending 처리됨(보고 요망)")
+
+
+def cmd_aggregate_new():
+    """WS-32B 신규 3유형(합병/소송/전환청구)만 (유형×버킷) 집계 → scale_buckets.json
+    에 **비파괴 추가**(기존 공급계약/소각/무상/배당/유상/자사/전환사채 블록 불변,
+    _meta 기존키 보존). rel=캐시(DART 0콜), CAR=기존과 동일(익일 시가진입 1/5/21일,
+    자기시장 EW 보정)."""
+    NEW = ("합병", "소송", "전환청구")
+    by = load_events()
+    groups = _new_type_events(by)
+    allevs = []
+    rel_missing = defaultdict(int)
+    rel_excl = defaultdict(int)   # rel 상한 초과 제외(합병=우회상장/SPAC, 소송=자본잠식, 전환청구=이상)
+    for stype in NEW:
+        cap = REL_MAX_NEW.get(stype, float("inf"))
+        for e in groups.get(stype, []):
+            rel = _doc_rel_cached(stype, e)
+            if rel is None:
+                rel_missing[stype] += 1
+                continue
+            if rel > cap:
+                rel_excl[stype] += 1   # 상한 초과 → 버킷 제외
+                continue
+            e["rel"] = rel
+            allevs.append(e)
+    for stype in NEW:
+        got = sum(1 for e in allevs if e["stype"] == stype)
+        log(f"[{stype}] rel 확보 {got} / 캐시미스·소가無 {rel_missing[stype]} / "
+            f"rel>상한({REL_MAX_NEW.get(stype)}%) 제외 {rel_excl[stype]}")
+
+    codes = sorted({e["stock_code"] for e in allevs if e.get("stock_code")})
+    px_all = {c: load_px(c) for c in codes}
+    px_all = {c: p for c, p in px_all.items() if p}
+    code_mkt = {}
+    for e in allevs:
+        code_mkt.setdefault(e["stock_code"], e["market"])
+    V = {}
+    for mkt in ("KOSPI", "KOSDAQ"):
+        sub = {c: p for c, p in px_all.items() if code_mkt.get(c) == mkt}
+        V[mkt] = build_ew_market(sub)
+        log(f"  [{mkt}] EW 유니버스 {len(sub)}종목")
+    px_miss = sorted({e["stock_code"] for e in allevs if e["stock_code"] not in px_all})
+    if px_miss:
+        log(f"  px 미커버 종목 {len(px_miss)} (해당 이벤트 CAR 제외)")
+
+    priced = 0
+    for e in allevs:
+        e["ret"] = {}
+        px = px_all.get(e["stock_code"])
+        if not px:
+            continue
+        r = e.get("rcept_dt", "")
+        if len(r) != 8:
+            continue
+        riso = f"{r[0:4]}-{r[4:6]}-{r[6:8]}"
+        dates = sorted(px.keys())
+        i0 = bisect.bisect_right(dates, riso)
+        if i0 >= len(dates):
+            continue
+        t0 = dates[i0]
+        entry = px[t0][0]
+        V_open, V_close = V[e["market"]]
+        mkt_o = V_open.get(t0)
+        if entry <= 0 or not mkt_o:
+            continue
+        any_h = False
+        for label, k in HORIZONS:
+            j = i0 + k
+            if j >= len(dates):
+                continue
+            exd = dates[j]
+            exit_c = px[exd][1]
+            raw = (exit_c - entry) / entry
+            mkt_c = V_close.get(exd)
+            mret = (mkt_c - mkt_o) / mkt_o if mkt_c else 0.0
+            e["ret"][label] = (raw, mret, raw - mret)
+            any_h = True
+        if any_h:
+            priced += 1
+    log(f"CAR 산출 이벤트 {priced}/{len(allevs)}")
+
+    out = {}
+    summary = []
+    census = {}
+    for stype in NEW:
+        bounds = BUCKETS_DOC[stype]
+        sevs = [e for e in allevs if e["stype"] == stype and e.get("ret")]
+        rels = sorted(e["rel"] for e in sevs)
+        block = {"n_total": len(sevs), "rel_label": REL_LABELS.get(stype),
+                 "buckets": {}}
+        if rels:
+            n = len(rels)
+            pct = {
+                "p25": round(rels[n // 4], 2), "p50": round(rels[n // 2], 2),
+                "p75": round(rels[3 * n // 4], 2),
+                "min": round(rels[0], 2), "max": round(rels[-1], 2),
+            }
+            block["rel_pctl"] = pct
+            census[stype] = (n, pct)
+        for lo, hi, label in bounds:
+            bevs = [e for e in sevs if lo <= e["rel"] < hi]
+            brow = {"rel_range": [lo, hi if hi < 1e8 else None]}
+            for hlabel, _ in HORIZONS:
+                vals = [e["ret"][hlabel] for e in bevs if hlabel in e.get("ret", {})]
+                a = _agg(vals)
+                brow[hlabel] = {
+                    "raw_avg": a.get("raw_avg", 0.0), "raw_med": a.get("raw_med", 0.0),
+                    "market_avg": a.get("market_avg", 0.0),
+                    "car_avg": a.get("car_avg", 0.0), "car_med": a.get("car_med", 0.0),
+                    "raw_up_prob": a.get("raw_up_prob", 0.0),
+                    "up_prob": a.get("up_prob", 0.0),
+                    "n": a.get("n", 0), "conf": _grade(a.get("n", 0)),
+                }
+            block["buckets"][label] = brow
+            m = brow["m"]
+            summary.append((stype, label, m["n"], m["raw_avg"], m["car_avg"],
+                            m["car_med"], m["up_prob"], m["conf"]))
+        out[stype] = block
+
+    if OUT.exists():
+        result = json.loads(OUT.read_text(encoding="utf-8"))
+    else:
+        result = {"_meta": {}, "scale_buckets": {}}
+    result.setdefault("scale_buckets", {}).update(out)   # 신규 3유형만 갱신(기존 불변)
+    result.setdefault("_meta", {})["scale_ws32b_types"] = {
+        "added": sorted(out.keys()),
+        "rel_size_def": {
+            "합병": "합병교부신주(보통)/합병전 발행주식총수(보통) %(cmpMgDecsn.mgnstk_ostk_cnt). "
+                    "합병신주 미기재(무증자·완전자회사 흡수합병)·rel>100%(우회상장/SPAC)는 버킷 제외.",
+            "소송": "소가(청구금액)/자기자본 %(document.xml native '자기자본대비(%)' 우선)",
+            "전환청구": "전환주식수/발행주식총수 %(document.xml native '발행주식총수 대비(%)' 우선)",
+        },
+        "rel_labels": {k: REL_LABELS[k] for k in out},
+        "bucket_bounds": {k: [b[2] for b in BUCKETS_DOC[k]] for k in out},
+        "denom_note_합병": "합병 rel 분모=발행주식총수. 다수건은 접수일 근접 캐시 발행총수 "
+                          "재활용(날짜근사, denom_source=amt_cache_reuse·denom_date_approx=true), "
+                          "일부는 stockTotqySttus 정시(denom_source=stockTotqySttus). "
+                          "pykrx KRX로그인 차단으로 시총경로 불가에 따른 대체.",
+        "car_method": "익일 시가진입, 1/5/21거래일 보유, 자기시장 EW 보정(기존 유형과 동일).",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    tmp = OUT.with_suffix(".tmp")
+    tmp.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    import os
+    os.replace(tmp, OUT)
+    log(f"저장(WS-32B 신규유형 병합): {OUT}")
+
+    log("=== census(rel 분위수) — 버킷경계 확정용 ===")
+    for stype, (n, pct) in census.items():
+        log(f"  [{stype}] n={n} p25={pct['p25']} p50={pct['p50']} "
+            f"p75={pct['p75']} min={pct['min']} max={pct['max']}")
+    log("=== (WS-32B 신규유형×버킷) 1개월 요약 ===")
+    log(f"{'유형':<8}{'버킷':<12}{'N':>6}{'raw%':>8}{'CAR%':>8}"
+        f"{'CARmed%':>9}{'C>0':>6}  conf")
+    for (st, lb, n, raw, car, cmed, up, conf) in summary:
+        log(f"{st:<8}{lb:<12}{n:>6}{raw:>8}{car:>8}{cmed:>9}{up:>6}  {conf}")
+    return result
+
+
 # ---------------- merge ----------------
 def cmd_merge():
     """impact_benchmark.json 에 각 유형별 scale_buckets 필드 추가(비파괴)."""
@@ -1705,6 +2323,46 @@ def cmd_merge():
     import os
     os.replace(tmp, IMPACT)
     log(f"병합 완료: {added}유형 scale_buckets 추가 -> {IMPACT}")
+
+
+def cmd_merge_ws32b():
+    """루트 impact_benchmark.json 에 WS-32B 신규 3유형만 scale_buckets 부착(비파괴).
+    합병→'합병분할', 소송→'소송'. 전환청구는 앱 classify 가 '기타공시'로 태깅·bench
+    최상위 키 부재 → 방어적 스킵(scale_buckets.json 에는 존재, 키 생기면 자동부착).
+    기존 16유형·A의 by_regime·_meta(regime_axis/scale_adjustment) 전부 보존.
+    data/impact_benchmark.json 은 건드리지 않는다(루트만 갱신)."""
+    NEW = ("합병", "소송", "전환청구")
+    if not OUT.exists():
+        log("scale_buckets.json 없음 — 먼저 aggregate_new 실행"); return
+    if not IMPACT.exists():
+        log("impact_benchmark.json 없음"); return
+    sb = json.loads(OUT.read_text(encoding="utf-8"))["scale_buckets"]
+    bench = json.loads(IMPACT.read_text(encoding="utf-8"))
+    added, skipped = [], []
+    for stype in NEW:
+        block = sb.get(stype)
+        if not block or not block.get("buckets"):
+            skipped.append(f"{stype}(집계없음)"); continue
+        bkey = STYPE_BENCH_KEY.get(stype, stype)
+        if bkey in bench and isinstance(bench[bkey], dict):
+            bench[bkey]["scale_buckets"] = block   # 신규 sub-key만 추가(by_regime 등 불변)
+            added.append(f"{stype}->{bkey}")
+        else:
+            skipped.append(f"{stype}(bench키 '{bkey}' 없음)")
+    bench.setdefault("_meta", {})["scale_ws32b"] = {
+        "added": added, "skipped": skipped,
+        "bucket_bounds": {k: [b[2] for b in BUCKETS_DOC[k]] for k in NEW},
+        "note": "WS-32B 유형별 상대규모 확장(합병/소송/전환청구). 합병=합병교부신주/발행총수%"
+                "(우회상장·SPAC 제외), 소송=소가/자기자본%, 전환청구=전환주식/발행총수%. "
+                "전환청구는 앱 classify 가 기타공시로 태깅·bench 최상위 키 부재로 부착 스킵"
+                "(scale_buckets.json 엔 존재). 무상증자는 별건으로 이미 shipped·이번 배치 제외.",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    tmp = IMPACT.with_suffix(".ws32b.tmp")
+    tmp.write_text(json.dumps(bench, ensure_ascii=False, indent=2), encoding="utf-8")
+    import os
+    os.replace(tmp, IMPACT)
+    log(f"WS-32B 병합 완료: 부착 {added} / 스킵 {skipped} -> {IMPACT}")
 
 
 def cmd_census():
@@ -1769,4 +2427,7 @@ if __name__ == "__main__":
      "aggregate": cmd_aggregate, "merge": cmd_merge,
      "fetch_phase1": cmd_fetch_phase1, "fetch_phase2": cmd_fetch_phase2,
      "aggregate_doc": cmd_aggregate_doc,
+     "fetch_merger": cmd_fetch_merger, "fetch_litigation": cmd_fetch_litigation,
+     "fetch_conv": cmd_fetch_conv, "aggregate_new": cmd_aggregate_new,
+     "merge_ws32b": cmd_merge_ws32b,
      "prefetch": cmd_bullet_prefetch}[cmd]()

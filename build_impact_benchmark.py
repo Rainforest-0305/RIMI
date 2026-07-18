@@ -71,6 +71,15 @@ BUCKET = {
 }
 MIN_N = 30  # 이 미만이면 폴백
 
+# ---- WS-32A 시장레짐 조건부 벤치마크(분류축 전용 — baseline CAR 산식 무변경) ----
+REGIME_ETF = {"KOSPI": "069500", "KOSDAQ": "229200"}  # 국면 라벨링 ETF(baseline과 무관)
+R20_WINDOW = 20             # r20 = C[t]/C[t-20]-1 (20거래일 모멘텀)
+REGIME_BULL = 0.03          # r20 >= +3% → bull
+REGIME_CRASH = -0.08        # r20 <= -8% → crash (그 외 neutral)
+REGIME_MAX_REF_GAP_DAYS = 10  # 참조일-공시일 캘린더 갭 상한(초과=ETF 커버 밖/장기정지 → unknown)
+REGIME_MIN_N = MIN_N        # 30: 미만이면 평균/확률 미노출(참고만)
+REGIME_DROP_N = 5           # 미만이면 셀 생략
+
 
 def log(msg):
     line = f"[{datetime.now():%H:%M:%S}] {msg}"
@@ -500,6 +509,338 @@ def build_output(events):
     return out, summary_rows
 
 
+# ---------------- 5) WS-32A 시장레짐 조건부 벤치마크 ----------------
+def _soft_check_etf(code, series):
+    """(b)2018~현재 커버 (c)전행 len=2 (d)종가>0 실측. 반환 bool, 로그 남김."""
+    if not series:
+        log(f"[ASSERT {code}] (data) 시계열 없음 → FAIL")
+        return False
+    dates = sorted(series.keys())
+    cov_ok = (dates[0] <= "2018-01-31") and (dates[-1] >= "2026-05-01")
+    len_ok = all(isinstance(v, list) and len(v) == 2 for v in series.values())
+    pos_ok = all(v[1] > 0 for v in series.values())
+    log(f"[ASSERT {code}] (b)커버 {dates[0]}~{dates[-1]}: {'PASS' if cov_ok else 'FAIL'} | "
+        f"(c)전행len=2: {'PASS' if len_ok else 'FAIL'} | (d)종가>0: {'PASS' if pos_ok else 'FAIL'} "
+        f"(n={len(series)})")
+    return cov_ok and len_ok and pos_ok
+
+
+def fetch_and_assert_kosdaq_etf():
+    """229200(KODEX 코스닥150) 2018~현재 fetch + 4중 assert.
+    실패 시 None → KOSDAQ 레짐만 unknown 폴백(크래시 금지, 무조건부·by_market 무영향).
+    캐시 우선(오프라인 재현). 신규 fetch는 229200 1종뿐."""
+    code = "229200"
+    cf = PX_CACHE / f"{code}.json"
+    if cf.exists():
+        series = json.loads(cf.read_text())
+        log(f"[ASSERT {code}] 캐시 사용 ({len(series)}일)")
+    else:
+        try:
+            from pykrx import stock
+            end = datetime.now().strftime("%Y%m%d")
+            df = stock.get_market_ohlcv_by_date("20180101", end, code)
+        except Exception as e:
+            log(f"[ASSERT {code}] FETCH FAIL: {repr(e)[:120]} → KOSDAQ unknown 폴백")
+            return None
+        series = {}
+        if df is not None and len(df):
+            for d, row in df.iterrows():
+                try:
+                    o = float(row["시가"]); c = float(row["종가"])
+                except (KeyError, ValueError, TypeError):
+                    continue
+                if o > 0 and c > 0:
+                    series[d.strftime("%Y-%m-%d")] = [o, c]
+        cf.write_text(json.dumps(series))
+        log(f"[ASSERT {code}] fetch 완료 ({len(series)}일) → 캐시 {cf.name}")
+    # (a) 티커명: KRX 로그인 필요라 조회 불가 시 SKIP(폴백 유발 안 함). 조회되면 불일치 시만 FAIL.
+    name_ok = None
+    try:
+        from pykrx import stock
+        nm = stock.get_market_ticker_name(code)
+        nm = nm if isinstance(nm, str) else ""
+        if nm.strip():
+            name_ok = ("코스닥150" in nm.replace(" ", "")) or ("코스닥" in nm)
+            log(f"[ASSERT {code}] (a)티커명='{nm}': "
+                f"{'PASS' if name_ok else 'FAIL(KODEX 코스닥150 불일치)'}")
+        else:
+            log(f"[ASSERT {code}] (a)티커명 조회 빈값(KRX 로그인 필요 추정) → SKIP")
+    except Exception as e:
+        log(f"[ASSERT {code}] (a)티커명 조회 불가(KRX 로그인 필요 추정) → SKIP: {repr(e)[:80]}")
+    if name_ok is False:
+        log(f"[ASSERT {code}] (a) FAIL → KOSDAQ unknown 폴백")
+        return None
+    if not _soft_check_etf(code, series):
+        log(f"[ASSERT {code}] (b/c/d) FAIL → KOSDAQ unknown 폴백")
+        return None
+    log(f"[ASSERT {code}] 4중 assert 통과(a=SKIP허용, b/c/d PASS) → KOSDAQ 레짐 활성")
+    return series
+
+
+def load_regime_etfs():
+    """{'KOSPI':series|None, 'KOSDAQ':series|None}. 069500=캐시(신규fetch 0), 229200=fetch+assert."""
+    etfs = {}
+    k200 = load_px("069500")  # 캐시 히트(2092일) — 신규 fetch 없음
+    etfs["KOSPI"] = k200 if _soft_check_etf("069500", k200) else None
+    if etfs["KOSPI"] is None:
+        log("[ASSERT 069500] soft check FAIL → KOSPI 레짐 unknown 폴백")
+    etfs["KOSDAQ"] = fetch_and_assert_kosdaq_etf()
+    return etfs
+
+
+def _regime_index(series):
+    dates = sorted(series.keys())
+    closes = [series[d][1] for d in dates]
+    return dates, closes
+
+
+def classify_regime_r20(r20):
+    if r20 <= REGIME_CRASH:
+        return "crash"
+    if r20 >= REGIME_BULL:
+        return "bull"
+    return "neutral"
+
+
+def tag_regimes(events, etfs):
+    """각 이벤트에 e['regime'] in {bull,neutral,crash,unknown}. 참조일=rcept_dt 이하
+    마지막 ETF 거래일(bisect_right-1). ri<20/갭>N/ETF부재 → unknown. baseline 무변경(라벨만)."""
+    idx = {m: (_regime_index(s) if s else None) for m, s in etfs.items()}
+    counts = {"bull": 0, "neutral": 0, "crash": 0, "unknown": 0}
+    reasons = {"no_etf": 0, "ri_lt_20": 0, "gap": 0, "bad_date": 0}
+    for e in events:
+        ent = idx.get(e["market"])
+        r = e["rcept_dt"]
+        if ent is None:
+            e["regime"] = "unknown"; counts["unknown"] += 1; reasons["no_etf"] += 1; continue
+        if len(r) != 8:
+            e["regime"] = "unknown"; counts["unknown"] += 1; reasons["bad_date"] += 1; continue
+        dates, closes = ent
+        riso = f"{r[0:4]}-{r[4:6]}-{r[6:8]}"
+        ri = bisect.bisect_right(dates, riso) - 1
+        if ri < R20_WINDOW:
+            e["regime"] = "unknown"; counts["unknown"] += 1; reasons["ri_lt_20"] += 1; continue
+        try:
+            gap = (datetime.strptime(riso, "%Y-%m-%d")
+                   - datetime.strptime(dates[ri], "%Y-%m-%d")).days
+        except ValueError:
+            gap = 0
+        if gap > REGIME_MAX_REF_GAP_DAYS:
+            e["regime"] = "unknown"; counts["unknown"] += 1; reasons["gap"] += 1; continue
+        c_now, c_prev = closes[ri], closes[ri - R20_WINDOW]
+        if c_prev <= 0:
+            e["regime"] = "unknown"; counts["unknown"] += 1; reasons["bad_date"] += 1; continue
+        reg = classify_regime_r20(c_now / c_prev - 1.0)
+        e["regime"] = reg; counts[reg] += 1
+    return counts, reasons
+
+
+def _full_cell(a):
+    """agg() 출력 → 리더 호환 전체필드 셀(+conf)."""
+    return {
+        "raw_avg": a["raw_avg"], "raw_med": a["raw_med"],
+        "market_avg": a["market_avg"], "car_avg": a["car_avg"],
+        "car_med": a["car_med"], "raw_up_prob": a["raw_up_prob"],
+        "up_prob": a["up_prob"], "n": a["n"], "conf": grade(a["n"]),
+    }
+
+
+def _regime_cell(evlist, horizon):
+    """레짐 부분집합 셀. n<5 → None(생략), 5<=n<30 → {n,conf:'참고'}, n>=30 → 전체필드."""
+    a = agg(evlist, horizon)
+    n = a.get("n", 0)
+    if n < REGIME_DROP_N:
+        return None
+    if n < REGIME_MIN_N:
+        return {"n": n, "conf": "참고"}
+    return _full_cell(a)
+
+
+def build_regime_overlay(events):
+    """유형별 by_regime + 시장×레짐 교차(min_n 통과 셀만). baseline agg 무변경(부분집합 필터만)."""
+    for e in events:
+        if "tags" not in e:
+            e["tags"] = classify(e["report_nm"])
+    type_events = {}
+    for e in events:
+        for t in e["tags"]:
+            type_events.setdefault(t, []).append(e)
+    REGS = ("bull", "neutral", "crash")
+    overlay, cross = {}, {}
+    cstats = {"regime_cells": 0, "cross_cells": 0}
+    for t, evs in type_events.items():
+        by_reg = {}
+        for reg in REGS:
+            sub = [e for e in evs if e.get("regime") == reg]
+            cells = {}
+            for label, _ in HORIZONS:
+                c = _regime_cell(sub, label)
+                if c is not None:
+                    cells[label] = c
+                    cstats["regime_cells"] += 1
+            if cells:
+                by_reg[reg] = cells
+        if by_reg:
+            overlay[t] = by_reg
+        for mkt in ("KOSPI", "KOSDAQ"):
+            mevs = [e for e in evs if e["market"] == mkt]
+            mby = {}
+            for reg in REGS:
+                sub = [e for e in mevs if e.get("regime") == reg]
+                cells = {}
+                for label, _ in HORIZONS:
+                    a = agg(sub, label)
+                    if a.get("n", 0) >= REGIME_MIN_N:
+                        cells[label] = _full_cell(a)
+                        cstats["cross_cells"] += 1
+                if cells:
+                    mby[reg] = cells
+            if mby:
+                cross.setdefault(t, {})[mkt] = mby
+    return overlay, cross, cstats
+
+
+def _strip_regime(obj):
+    """재귀적으로 'by_regime' 키 제거(모든 깊이). _meta.regime_axis는 호출부 별도 처리."""
+    if isinstance(obj, dict):
+        return {k: _strip_regime(v) for k, v in obj.items() if k != "by_regime"}
+    if isinstance(obj, list):
+        return [_strip_regime(x) for x in obj]
+    return obj
+
+
+def merge_regime(overlay, cross, regime_axis):
+    """비파괴 머지 + 회귀 바이트대조 assert. 루트 impact_benchmark.json만 갱신(data/ 금지).
+    실패 시 원본 미변경(쓰기 안 함)."""
+    import hashlib
+    import os
+    root = OUT
+    orig_text = root.read_text(encoding="utf-8")
+    orig = json.loads(orig_text)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    premerge = root.with_name(root.name + f".premerge_{ts}")
+    premerge.write_text(orig_text, encoding="utf-8")
+    log(f"premerge 백업: {premerge.name} "
+        f"(sha256={hashlib.sha256(orig_text.encode('utf-8')).hexdigest()[:24]}, {len(orig_text.encode('utf-8'))}B)")
+    base_norm = json.dumps(orig, sort_keys=True, ensure_ascii=False)
+
+    merged = json.loads(orig_text)  # 독립 사본
+    added = 0
+    for t, by_reg in overlay.items():
+        if t not in merged:
+            log(f"  [WARN] overlay 유형 '{t}' 루트에 없음 — skip")
+            continue
+        merged[t]["by_regime"] = by_reg
+        added += 1
+    for t, mkts in cross.items():
+        if t not in merged:
+            continue
+        bm = merged[t].get("by_market")
+        if not isinstance(bm, dict):
+            continue
+        for mkt, mby in mkts.items():
+            if mkt in bm and isinstance(bm[mkt], dict):
+                bm[mkt]["by_regime"] = mby
+    merged["_meta"]["regime_axis"] = regime_axis
+
+    # 회귀 바이트대조: 머지본에서 by_regime + _meta.regime_axis 제거 → 정규화 → premerge와 완전일치
+    check = _strip_regime(merged)
+    check["_meta"] = {k: v for k, v in check["_meta"].items() if k != "regime_axis"}
+    if json.dumps(check, sort_keys=True, ensure_ascii=False) != base_norm:
+        log("[REGRESSION] FAIL: 정규화 문자열 불일치 → 머지 중단(원본 미변경)")
+        return False, premerge
+    log("[REGRESSION] PASS: by_regime/_meta.regime_axis 제거본 == premerge 정규화본 (바이트 동등)")
+
+    m = merged["_meta"]
+    for name, want in (("n_unique_disclosures", 342584),
+                       ("n_disclosures_kospi", 143176),
+                       ("n_disclosures_kosdaq", 199408)):
+        assert m[name] == want, f"anchor {name} {m[name]}!={want}"
+        log(f"[ANCHOR] {name}={m[name]} == {want} PASS")
+    div = merged["배당"]
+    kp = div["by_market"]["KOSPI"]["d"]["n"]
+    kq = div["by_market"]["KOSDAQ"]["d"]["n"]
+    assert div["d"]["n"] == 14431 and kp + kq == 14431, "배당 d.n 변동"
+    log(f"[ANCHOR] 배당 d.n=14431 (KOSPI {kp}+KOSDAQ {kq}) PASS")
+    for t in [k for k in orig if k != "_meta"]:
+        assert merged[t]["d"]["n"] == orig[t]["d"]["n"], f"{t} d.n 변동"
+    log("[ANCHOR] 16유형 d.n 전부 불변 PASS")
+
+    tmp = root.with_suffix(".tmp")
+    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, root)
+    new_text = root.read_text(encoding="utf-8")
+    log(f"머지 저장: {root} (by_regime 유형 {added}, "
+        f"sha256={hashlib.sha256(new_text.encode('utf-8')).hexdigest()[:24]}, "
+        f"{len(new_text.encode('utf-8'))}B)")
+    return True, premerge
+
+
+def main_regime():
+    log("=== WS-32A 레짐 조건부 벤치마크 머지 시작 ===")
+    etfs = load_regime_etfs()
+    events = collect_events()        # DART 캐시(오프라인)
+    events = compute_returns(events)  # px 캐시(오프라인) — raw/mret/car 계산
+    for e in events:
+        e["tags"] = classify(e["report_nm"])
+    counts, reasons = tag_regimes(events, etfs)
+    total = len(events)
+    unknown = counts["unknown"]
+    unk_share = unknown / total if total else 0.0
+    log(f"[REGIME] 태깅: bull {counts['bull']} / neutral {counts['neutral']} / "
+        f"crash {counts['crash']} / unknown {unknown} (총 {total})")
+    log(f"[REGIME] unknown 비율 {unk_share*100:.2f}% (사유: no_etf {reasons['no_etf']}, "
+        f"ri<20 {reasons['ri_lt_20']}, gap {reasons['gap']}, bad_date {reasons['bad_date']})")
+    if unk_share > 0.05:
+        log(f"[ALERT] unknown 비율 {unk_share*100:.2f}% > 5% — 표면화 필요")
+
+    overlay, cross, cstats = build_regime_overlay(events)
+    log(f"[REGIME] by_regime 셀 {cstats['regime_cells']}, 교차(min_n) 셀 {cstats['cross_cells']}, "
+        f"by_regime 유형수 {len(overlay)}")
+
+    def share(x):
+        return round(x / total, 4) if total else 0.0
+    regime_axis = {
+        "definition": "시장국면 라벨. 각 공시의 참조일(rcept_dt 이하 마지막 시장ETF 거래일) "
+                      "종가의 20거래일 수익률 r20으로 3구간 분류. baseline CAR(raw-market) "
+                      "산식과 완전 무관 — 분류축 전용(개별 이벤트 raw/mret/car 무변경).",
+        "metric": "r20 = C[t]/C[t-20] - 1 (20거래일 모멘텀)",
+        "source_etf": {"KOSPI": "069500 (KODEX200)", "KOSDAQ": "229200 (KODEX 코스닥150)"},
+        "boundaries_numeric": {"crash": "r20 <= -0.08", "neutral": "-0.08 < r20 < 0.03",
+                               "bull": "r20 >= 0.03"},
+        "internal_keys": ["bull", "neutral", "crash"],
+        "empirical_event_share": {"bull": share(counts["bull"]),
+                                  "neutral": share(counts["neutral"]),
+                                  "crash": share(counts["crash"]),
+                                  "unknown": share(counts["unknown"])},
+        "min_n": REGIME_MIN_N,
+        "drop_below_n": REGIME_DROP_N,
+        "unknown_policy": "ri<20(전방 20거래일 미확보) 또는 참조일-공시일 갭>10캘린더일"
+                          "(ETF 커버 밖/장기정지) 또는 시장ETF assert 실패 → unknown. "
+                          "조건부집계에서만 제외, 무조건부·by_market 무영향.",
+        "unknown_events": unknown,
+        "unknown_share": share(unknown),
+        "kospi_etf_status": "OK" if etfs["KOSPI"] else "FALLBACK_UNKNOWN",
+        "kosdaq_etf_status": "OK" if etfs["KOSDAQ"] else "FALLBACK_UNKNOWN(229200 assert 실패)",
+        "proposed_labels_ko": {"bull": "강세", "neutral": "중립/보합", "crash": "급락"},
+        "labels_status": "제안(미확정). 최종 한글 wording은 President 전담. 중요: "
+                         "neutral(-8%<r20<+3%)은 완만한 상승(+0~+3%)을 포함하므로 "
+                         "'약세'로 표기 금지.",
+        "president_note": "President 원문 라벨은 강세/약세/급락 3자. 본 구현 중간대(neutral)를 "
+                          "'약세'로 쓰려면 경계를 r20<0 등으로 재정의 필요(데이터 근거 별도 산출). "
+                          "현재 제안: 강세=r20>=+3%, 급락=r20<=-8%, 중간대='중립/보합'.",
+        "baseline_note": "레짐 ETF(069500/229200)는 국면 라벨 전용. CAR baseline은 시장별 "
+                         "EW 자체구축 지수(index_proxy 참조)로 별개 계열.",
+    }
+
+    ok, premerge = merge_regime(overlay, cross, regime_axis)
+    if ok:
+        log("=== 레짐 머지 완료(회귀 assert 통과) ===")
+    else:
+        log(f"=== 레짐 머지 중단(회귀 실패, 원본 미변경). premerge={premerge.name} ===")
+    return ok
+
+
 # ---------------- main ----------------
 def main():
     LOG.write_text("", encoding="utf-8")
@@ -530,4 +871,7 @@ def _f(v):
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "--regime-merge":
+        main_regime()  # WS-32A: 레짐 조건부 벤치마크만 비파괴 머지(무조건부 재빌드 안 함)
+    else:
+        main()

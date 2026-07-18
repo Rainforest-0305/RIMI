@@ -6,11 +6,17 @@ pykrx로 KRX 업종/테마 등락률을 실측하는 read-only 헬퍼.
 실계좌·KIS API 무접촉, 무과금. pykrx(KRX/Naver egress)에만 의존.
 
 경로 구조(견고한 2단):
-  1) PRIMARY  : KRX 업종지수 OHLCV(get_index_ohlcv_by_date)로 업종별 전일대비
-                등락률 직접 산출. (KRX egress 필요 -- Partner 크론 런타임에서 정상)
-  2) FALLBACK : 업종지수가 응답 없거나 비면, 각 테마 대표 구성종목의 개별
-                OHLCV(get_market_ohlcv_by_date, Naver 소스)를 받아 거래대금
-                (종가x거래량) 가중 평균 등락률로 테마 등락을 집계.
+  1) PRIMARY  : 각 테마 대표 구성종목의 개별 OHLCV(get_market_ohlcv_by_date,
+                Naver 소스, 로그인 불요)를 받아 거래대금(종가x거래량) 가중 평균
+                등락률로 테마 등락을 집계(기존 정상경로 · 정본). 일일 출력은 이
+                경로가 담당하며 착수 前 동작과 불변.
+  2) FALLBACK : 구성종목 경로가 통째로 결측일 때만, 시장 대표지수(코스피200/
+                코스닥150) '추종 ETF 종가 프록시'로 카드를 살린다(fail-open
+                안전망). 지수 API(get_index_ohlcv_by_date)는 KRX 로그인
+                (KRX_ID/KRX_PW)을 요구해 크론에서 불능이므로, 추종 KODEX
+                ETF(069500/229200)의 개별종목 OHLCV(로그인 불요) 전일대비
+                등락률을 지수 '프록시'로 사용한다. 지수 실측이 아니라 ETF 종가
+                프록시(추적오차·괴리율 존재)임을 universe/부제 라벨에 정직 표기.
 
 반환 등락률(pct)은 모두 '전일대비 일간 등락률(%)' 실측치.
 """
@@ -30,25 +36,19 @@ class NoTradingDataError(Exception):
 # 대표종목: 거래일 판정용 (KRX 대표 대형주)
 _PROBE_TICKER = "005930"  # 삼성전자
 
-# ── PRIMARY: KRX 업종지수 티커 → 표시명 (KOSPI 업종지수, KRX 고정 코드) ──
-_SECTOR_INDEX = {
-    "1005": "음식료품",
-    "1008": "화학",
-    "1009": "의약품",
-    "1011": "철강금속",
-    "1012": "기계",
-    "1013": "전기전자",
-    "1015": "운수장비",
-    "1016": "유통업",
-    "1017": "전기가스업",
-    "1018": "건설업",
-    "1020": "통신업",
-    "1021": "금융업",
-    "1024": "은행",
-    "1025": "증권",
-    "1026": "보험",
-    "1027": "서비스업",
-}
+# ── PRIMARY: 시장 대표지수 프록시 ETF (표시명 → 추종 ETF 종목코드) ──
+# 지수 API(get_index_ohlcv_by_date)는 KRX 로그인 필요 → 크론 불능. 대신 지수를
+# 추종하는 KODEX ETF 종가를 개별종목 엔드포인트(get_market_ohlcv_by_date, Naver
+# 소스, 로그인 불요)로 조회해 전일대비 등락률을 지수 '프록시'로 산출한다.
+#   069500 = KODEX 200      (코스피200 추종)
+#   229200 = KODEX 코스닥150 (코스닥150 추종)
+# NOTE: 코드값은 canonical(널리 통용). 종목명 확인 엔드포인트
+# (get_market_ticker_name/get_etf_ticker_name)는 KRX 로그인을 요구해 라이브
+# 확인 불가하나, 두 코드의 개별 OHLCV 는 로그인 없이 정상 조회됨(실측 확인).
+_ETF_INDEX_PROXY = [
+    ("코스피200", "069500"),
+    ("코스닥150", "229200"),
+]
 
 # ── FALLBACK: 테마 → 대표 구성종목(티커) ──
 _THEME_CONSTITUENTS = {
@@ -130,27 +130,28 @@ def _sector_pct_from_ohlcv(df, trade_day):
     return pct, weight
 
 
-def _fetch_via_index(trade_day):
-    """PRIMARY 경로. KRX 업종지수 OHLCV로 업종별 전일대비 등락률 산출.
-       성공 시 [(name, pct), ...] 반환, 데이터 0건이면 None."""
+def _fetch_via_etf(trade_day):
+    """FALLBACK 경로. 시장 대표지수 추종 ETF(KODEX200/코스닥150)의 개별종목
+    OHLCV(get_market_ohlcv_by_date, Naver 소스, 로그인 불요)에서 trade_day 종가
+    기준 전일대비 등락률(%)을 지수 '프록시'로 산출.
+
+    성공(2종 모두 확보) 시 [(name, pct), ...] 반환. 둘 중 하나라도 결측이면
+    부분카드 방지를 위해 None 을 반환해 구성종목 폴백에 위임(fail-open).
+    NOTE: 지수 실측이 아니라 ETF 종가 프록시(추적오차·괴리율 존재) — 라벨로 명시."""
     lo = trade_day - _dt.timedelta(days=10)
     items = []
-    for code, name in _SECTOR_INDEX.items():
+    for name, code in _ETF_INDEX_PROXY:
         try:
-            df = stock.get_index_ohlcv_by_date(_ymd(lo), _ymd(trade_day), code)
+            df = stock.get_market_ohlcv_by_date(_ymd(lo), _ymd(trade_day), code)
         except Exception:
             continue
-        if df is None or df.empty:
+        res = _sector_pct_from_ohlcv(df, trade_day)  # (등락률, 거래대금가중치)
+        if res is None:
             continue
-        rows = df[df.index.map(lambda ts: ts.date() == trade_day)]
-        if rows.empty:
-            continue
-        try:
-            pct = float(rows.iloc[-1]["등락률"])
-        except (KeyError, ValueError, TypeError):
-            continue
+        pct, _w = res
         items.append((name, pct))
-    if not items:
+    if len(items) < len(_ETF_INDEX_PROXY):
+        # 대표지수 프록시는 all-or-nothing: 2종 완전집합이 아니면 폴백 위임
         return None
     return items
 
@@ -207,29 +208,35 @@ def fetch_market_themes(mode, date):
     d = _parse_date(date)
     trade_day = _resolve_trading_day(mode, d)  # 룩어헤드 없는 거래일 확정
 
-    # 1) PRIMARY: 업종지수
-    items = _fetch_via_index(trade_day)
+    # 1) PRIMARY: 대표 구성종목 거래대금 가중 집계 (기존 정상경로 · 동작·문자열 무변경)
+    #    로그인 불요, 테마 리스트가 정본. 일일 출력은 착수 前 베이스라인과 동일 유지.
+    items = _fetch_via_constituents(trade_day)
     if items is not None:
-        universe = ("KRX 업종지수(get_index_ohlcv_by_date) 전일대비 일간 등락률. "
-                    "KOSPI 업종지수 %d개 중 데이터 존재 업종을 등락률 내림차순 상위 정렬."
-                    % len(_SECTOR_INDEX))
-    else:
-        # 2) FALLBACK: 대표 구성종목 거래대금 가중 집계
-        items = _fetch_via_constituents(trade_day)
-        if items is None:
-            raise NoTradingDataError(
-                "%s: 업종지수/구성종목 두 경로 모두 데이터 결측" % _iso(trade_day)
-            )
+        min_rows = 3
         universe = ("업종지수 미응답 폴백: 테마 %d개 각 대표 구성종목의 개별 OHLCV "
                     "전일대비 등락률을 거래대금(종가x거래량) 가중 평균. Naver 소스."
                     % len(_THEME_CONSTITUENTS))
+    else:
+        # 2) FALLBACK: 시장 대표지수 프록시 ETF (로그인 불요 안전망).
+        #    구성종목 경로가 통째로 결측일 때만 발동 → 코스피200·코스닥150 2행.
+        items = _fetch_via_etf(trade_day)
+        if items is None:
+            raise NoTradingDataError(
+                "%s: 구성종목/ETF 지수프록시 두 경로 모두 데이터 결측" % _iso(trade_day)
+            )
+        min_rows = len(_ETF_INDEX_PROXY)  # 코스피200·코스닥150 2종이 완전집합
+        universe = ("코스피200·코스닥150 ETF 종가 프록시"
+                    "(get_market_ohlcv_by_date, Naver 소스, 로그인 불요) "
+                    "전일대비 일간 등락률. 지수 실측이 아니라 추종 "
+                    "ETF(069500/229200) 종가 기준 프록시(추적오차·괴리율 존재).")
 
     items.sort(key=lambda x: x[1], reverse=True)
     top = items[:_TOP_N]
-    if len(top) < 3:
-        # 상위 3개도 못 채우면 실데이터 부족으로 간주
+    if len(top) < min_rows:
+        # 경로별 최소 행수 미달이면 실데이터 부족으로 간주
         raise NoTradingDataError(
-            "%s: 유효 업종/테마 %d개(<3)로 카드 구성 불가" % (_iso(trade_day), len(top))
+            "%s: 유효 업종/테마 %d개(<%d)로 카드 구성 불가"
+            % (_iso(trade_day), len(top), min_rows)
         )
 
     return {

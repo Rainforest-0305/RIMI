@@ -195,6 +195,16 @@
   .plain{font-size:12.5px;color:var(--t3);margin-top:12px;line-height:1.55} .plain b{color:var(--t2);font-weight:700}
   .pend{font-size:13px;color:var(--t3);font-weight:600;text-align:center;padding:6px 0}
 
+  /* WS-32A 시장국면별 과거영향(참고정보 · 현재레짐 판정 아님) */
+  .rgwrap{margin-top:12px;padding-top:11px;border-top:1px solid var(--line-2)}
+  .rgtitle{font-size:11px;font-weight:700;color:var(--t3);margin-bottom:7px}
+  .rgprov{font-size:10px;font-weight:700;color:var(--t3);opacity:.7;cursor:help}
+  .rgrow{display:flex;align-items:center;gap:8px;padding:4px 2px}
+  .rglab{font-size:12px;color:var(--t2);font-weight:700;min-width:64px}
+  .rgval{font-size:14px;font-weight:800;letter-spacing:-.02em}
+  .rgval.up{color:var(--up)} .rgval.down{color:var(--down)} .rgval.flat{color:var(--t3)}
+  .rgn{font-size:11px;color:var(--t3);font-weight:600;margin-left:auto}
+
   .scaletog{margin-top:12px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
     background:var(--blue-soft);border:none;border-radius:11px;padding:9px 13px;cursor:pointer;width:100%}
   .scalebox{margin-top:9px;display:none}
@@ -825,6 +835,32 @@ function fmtPct(v){
   const s=(v>0?'+':'')+Number(v).toFixed(1)+'%';
   return {txt:s,cls:(v>0.05?'up':(v<-0.05?'down':'flat'))};
 }
+/* WS-32A: 유형별 과거 시장국면(레짐) 영향분포. 현재레짐 판정 아님(순수 과거 참고).
+   라벨은 백엔드가 _meta.regime_axis.proposed_labels_ko 로 붙여준 것을 그대로 표시
+   (프론트 하드코딩 없음, neutral='중립/보합' — '약세' 아님). 선택 창(h) 값을 따른다.
+   소표본 셀: n 은 있으나 평균 미노출(=null) → '표본부족', 셀 자체 없으면 스킵. */
+function regimeBlock(imp,h){
+  const reg=imp&&imp.regime;
+  if(!reg||!Array.isArray(reg.regimes)||!reg.regimes.length)return '';
+  const rows=reg.regimes.map(r=>{
+    const w=(r.windows||{})[h]||{};
+    const n=(typeof w.n==='number')?w.n:null;
+    if(n==null)return '';                 // 셀 없음/무효 → 스킵
+    const pick=valPick(w);
+    if(pick.val==null||isNaN(pick.val)){  // n<30 등 평균 미노출 → 표본부족
+      return `<div class="rgrow"><span class="rglab">${esc(r.label)}</span>`+
+        `<span class="rgval flat">표본부족</span><span class="rgn">${n}건</span></div>`;
+    }
+    const p=fmtPct(pick.val);
+    return `<div class="rgrow"><span class="rglab">${esc(r.label)}</span>`+
+      `<span class="rgval ${p.cls} num">${p.txt}</span>`+
+      `<span class="rgn">${n}건</span></div>`;
+  }).filter(Boolean).join('');
+  if(!rows)return '';
+  const prov=reg.provisional
+    ?` <span class="rgprov" title="잠정 라벨(미확정) — 최종 국면 명칭은 검토 중">*잠정</span>`:'';
+  return `<div class="rgwrap"><div class="rgtitle">시장국면별 과거영향 · ${WL[h]} 뒤${prov}</div>${rows}</div>`;
+}
 function impactInner(item){
   const imp=item.impact||{};
   if(imp.status!=='ok'){
@@ -860,7 +896,8 @@ function impactInner(item){
     <div class="seg">${seg}</div>
     <div class="avg"><span class="pct ${p.cls} num">${p.txt}</span><span class="avgcap">${wlab} 뒤 ${VALCAP[VALMODE]||'평균 등락'}</span></div>
     ${bar}
-    <div class="plain">${plain}</div>`;
+    <div class="plain">${plain}</div>
+    ${regimeBlock(imp,h)}`;
 }
 function setWin(rno,k){WINSEL[rno]=k;
   const item=STATE.items.find(x=>x.rcept_no===rno);if(!item)return;
@@ -890,7 +927,9 @@ function scaleInner(d){
       `<div class="plain">이 건은 규모별 통계를 적용할 수 없어요 (${esc(why)}). 위 유형 통계를 참고하세요.</div>`;
   }
   const sizeWord={'소':'소형','중':'중형','대':'대형'}[d.bucket_size]||d.bucket_size||'';
-  const rel=(d.rel_pct!=null)?` · ${esc(d.rel_label||'시총 대비')} ${Number(d.rel_pct).toFixed(1)}%`:'';
+  /* rel_label 은 백엔드가 유형별로 준다(공급계약='최근매출 대비', 소송='자기자본 대비' 등).
+     WS-32B: 라벨 누락 시 '시총 대비' 로 오인시키지 않도록 중립 폴백('상대규모'). */
+  const rel=(d.rel_pct!=null)?` · ${esc(d.rel_label||'상대규모')} ${Number(d.rel_pct).toFixed(1)}%`:'';
   const confCls={'높음':'high','보통':'mid','참고':'ref'}[d.conf]||'ref';
   const w=d.windows||{};
   const rows=[['d','1일'],['w','1주'],['m','1개월']].map(([k,lab])=>{

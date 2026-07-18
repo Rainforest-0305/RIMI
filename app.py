@@ -155,6 +155,100 @@ IMPACT_TAGS = {"유상증자", "무상증자", "전환사채", "자사주", "최
                "주식소각", "배당", "실적", "합병분할", "공급계약",
                "소송", "감사보고서", "임상"}
 
+# ---------------- WS-32A 레짐 영향분포(과거 시장국면별 참고정보) ----------------
+# 아키텍처 제약(CTO): 배포 런타임 시장데이터 의존 0. by_regime 은 '현재 시장이
+# 어느 레짐인지' 자동판정에 절대 쓰지 않는다(그건 069500/229200 종가 조회 필요 →
+# 패리티 위반). 순수하게 '유형별 과거 레짐별 영향분포'만 참고정보로 표시한다.
+# 한글 라벨은 _meta.regime_axis.proposed_labels_ko 단일 매핑으로만(하드코딩 금지).
+# labels_status 가 미확정이라 잠정 라벨임을 UI 에 반영한다.
+_REGIME_WK = {"d": "d1", "w": "w1", "m": "m1"}  # by_regime 창키 → 프론트 창키
+
+
+def _regime_block(tags):
+    """공시 태그 → 유형별 과거 레짐별 영향분포(by_regime) 표시블록.
+
+    impact_for_tags 가 매칭한 것과 동일한 유형 엔트리의 by_regime 를 읽어,
+    _meta.regime_axis.proposed_labels_ko 로 한글 라벨을 붙여 정규화한다.
+    - 현재레짐 판정 없음(런타임 시장데이터 0). 순수 과거 참고정보.
+    - 소표본 셀: 데이터가 이미 n<30 평균 미노출·n<5 생략으로 직렬화됨. 여기선
+      셀을 그대로 통과시키고(평균 None 가능), 프론트가 '표본부족'/스킵 처리.
+    - by_regime 없으면(신유형 B 머지 전 등) None 반환 → 프론트 우아하게 스킵.
+    항상 dict|None(에러 없음)."""
+    try:
+        bench = impact.load_benchmark()
+        types, _, _ = impact._types_map(bench)
+        if not types:
+            return None
+        entry = None
+        for t in (tags or []):
+            if t in types:
+                entry = types[t]
+                break
+        if not isinstance(entry, dict):
+            return None
+        by_regime = entry.get("by_regime")
+        if not isinstance(by_regime, dict) or not by_regime:
+            return None
+
+        axis = ((bench.get("_meta") or {}).get("regime_axis") or {})
+        labels = axis.get("proposed_labels_ko") or {}          # 단일 매핑(하드코딩 금지)
+        order = axis.get("internal_keys") or ["bull", "neutral", "crash"]
+        status = str(axis.get("labels_status") or "")
+        provisional = ("미확정" in status) or status.startswith("제안")
+
+        regimes = []
+        for rk in order:
+            cell = by_regime.get(rk)
+            if not isinstance(cell, dict):
+                continue
+            windows = {}
+            for wk, outk in _REGIME_WK.items():
+                wd = cell.get(wk)
+                if not isinstance(wd, dict):
+                    continue
+                raw_up = wd.get("raw_up_prob")
+                car_up = wd.get("up_prob")
+                windows[outk] = {
+                    "raw_avg": wd.get("raw_avg"),
+                    "raw_med": wd.get("raw_med"),
+                    "car_avg": wd.get("car_avg"),
+                    "raw_up_prob": raw_up,
+                    "car_up_prob": car_up,
+                    "up_prob": raw_up if raw_up is not None else car_up,
+                    "n": wd.get("n"),
+                }
+            if not windows:
+                continue
+            regimes.append({
+                "key": rk,
+                # 라벨은 매핑에서만. neutral 은 데이터가 '중립/보합'(절대 '약세' 아님).
+                "label": labels.get(rk, rk),
+                "windows": windows,
+            })
+        if not regimes:
+            return None
+        return {
+            "regimes": regimes,
+            "provisional": provisional,   # 잠정 라벨(미확정) UI 반영용
+            "note": "유형별 과거 시장국면 영향분포(참고). 현재 시장국면 판정 아님.",
+        }
+    except Exception as e:
+        print(f"[regime] skip: {e}")
+        return None
+
+
+def _attach_regime(imp: dict, tags) -> dict:
+    """impact 블록에 regime(과거 레짐 영향분포)를 순수 추가(무손상). status!=ok
+    또는 by_regime 없으면 원본 그대로 반환(기존 응답 1바이트도 안 깬다)."""
+    if not isinstance(imp, dict) or imp.get("status") != "ok":
+        return imp
+    reg = _regime_block(tags)
+    if not reg:
+        return imp
+    out = dict(imp)
+    out["regime"] = reg
+    return out
+
 
 def _build_feed(force: bool = False) -> dict:
     """KOSPI+KOSDAQ 시장 전체 최근 공시를 조회·요약·과거영향 매핑해 피드로 만든다.
@@ -220,7 +314,8 @@ def _build_feed(force: bool = False) -> dict:
                 # 규모(scale) 대상 = bullet 대상과 동일(금액추출 가능 전 유형).
                 # 프론트는 이 플래그로 '📏 규모로 보기' 버튼 노출 → 두 목록 자동 일치.
                 "scale_eligible": scale_extract.bullet_eligible(report_nm),
-                "impact": impact.impact_for_tags(res["tags"]),
+                "impact": _attach_regime(impact.impact_for_tags(res["tags"]),
+                                         res["tags"]),
                 "url": dart_poll.dart_url(rno),
                 "is_new": rno not in seen,
                 "is_watched": bool(code) and code in watched_codes,
