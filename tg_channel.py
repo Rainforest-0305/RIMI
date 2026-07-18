@@ -47,7 +47,7 @@ except Exception:
 log = logging.getLogger("gongsi.tg_channel")
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
-APP_URL = "https://rimi-s76t.onrender.com"  # 텔레그램 링크는 무과금 → 본문 포함 가능
+APP_URL = "https://mirialert.com"  # 텔레그램 링크는 무과금 → 본문 포함 가능
 DISCLAIMER = "정보 제공용·투자 권유 아님"
 ELLIPSIS = "…"
 

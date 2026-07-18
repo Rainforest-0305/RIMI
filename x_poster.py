@@ -41,7 +41,7 @@ except Exception:
 log = logging.getLogger("gongsi.x_poster")
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
-APP_URL = "https://rimi-s76t.onrender.com"  # 트윗 본문 미포함(비용) — 프로필 bio 참조용
+APP_URL = "https://mirialert.com"  # 트윗 본문 미포함(비용) — 프로필 bio 참조용
 MAX_WEIGHTED = 280
 URL_WEIGHT = 23                    # t.co 단축 후 고정 가중치(본문에 URL 넣을 경우 대비 유지)
 ELLIPSIS = "…"               # '…'
