@@ -41,6 +41,10 @@ import main as core  # load_watchlist / load_seen 재사용
 
 api = FastAPI(title="미리(MIRI) 공시앱 API", version="2.0")
 
+# 응답 압축: /api/alerts(~460KB JSON)·index.html이 모바일 회선 병목 → gzip으로 5~8배 축소.
+from fastapi.middleware.gzip import GZipMiddleware
+api.add_middleware(GZipMiddleware, minimum_size=1500)
+
 # ---------------- 피드 캐시(노트북/DART 유량 배려) ----------------
 _FEED_CACHE = {"ts": 0.0, "data": None}
 _FEED_TTL = 60.0  # 초. /api/poll 은 이 캐시를 강제 무효화한다.
