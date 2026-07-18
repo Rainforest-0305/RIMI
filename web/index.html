@@ -1560,7 +1560,8 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
   const sp=document.getElementById('splash');if(!sp)return;
   const t0=Date.now();
   const hide=()=>{sp.classList.add('hide');setTimeout(()=>sp.remove(),250);};
-  if(!localStorage.getItem('miri_splash_done'))sp.classList.add('ask');
+  /* 이메일 폼은 '등록 완료'한 기기에서만 생략(건너뛰기는 그 회차만) — President 지시 */
+  if(!localStorage.getItem('miri_wl_done'))sp.classList.add('ask');
   /* 로딩 완료 감지 → 자동 메인 진입 (최소 0.9s 노출, 최대 6s 안전장치).
      이메일 입력 중(포커스/입력값)일 때만 자동 진입을 보류한다. */
   (function tryAuto(){
@@ -1572,7 +1573,6 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     setTimeout(tryAuto,300);
   })();
   document.getElementById('spSkip').addEventListener('click',()=>{
-    localStorage.setItem('miri_splash_done','1');
     if(typeof track==='function')track('splash_skip',{});
     hide();
   });
@@ -1583,7 +1583,7 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     if(!em){msg.style.color='var(--down)';msg.textContent='이메일 주소를 입력하세요.';return;}
     try{
       const d=await jsend('POST',API+'/waitlist',{email:em,telegram:''});
-      localStorage.setItem('miri_splash_done','1');
+      localStorage.setItem('miri_wl_done','1');
       msg.style.color='var(--ok)';
       msg.textContent=d.status==='already'?'이미 등록된 이메일입니다.':'등록 완료!';
       if(typeof track==='function')track('waitlist_join',{via:'splash',dup:d.status==='already'});
