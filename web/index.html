@@ -106,7 +106,9 @@
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
   .searchwrap{padding:6px 2px 2px;position:relative}
-  .searchwrap input{width:100%;padding:11px 13px;border-radius:12px;border:none;
+  .searchwrap .sicon{position:absolute;left:14px;top:28px;transform:translateY(-50%);
+    width:15px;height:15px;pointer-events:none;color:var(--t3)}
+  .searchwrap input{width:100%;padding:11px 13px 11px 36px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
   .searchwrap input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
   /* 검색 결과는 sticky 헤더 아래에 오버레이(헤더를 밀어 늘리지 않게 absolute). */
@@ -468,6 +470,7 @@
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
     <div class="formmsg" id="formmsg"></div>
     <div class="searchwrap">
+      <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <input id="searchInput" type="search" placeholder="종목 검색 (예: 삼성, 005930) — 공시 보기·관심 담기"
              autocomplete="off" aria-label="종목 검색">
       <div class="formmsg" id="searchmsg"></div>
@@ -1553,6 +1556,10 @@ async function registerStock(code,btn){
     setDone();
     track('watchlist_add', {code: code, via:'search', group:WLSTATE.activeGroup});
     searchFlash('✔ '+esc(code)+' 담기 완료. 피드를 갱신합니다.','ok');
+    // 담기 후 검색창 초기화(입력값·결과 목록 비움). 완료 문구는 잠시 남겼다 지움.
+    const si=document.getElementById('searchInput');if(si)si.value='';
+    const sr=document.getElementById('searchResults');if(sr)sr.innerHTML='';
+    setTimeout(()=>{const m=document.getElementById('searchmsg');if(m)m.textContent='';},2500);
     loadFeed(true);                             // 관심종목 피드 새로고침(기존 로직 재사용)
   }catch(e){
     console.error('registerStock',e);
