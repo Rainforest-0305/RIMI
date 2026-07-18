@@ -58,10 +58,13 @@
   :root[data-theme="light"]{--code:#6b7684}
   :root[data-theme="dark"]{--code:#565f6b}
 
-  *{box-sizing:border-box}
-  html{background:var(--bg);touch-action:manipulation}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg);touch-action:manipulation;overscroll-behavior-y:none}
+  /* 인터랙티브 요소만 롱프레스 콜아웃 차단 — 본문 텍스트 선택은 유지 */
+  button,a,.chip,.f,.star,.wl-gtab,.movg,.soc-btn,.tk[data-detail],.ttl[data-detail]{-webkit-touch-callout:none}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
+    overscroll-behavior-y:none;
     min-height:100dvh;display:flex;justify-content:center;
     /* 상단 safe-area는 sticky 헤더가 담당(중복 방지). 좌우·하단만 body. */
     padding:0 15px calc(22px + env(safe-area-inset-bottom, 0px))}
@@ -178,9 +181,9 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:40px 10px}
 
-  .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .3s ease both}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .34s cubic-bezier(.22,1,.36,1) both}
   .card.watched{box-shadow:0 0 0 1.5px var(--blue)}
-  @keyframes rs{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @keyframes rs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
   .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600}
   .star{background:none;border:none;padding:0 3px 0 0;cursor:pointer;font-family:inherit;
@@ -306,11 +309,14 @@
   .ttl[data-detail]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
   .detail[hidden]{display:none}
   .detail{position:fixed;inset:0;z-index:50;display:flex;justify-content:center;align-items:flex-end}
-  .detail-back{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+  .detail-back{position:absolute;inset:0;background:rgba(0,0,0,.5);opacity:0;transition:opacity .26s ease}
+  .detail.open .detail-back{opacity:1}
   .detail-panel{position:relative;width:100%;max-width:460px;max-height:92dvh;display:flex;flex-direction:column;
     background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.32);
-    animation:dup .25s ease both;padding:0 15px calc(18px + env(safe-area-inset-bottom, 0px))}
-  @keyframes dup{from{transform:translateY(26px);opacity:.5}to{transform:none;opacity:1}}
+    padding:0 15px calc(18px + env(safe-area-inset-bottom, 0px));
+    transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1)}
+  .detail.open .detail-panel{transform:none}
+  @media (prefers-reduced-motion:reduce){.detail-panel,.detail-back{transition:none}}
   .detail-head{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;gap:9px;
     padding:16px 2px 12px;border-bottom:1px solid var(--line-2);z-index:1}
   .detail-tt{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1}
@@ -459,7 +465,38 @@
     opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  /* ---------- 터치 피드백 통일(:active) — 80ms, scale/톤 ---------- */
+  .chip,.wl-gtab,.wl-gmanage{transition:transform .09s ease,background-color .15s ease,color .15s ease,box-shadow .15s ease}
+  .f,.valmode button,.seg button,.pushbtn,.scaletog,.cardshare,.sheet-x,.detail-x,.chips-empty .ce-cta{transition:transform .08s ease,background-color .14s ease,color .14s ease,box-shadow .15s ease}
+  .chip:active,.wl-gtab:active,.wl-gmanage:active{transform:scale(.97)}
+  .f:active,.valmode button:active,.seg button:active,.pushbtn:active,.scaletog:active,.cardshare:active,.sheet-x:active,.detail-x:active{transform:scale(.95)}
+  .tk[data-detail]:active{opacity:.6}
+
+  /* ---------- 스켈레톤 로딩(shimmer, 다크/라이트 자동) ---------- */
+  .skfeed{display:flex;flex-direction:column;gap:9px}
+  .skcard{background:var(--card);border-radius:var(--radius);padding:16px 16px 15px}
+  .sk-b{border-radius:7px;background-image:linear-gradient(90deg,var(--card-2) 0%,var(--line-2) 50%,var(--card-2) 100%);
+    background-size:200% 100%;animation:shim 1.2s linear infinite}
+  .sk-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .sk-row .a{width:88px;height:16px}.sk-row .b{width:52px;height:12px}.sk-row .c{width:44px;height:11px;margin-left:auto}
+  .sk-ttl{width:76%;height:16px;margin-bottom:12px}
+  .sk-f1{width:64%;height:12px;margin-bottom:7px}.sk-f2{width:48%;height:12px;margin-bottom:14px}
+  .sk-imp{height:88px;border-radius:16px}
+  @media (prefers-color-scheme:dark){.sk-b{background-image:linear-gradient(90deg,var(--card-2) 0%,var(--line) 50%,var(--card-2) 100%)}}
+  :root[data-theme="dark"] .sk-b{background-image:linear-gradient(90deg,var(--card-2) 0%,var(--line) 50%,var(--card-2) 100%)}
+
+  /* ---------- 오프라인 배너(얇은 상단 스트립, 헤더 내 고정) ---------- */
+  .offbar{display:flex;align-items:center;justify-content:center;gap:7px;margin:0 2px 7px;
+    padding:7px 12px;border-radius:10px;font-size:12px;font-weight:700;
+    background:var(--slate-soft);color:var(--t2)}
+  .offbar[hidden]{display:none}
+  .offbar::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--t3)}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important}
+    .sheet-panel,.sheet-back,.detail-panel,.detail-back,.feed,.card,.chip,.f,.seg button,
+    .valmode button,.btn2,.star,.soc-btn,.wl-gtab,.wl-gmanage,.scaletog,.cardshare,.sheet-x,.detail-x{transition:none!important}
+  }
 </style>
 </head>
 <body>
@@ -479,6 +516,7 @@
 </div>
 <div class="app">
   <header>
+    <div class="offbar" id="offlineBar" role="status" aria-live="polite" hidden>오프라인 — 마지막 데이터 표시 중</div>
     <div class="hrow">
       <span class="hi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></span>
       <span class="hnm">MIRI</span>
@@ -512,8 +550,12 @@
       <button role="tab" data-v="car" aria-selected="false">보정값</button>
     </div>
   </div>
-  <div class="feed" id="feed" role="feed">
-    <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
+  <div class="feed" id="feed" role="feed" aria-busy="true">
+    <div class="skfeed" id="skfeed" aria-hidden="true">
+      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+    </div>
   </div>
 
   <div class="social" role="group" aria-label="MIRI 소셜 채널">
@@ -659,6 +701,11 @@ function valPick(w){ // 창 객체 -> {val, up} (선택 대표값 + 해당 상�
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,
   c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,'');}
+/* 모션 최소화 선호 감지(애니메이션·전환 스킵 게이트) */
+function prefersReduce(){try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}}
+/* 스켈레톤 카드 마크업(피드 로딩 구간 공용) — 실 카드 shape 미러, .card 아님(스플래시 오검출 방지) */
+const SKELETON_CARD='<div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>';
+const SKELETON_HTML='<div class="skfeed" aria-hidden="true">'+SKELETON_CARD+SKELETON_CARD+SKELETON_CARD+'</div>';
 
 /* ---------- 기기 익명 ID (관심종목 기기별 분리) ----------
    첫 방문 시 crypto.randomUUID()로 기기 ID 생성→localStorage 저장. 이후 모든
@@ -1318,7 +1365,19 @@ function renderFilter(){
       `onclick="setFilter('${k}')">${lab}<b class="num">${cnt}</b></button>`;
   }).join('');
 }
-function setFilter(f){STATE.filter=f;renderFilter();renderFeed();}
+/* 필터/대표값 전환 시 피드 컨테이너를 120ms 페이드로 스왑(내용 교체가 튀지 않게). */
+function feedSwap(fn){
+  const el=document.getElementById('feed');
+  if(!el||prefersReduce()){fn();return;}
+  el.style.transition='opacity .12s ease';
+  el.style.opacity='0';
+  setTimeout(()=>{
+    fn();
+    el.style.opacity='1';
+    setTimeout(()=>{el.style.transition='';el.style.opacity='';},160);
+  },120);
+}
+function setFilter(f){STATE.filter=f;renderFilter();feedSwap(renderFeed);}
 
 /* ---------- 대표값 3-way 토글(전역) ---------- */
 function syncValmode(){
@@ -1328,7 +1387,7 @@ function syncValmode(){
 function setValmode(v){
   if(v===VALMODE)return;
   VALMODE=v;localStorage.setItem('miri-valmode2',v);
-  syncValmode();renderFeed();   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
+  syncValmode();feedSwap(renderFeed);   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
 }
 (function(){
   const el=document.getElementById('valmode');
@@ -1405,15 +1464,22 @@ function feedRenderChunk(){
   if(!next.length)return;
   // 임시 래퍼에 새 카드만 그려 seg 토글을 새 카드에만 바인딩(중복 바인딩 방지),
   // 노드 이동(appendChild)은 리스너를 보존하므로 센티널 앞에 순서대로 삽입.
+  const firstChunk=(FEED_SHOWN===0);
   const frag=document.createElement('div');
   frag.innerHTML=next.map(a=>cardHTML(a,'')).join('');
   attachSegToggle(frag);
+  // 스태거: 최초 로드의 첫 6장만 50ms 간격(과하면 촌스러움). 이후 청크는 스태거 없음.
+  if(firstChunk&&!prefersReduce()){
+    const cards=frag.querySelectorAll('.card');
+    for(let i=0;i<cards.length&&i<6;i++)cards[i].style.animationDelay=(i*50)+'ms';
+  }
   while(frag.firstChild)el.insertBefore(frag.firstChild,sentinel);
   FEED_SHOWN+=next.length;
   if(FEED_SHOWN>=FEED_FILTERED.length&&FEED_OBSERVER){FEED_OBSERVER.disconnect();FEED_OBSERVER=null;}
 }
 function renderFeed(){
   const el=document.getElementById('feed');
+  el.removeAttribute('aria-busy');   // 스켈레톤 로딩 종료
   if(FEED_OBSERVER){FEED_OBSERVER.disconnect();FEED_OBSERVER=null;}
   FEED_FILTERED=STATE.items.filter(a=>passFilter(a,STATE.filter));
   FEED_SHOWN=0;
@@ -1465,11 +1531,15 @@ function openDetail(code,name){
   const ov=document.getElementById('detail');
   ov.hidden=false;
   document.body.style.overflow='hidden';
+  // 다음 프레임에 .open → translateY(100%)→0 스프링 슬라이드 + 백드롭 페이드
+  requestAnimationFrame(()=>requestAnimationFrame(()=>ov.classList.add('open')));
   track('detail_open',{code:code,n:items.length});
 }
 function closeDetail(){
   const ov=document.getElementById('detail');if(!ov||ov.hidden)return;
-  ov.hidden=true;DETAIL_CODE=null;document.body.style.overflow='';
+  ov.classList.remove('open');DETAIL_CODE=null;
+  const done=()=>{ov.hidden=true;if(!anySheetOpen())document.body.style.overflow='';};
+  if(prefersReduce())done();else setTimeout(done,300);   // 전환 종료 후 언마운트
 }
 (function(){
   const ov=document.getElementById('detail');if(!ov)return;
@@ -1562,8 +1632,8 @@ async function loadFeed(force){
   const scan=document.getElementById('scan');
   const btn=document.getElementById('btnRefresh');
   btn.disabled=true;
-  if(force){document.getElementById('feed').innerHTML='<div class="scan on"><i></i>실 DART 조회 중…</div>';
-    window.scrollTo({top:0,behavior:'smooth'});}
+  if(force){const fe=document.getElementById('feed');fe.setAttribute('aria-busy','true');fe.innerHTML=SKELETON_HTML;
+    window.scrollTo({top:0,behavior:prefersReduce()?'auto':'smooth'});}
   else if(scan)scan.classList.add('on');
   try{
     const d=await (force?jsend('POST',API+'/poll'):jget(API+'/alerts'));
@@ -1779,6 +1849,37 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js')
     .then(()=>{try{initPush();}catch(e){}}).catch(()=>{}));
 }
+
+/* ---------- SWR: 백그라운드 갱신 도착 시 조용히 교체 ----------
+   SW 가 /api/alerts 캐시를 갱신하며 실제 변경(신규/삭제 공시)이 있을 때만
+   'alerts-updated' 를 postMessage 한다. 스크롤을 유지한 채 재렌더하고,
+   변경이 있을 때만 미니 토스트로 알린다. */
+let _quietBusy=false;
+async function reloadAlertsQuiet(){
+  if(_quietBusy)return;_quietBusy=true;
+  try{
+    const y=window.scrollY;
+    const d=await jget(API+'/alerts');
+    absorb(d);
+    window.scrollTo(0,y);           // 스크롤 유지(신규는 상단 prepend)
+    if(typeof showToast==='function')showToast('새 공시 반영됨');
+  }catch(e){}
+  finally{_quietBusy=false;}
+}
+if('serviceWorker' in navigator&&navigator.serviceWorker){
+  navigator.serviceWorker.addEventListener('message',e=>{
+    if(e.data&&e.data.type==='alerts-updated')reloadAlertsQuiet();
+  });
+}
+
+/* ---------- 오프라인 배너(캐시 피드는 이미 렌더됨) ---------- */
+(function(){
+  const bar=document.getElementById('offlineBar');if(!bar)return;
+  const sync=()=>{bar.hidden=!!navigator.onLine;};
+  window.addEventListener('offline',sync);
+  window.addEventListener('online',()=>{sync();try{reloadAlertsQuiet();}catch(e){}});
+  sync();   // 초기 상태 반영(오프라인 진입 시 즉시 배너)
+})();
 /* PWA 설치 프롬프트 추적(track 헬퍼는 아래 analytics 블록에서 정의) */
 window.addEventListener('beforeinstallprompt',function(e){
   track('install_prompt_shown',{platform:(e && e.platforms && e.platforms[0])||''});

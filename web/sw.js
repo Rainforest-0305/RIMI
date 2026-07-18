@@ -1,7 +1,8 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v12';
+const CACHE = 'miri-v13';
+const DATA_CACHE = 'miri-data-v1';   // /api/alerts 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
 const SHELL = ['/', '/index.html', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -9,18 +10,57 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
+  const keep = [CACHE, DATA_CACHE];
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => keep.indexOf(k) === -1).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
+
+/* /api/alerts 변경 감지용 시그니처: 접수번호 목록만 비교(generated_at 등 휘발 필드 무시). */
+function alertsSig(text) {
+  try { const d = JSON.parse(text); return (d.alerts || []).map((a) => a.rcept_no).join(','); }
+  catch (_) { return text; }
+}
+async function notifyClients(msg) {
+  const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const c of list) { try { c.postMessage(msg); } catch (_) {} }
+}
+/* stale-while-revalidate: 캐시가 있으면 즉시 반환하고 백그라운드로 갱신.
+   갱신본이 캐시와 다르면(신규/삭제 공시) 클라이언트에 알림 → 조용히 교체. */
+async function swrAlerts(request) {
+  const cache = await caches.open(DATA_CACHE);
+  const cached = await cache.match(request);
+  const netP = fetch(request).then(async (res) => {
+    if (res && res.ok) {
+      const toStore = res.clone();
+      let changed = true;
+      if (cached) {
+        try { changed = alertsSig(await cached.clone().text()) !== alertsSig(await res.clone().text()); }
+        catch (_) { changed = true; }
+      }
+      await cache.put(request, toStore);
+      if (cached && changed) notifyClients({ type: 'alerts-updated' });
+    }
+    return res;
+  }).catch(() => null);
+  if (cached) { netP.catch(() => {}); return cached; }        // 재방문: 캐시 즉시 표시
+  const res = await netP;
+  if (res) return res;                                         // 최초 방문: 네트워크 대기
+  return new Response(JSON.stringify({ alerts: [], offline: true, errors: [] }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } });  // 오프라인+캐시없음
+}
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;          // Umami 등 외부 트래픽은 SW 미개입
   if (e.request.method !== 'GET') return;              // 등록/삭제(POST/DELETE)는 통과
-  if (url.pathname.startsWith('/api/')) return;        // API는 항상 네트워크(실시간)
+  if (url.pathname === '/api/alerts') {                // 피드만 SWR(재방문 즉시표시+오프라인)
+    e.respondWith(swrAlerts(e.request));
+    return;
+  }
+  if (url.pathname.startsWith('/api/')) return;        // 그 외 API는 항상 네트워크(실시간)
   // HTML/내비게이션은 network-first(항상 최신 UI), 실패 시에만 캐시
   const isHTML = e.request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html');
   if (isHTML) {
