@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>미리 · MIRI — 미리 알면, 덜 흔들린다.</title>
 <meta name="description" content="코스피·코스닥 신규 공시를 감지해 핵심 요약 + 과거 유사공시의 평균 등락(1일/1주/1개월)과 상승/하락 확률을 보여주는 공시 알림 웹앱.">
 <!-- 공유 프리뷰(OG) 고정 메타 — 정적 SPA라 스크레이퍼는 JS 미실행, head 리터럴만 읽힘. 동적 기업/공시 정보는 여기 못 넣음(앱 내 navigator.share가 담당). -->
@@ -59,7 +59,7 @@
   :root[data-theme="dark"]{--code:#565f6b}
 
   *{box-sizing:border-box}
-  html{background:var(--bg)}
+  html{background:var(--bg);touch-action:manipulation}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
     min-height:100dvh;display:flex;justify-content:center;
@@ -145,7 +145,7 @@
   .f b{color:var(--blue);margin-left:4px;font-weight:800}
 
   /* ---------- 소셜 채널 행(텔레그램 등, 향후 X 병렬 확장) ---------- */
-  .social{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px;margin-top:calc(-6px - env(safe-area-inset-bottom,0px))}
+  .social{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px}
   .soc-btn{flex:1 1 0;min-width:0;display:inline-flex;align-items:center;gap:9px;
     text-decoration:none;padding:10px 11px;border-radius:14px;
     background:var(--card);color:var(--t1);box-shadow:0 0 0 1px var(--line) inset;transition:.14s}
@@ -516,10 +516,6 @@
     <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
   </div>
 
-  <div class="bar-btns">
-    <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐</button>
-    <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
-  </div>
   <div class="social" role="group" aria-label="MIRI 소셜 채널">
     <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
        aria-label="MIRI 텔레그램 채널 열기 (새 창)">
@@ -548,6 +544,12 @@
     <div class="wl-msg" id="wlMsg" role="status" aria-live="polite"></div>
     <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
   </section>
+
+  <!-- 하단 고정 바: .app 마지막 요소로 배치 — 스크롤 끝에서 제자리로 복귀해 아무 콘텐츠도 가리지 않음 -->
+  <div class="bar-btns">
+    <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐</button>
+    <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
+  </div>
 </div>
 
 <!-- ============ 관심종목 바텀시트(토스식) ============ -->
@@ -716,11 +718,11 @@ function toggleTheme(){const cur=document.documentElement.getAttribute('data-the
 let WLSTATE={stocks:[],keywords:[],groups:[],activeGroup:'default',expanded:null,loaded:false};
 let CHIP_EDIT=false;
 
-function grpName(g){return (g&&(String(g.id)==='default'?(g.name||'기본'):g.name))||'기본';}
+function grpName(g){const n=(g&&(String(g.id)==='default'?(g.name||'관심'):g.name))||'관심';return (String(g&&g.id)==='default'&&n==='기본')?'관심':n;}
 function normGroups(groups){
   let g=Array.isArray(groups)?groups.map(x=>({id:String(x.id),name:x.name,
     order:(typeof x.order==='number'?x.order:0)})):[];
-  if(!g.some(x=>x.id==='default'))g.unshift({id:'default',name:'기본',order:-1});
+  if(!g.some(x=>x.id==='default'))g.unshift({id:'default',name:'관심',order:-1});
   g.sort((a,b)=>a.order-b.order);
   return g;
 }
@@ -1343,7 +1345,7 @@ function cardHTML(a,pfx){
   pfx=pfx||'';
   // 별 = 관심종목 토글 버튼(항상 표시). 상세뷰 내부 카드(pfx='d')는 자체 담기 버튼이 있어 표시만.
   const star=(!pfx&&a.stock_code)
-    ? `<button class="star${a.is_watched?' on':''}" data-wstar="${esc(a.stock_code)}" onclick="toggleWatch(this)" `+
+    ? `<button class="star${a.is_watched?' on':''}" data-wstar="${esc(a.stock_code)}" data-nm="${esc(a.corp_name||'')}" onclick="toggleWatch(this)" `+
       `aria-label="관심종목 토글" title="${a.is_watched?'관심종목 해제':'관심종목 담기'}">★</button>`
     : (a.is_watched?'<span class="star on" title="관심종목" style="cursor:default">★</span>':'');
   const mkt=a.market?`<span class="mk">· ${esc(a.market)}</span>`:'';
@@ -1502,7 +1504,7 @@ async function toggleWatch(btn){
     }else{
       const r=await fetch(API+'/watchlist',{method:'POST',
         headers:wlHeaders(API+'/watchlist',{'Content-Type':'application/json'}),
-        body:JSON.stringify({stock_code:code,group:WLSTATE.activeGroup||'default'})});
+        body:JSON.stringify({stock_code:code,name:btn.dataset.nm||'',group:WLSTATE.activeGroup||'default'})});
       d=await r.json().catch(()=>({}));
       if(!r.ok&&r.status!==409)throw new Error(d.detail||('HTTP '+r.status));
     }
@@ -1521,7 +1523,10 @@ async function toggleWatch(btn){
       const card=b.closest('article.card');if(card)card.classList.toggle('watched',now);
     });
     if(typeof track==='function')track(now?'watchlist_add':'watch_remove',{code:code,via:'star'});
-  }catch(e){console.error('toggleWatch',e);}
+  }catch(e){
+    console.error('toggleWatch',e);
+    if(typeof showToast==='function')showToast('관심 등록 실패: '+(e.message||'잠시 후 다시 시도해주세요'));
+  }
   finally{btn.disabled=false;}
 }
 
@@ -1717,9 +1722,9 @@ function renderPushToggle(){
   }
   const on=PUSH_STATE.subscribed;
   row.innerHTML=on
-    ? '<button class="pushbtn on" type="button" onclick="disablePush()">🔔 알림 켜짐 · 끄기</button>'+
+    ? '<button class="pushbtn on" type="button" onclick="disablePush()">🔔 알람 끄기</button>'+
       '<span class="pushnote">관심종목 새 공시를 알려드려요.</span>'
-    : '<button class="pushbtn" type="button" onclick="enablePush()">🔔 알림 받기</button>'+
+    : '<button class="pushbtn" type="button" onclick="enablePush()">🔔 알람 켜기</button>'+
       '<span class="pushnote">관심종목 새 공시 알림</span>';
 }
 async function initPush(){

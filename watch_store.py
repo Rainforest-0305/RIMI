@@ -48,7 +48,7 @@ except Exception:  # pragma: no cover
 
 
 DEFAULT_GROUP_ID = "default"
-DEFAULT_GROUP_NAME = "기본"
+DEFAULT_GROUP_NAME = "관심"
 
 # 구(舊) 단일공유 데이터의 기기 라벨. 스키마 default 및 JSON 이관 대상과 일치.
 LEGACY_DEVICE_ID = "legacy"
