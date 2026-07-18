@@ -490,6 +490,50 @@ def detail_row_for(ep, corp, rcept_no, rcept_dt=None):
     return r2.get(rcept_no)
 
 
+def _is_amend(report_nm):
+    """정정공시([기재정정]/[첨부정정]/[정정] 등) 판별. 온디맨드 정정폴백 게이트."""
+    return "정정" in (report_nm or "")
+
+
+def _amend_row_lookup(ep, corp, rcept_no, rcept_dt=None):
+    """정정공시 온디맨드 폴백: 정정건은 구조화 EP 에 자신 rcept 행이 존재하되(정정후
+    값 반영), DART 가 **원본 이벤트 접수일**로 날짜필터링하므로 detail_row_for 의
+    정정접수일 ±7일 창엔 013(무데이터)로 안 잡힌다(실측 2026-07, 엔젠바이오 유증정정).
+    → 원본까지 아우르는 넓은 창(접수일-400d..+7d)으로 재조회 후 (1)정확 rcept
+    (2)접수일 최근접 원본행(WS-32B nearest_by_date 패턴) 순 매칭. **신규 DART <=1콜**
+    (amend_ 캐시로 재호출 0콜). 실패 시 None."""
+    if not corp:
+        return None
+    from datetime import timedelta
+    base = str(rcept_dt) if (rcept_dt and len(str(rcept_dt)) == 8
+                             and str(rcept_dt).isdigit()) else str(rcept_no)[:8]
+    try:
+        d0 = datetime.strptime(base, "%Y%m%d")
+    except (ValueError, TypeError):
+        d0 = datetime.now()
+    bgn = (d0 - timedelta(days=400)).strftime("%Y%m%d")
+    end = (d0 + timedelta(days=7)).strftime("%Y%m%d")
+    cf = AMT_CACHE / f"amend_{ep}_{corp}_{bgn}.json"
+    if cf.exists():
+        try:
+            rows = json.loads(cf.read_text(encoding="utf-8"))
+        except Exception:
+            rows = {}
+    else:
+        rows = _detail_range(ep, corp, bgn, end)   # DART <=1콜
+        try:
+            cf.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+    if not rows:
+        return None
+    r = rows.get(rcept_no)               # 정정 rcept 자체(정정후 값) 우선
+    if r:
+        return r
+    row, _ = _nearest_cmpmg_row(rows, rcept_no, base)   # 원본 최근접(2차 안전망)
+    return row
+
+
 def shares_from_row(ep, row):
     """endpoint별 '발행주식총수' 역산(주). 시총=발행총수×종가 산출용.
     pykrx 시가총액 엔드포인트가 KRX 로그인오류로 불가 → 상세행에서 자체 산출.
@@ -1151,6 +1195,10 @@ def scale_lookup(rcept_no, corp_code, stock_code, report_nm, rcept_dt=None):
     if not corp_code:
         return {"status": "no_detail", "stype": stype, "reason": "corp_code 미해결"}
     row = detail_row_for(ep, corp_code, rcept_no, rcept_dt)
+    if not row and _is_amend(report_nm):
+        # 정정공시: DART 가 원본일로 날짜필터 → 좁은 창 미스. 넓은 창 재조회(정정 rcept
+        # 자체 정정후값 우선, 없으면 원본 최근접). 신규 DART <=1콜.
+        row = _amend_row_lookup(ep, corp_code, rcept_no, rcept_dt)
     if not row:
         return {"status": "no_detail", "stype": stype, "reason": "DART 구조화 상세 없음"}
     amount = amount_from_row(ep, row)
