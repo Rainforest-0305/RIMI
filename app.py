@@ -760,7 +760,8 @@ def search(q: str = ""):
 
     - q strip. 빈 q -> 200 {"query":"","count":0,"results":[]}.
     - 매칭: q in name  또는  q in code (부분일치). 영문명은 대소문자 무시.
-    - 랭킹: name 이 q로 시작 > code 가 q로 시작 > 그 외 contains. 동순위는 name 오름차순.
+    - 관련도: ①정확일치 > ②이름 접두 > ③코드 접두 > ④부분일치.
+      동순위는 시총 부재로 KOSPI 우선 + 종목코드 오름차순으로 대체 정렬.
     - 상한 30건. count = 반환 results 길이. 어떤 입력에도 500 금지(예외는 빈결과 폴백).
     """
     try:
@@ -771,7 +772,8 @@ def search(q: str = ""):
         ql = query.lower()
         index = _load_corp_index()
 
-        matched = []  # (rank, name, row)
+        _MK_RANK = {"KOSPI": 0, "KOSDAQ": 1, "KONEX": 2}
+        matched = []  # (rank, market_rank, code, name, market)
         for r in index:
             name = r["name"]
             code = r["code"]
@@ -780,18 +782,24 @@ def search(q: str = ""):
             code_hit = query in code
             if not (name_hit or code_hit):
                 continue
-            if nl.startswith(ql):
+            # 관련도: ①정확일치 ②이름 접두 ③코드 접두 ④부분일치
+            if nl == ql or code == query:
                 rank = 0
-            elif code.startswith(query):
+            elif nl.startswith(ql):
                 rank = 1
-            else:
+            elif code.startswith(query):
                 rank = 2
-            matched.append((rank, name, code, r["market"]))
+            else:
+                rank = 3
+            # 동순위: 시총 데이터 부재 → KOSPI 우선 + 종목코드 오름차순 대체
+            mkrank = _MK_RANK.get(str(r["market"]).strip().upper(), 3)
+            matched.append((rank, mkrank, code, name, r["market"]))
 
-        # 랭크 오름차순 -> 같은 랭크 내 name 오름차순
-        matched.sort(key=lambda t: (t[0], t[1]))
+        # 관련도 → 시장(KOSPI 우선) → 종목코드 오름차순
+        matched.sort(key=lambda t: (t[0], t[1], t[2]))
         top = matched[:_SEARCH_LIMIT]
-        results = [{"name": n, "code": c, "market": m} for (_, n, c, m) in top]
+        results = [{"name": n, "code": c, "market": m}
+                   for (_, _, c, n, m) in top]
         return {"query": query, "count": len(results), "results": results}
     except Exception as e:
         # 어떤 예외에도 500 금지: 200 + 빈결과 폴백.

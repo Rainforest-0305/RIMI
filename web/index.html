@@ -50,6 +50,12 @@
     --line:#252b34;--line-2:#1c212a;--blue:#4d94ff;--blue-ink:#8fbcff;--blue-soft:#0b2545;
     --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a}
 
+  /* 종목코드·접수번호 텍스트 색 — 라이트에서 4.5:1 이상 확보(다크는 기존값 유지) */
+  :root{--code:#6b7684}
+  @media (prefers-color-scheme:dark){:root{--code:#565f6b}}
+  :root[data-theme="light"]{--code:#6b7684}
+  :root[data-theme="dark"]{--code:#565f6b}
+
   *{box-sizing:border-box}
   html{background:var(--bg)}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
@@ -88,7 +94,7 @@
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:999px;border:none;
     background:var(--card);color:var(--t2);cursor:pointer;transition:.15s;box-shadow:0 0 0 1px var(--line) inset;white-space:nowrap}
-  .chip .code{color:var(--t4);font-weight:500;font-size:11px;margin-left:6px}
+  .chip .code{color:var(--code);font-weight:500;font-size:11px;margin-left:6px}
   .chip.add{color:var(--blue);background:var(--blue-soft);box-shadow:none;font-weight:700}
   .addrow{display:none;gap:8px;padding:6px 4px 2px}
   .addrow.show{display:flex}
@@ -113,7 +119,7 @@
   .sres-row:first-child{border-top:none}
   .sres-info{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1}
   .sres-nm{font-weight:700;font-size:14px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sres-cd{font-size:11px;color:var(--t4);font-weight:600;flex:none}
+  .sres-cd{font-size:11px;color:var(--code);font-weight:600;flex:none}
   .sres-mk{font-size:10px;color:var(--t3);font-weight:600;background:var(--slate-soft);border-radius:6px;padding:2px 6px;flex:none}
   .sres-add{flex:none;font-family:inherit;font-weight:700;font-size:12.5px;padding:7px 12px;border-radius:9px;
     border:none;background:var(--blue-soft);color:var(--blue);cursor:pointer;transition:.14s}
@@ -165,7 +171,7 @@
   .card.watched{box-shadow:0 0 0 1.5px var(--blue)}
   @keyframes rs{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
-  .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--t4);font-weight:600}
+  .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600}
   .star{color:#f5a524;font-size:13px}
   .mk{font-size:11px;color:var(--t3);font-weight:600} .tm{margin-left:auto;font-size:12px;color:var(--t4);font-weight:500}
   .newpill{font-size:10px;font-weight:800;color:#fff;background:var(--up);border-radius:6px;padding:1px 6px}
@@ -206,6 +212,9 @@
   .rgval{font-size:14px;font-weight:800;letter-spacing:-.02em}
   .rgval.up{color:var(--up)} .rgval.down{color:var(--down)} .rgval.flat{color:var(--t3)}
   .rgn{font-size:11px;color:var(--t3);font-weight:600;margin-left:auto}
+  .rgcap{font-size:10.5px;color:var(--t3);font-weight:500;line-height:1.4;margin-top:5px}
+  .rgprov{cursor:pointer}
+  .conf{cursor:pointer}
 
   .scaletog{margin-top:8px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
     background:var(--blue-soft);border:none;border-radius:11px;padding:7px 13px;cursor:pointer;width:100%}
@@ -217,7 +226,7 @@
   .sup{font-size:11px;color:var(--t3);font-weight:600;margin-left:6px}
 
   .foot{display:flex;align-items:center;margin-top:8px;padding-top:7px;border-top:1px solid var(--line-2)}
-  .rc{font-family:var(--mono);font-size:10.5px;color:var(--t4)}
+  .rc{font-family:var(--mono);font-size:10.5px;color:var(--code)}
   .src{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--blue);text-decoration:none} .src:hover{text-decoration:underline}
   .cardshare{margin-left:auto;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
     background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px}
@@ -233,7 +242,7 @@
 
   /* ---------- 첫 로딩 스플래시(아이콘+이메일 수집) ---------- */
   #splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:0;padding:24px;transition:opacity .35s}
+    align-items:center;justify-content:center;gap:0;padding:24px;transition:opacity .2s ease}
   #splash.hide{opacity:0;pointer-events:none}
   #splash .sp-ic{width:96px;height:96px;border-radius:24px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
   #splash .sp-name{margin-top:14px;font-size:22px;font-weight:800;letter-spacing:-.03em;color:var(--t1)}
@@ -272,6 +281,10 @@
   .tk[data-detail],.sres-nm[data-detail]{cursor:pointer}
   .tk[data-detail]:hover,.sres-nm[data-detail]:hover{text-decoration:underline}
   .tk[data-detail]:focus-visible,.sres-nm[data-detail]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+  /* 공시 제목도 탭하면 상세 열림 — 힌트는 과하지 않게(누를 때만 반응) */
+  .ttl[data-detail]{cursor:pointer}
+  .ttl[data-detail]:active{opacity:.6}
+  .ttl[data-detail]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
   .detail[hidden]{display:none}
   .detail{position:fixed;inset:0;z-index:50;display:flex;justify-content:center;align-items:flex-end}
   .detail-back{position:absolute;inset:0;background:rgba(0,0,0,.5)}
@@ -283,7 +296,7 @@
     padding:16px 2px 12px;border-bottom:1px solid var(--line-2);z-index:1}
   .detail-tt{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1}
   .detail-tt #detailNm{font-size:18px;font-weight:800;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .detail-tt #detailCd{font-family:var(--mono);font-size:11px;color:var(--t4);font-weight:600;flex:none}
+  .detail-tt #detailCd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;flex:none}
   .detail-actions{flex:none}
   .detail-add{font-family:inherit;font-weight:700;font-size:12.5px;padding:8px 13px;border-radius:10px;
     border:none;background:var(--blue-soft);color:var(--blue);cursor:pointer;transition:.14s}
@@ -415,6 +428,14 @@
     border-radius:7px;padding:4px 9px}
   .movg:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
+  /* ---------- 배지 설명 토스트(1.5초) ---------- */
+  #toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));
+    transform:translateX(-50%) translateY(8px);z-index:120;max-width:300px;
+    background:rgba(20,24,30,.94);color:#fff;font-size:12.5px;font-weight:600;line-height:1.45;
+    padding:10px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);text-align:center;
+    opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -477,6 +498,7 @@
       <button role="tab" data-v="car" aria-selected="false">보정값</button>
     </div>
   </div>
+  <p class="disc disc-top" style="text-align:left;padding:0 6px 2px">평균값=원자료 · 중앙값=이상치완화 · 보정값=시장대비 초과등락 · 과거 통계일 뿐 예측·투자권유 아님 · 출처 DART</p>
 
   <div class="feed" id="feed" role="feed">
     <div class="scan on" id="scan"><i></i>DART 공시 스캔 중…</div>
@@ -577,6 +599,9 @@
 
 <!-- 맨위로 FAB — 일정 스크롤 이상에서 노출 -->
 <button class="fab" id="toTop" type="button" aria-label="맨 위로" title="맨 위로">↑</button>
+
+<!-- 배지(잠정/신뢰도) 설명 토스트 -->
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const API='/api';
@@ -906,7 +931,11 @@ function regimeBlock(imp,h){
   if(!rows)return '';
   const prov=reg.provisional
     ?` <span class="rgprov" title="잠정 라벨(미확정) — 최종 국면 명칭은 검토 중">*잠정</span>`:'';
-  return `<div class="rgwrap"><div class="rgtitle">시장국면별 과거영향 · ${WL[h]} 뒤${prov}</div>${rows}</div>`;
+  const cap=(VALMODE==='car')
+    ? "시장 대비 초과등락(보정값) 기준"
+    : "평균값은 시장 전체 등락 포함 · 시장 대비는 '보정값' 참조";
+  return `<div class="rgwrap"><div class="rgtitle">시장국면별 과거영향 · ${WL[h]} 뒤${prov}</div>${rows}`+
+    `<div class="rgcap">${cap}</div></div>`;
 }
 function impactInner(item){
   const imp=item.impact||{};
@@ -1248,16 +1277,20 @@ function cardHTML(a,pfx){
   const tk=pfx
     ? `<span class="tk">${esc(a.corp_name)}</span>`
     : `<span class="tk" role="button" tabindex="0" data-detail="${esc(a.stock_code)}" data-nm="${esc(a.corp_name)}" title="${esc(a.corp_name)} 상세 보기">${esc(a.corp_name)}</span>`;
+  // 공시 제목도 탭하면 상세 열림(종목명 탭과 동일 동작). 상세뷰 내부 카드(pfx='d')는 미부착.
+  const ttl=pfx
+    ? `<h3 class="ttl">${esc(a.report_nm)}</h3>`
+    : `<h3 class="ttl" role="button" tabindex="0" data-detail="${esc(a.stock_code)}" data-nm="${esc(a.corp_name)}" title="${esc(a.corp_name)} 상세 보기">${esc(a.report_nm)}</h3>`;
   return `<article class="card${a.is_watched?' watched':''}">
     <div class="top">
       ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}
       <span class="tm">${newpill} ${esc(a.date||a.rcept_dt)}</span>
     </div>
-    <h3 class="ttl">${esc(a.report_nm)}</h3>
+    ${ttl}
     ${facts?`<ul class="facts">${facts}</ul>`:''}
     <div class="impact" id="${pfx}imp-${id}">${impactInner(a)}</div>
     ${scale}
-    <div class="foot"><span class="rc num">rcept ${esc(a.rcept_no)}</span>`+
+    <div class="foot"><span class="rc num">접수번호 ${esc(a.rcept_no)}</span>`+
       (ok?`<button class="cardshare" onclick="shareCard('${esc(a.rcept_no)}')" aria-label="통계카드 이미지 공유">공유 ↗</button>`:'')+
       `<a class="src"${ok?' style="margin-left:14px"':''} href="${esc(a.url)}" target="_blank" rel="noopener" data-umami-event="card_dart" data-umami-event-code="${esc(a.stock_code)}">DART 원문 ↗</a></div>
   </article>`;
@@ -1526,7 +1559,7 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
 (function(){
   const sp=document.getElementById('splash');if(!sp)return;
   const t0=Date.now();
-  const hide=()=>{sp.classList.add('hide');setTimeout(()=>sp.remove(),400);};
+  const hide=()=>{sp.classList.add('hide');setTimeout(()=>sp.remove(),250);};
   if(!localStorage.getItem('miri_splash_done'))sp.classList.add('ask');
   /* 로딩 완료 감지 → 자동 메인 진입 (최소 0.9s 노출, 최대 6s 안전장치).
      이메일 입력 중(포커스/입력값)일 때만 자동 진입을 보류한다. */
@@ -1560,6 +1593,22 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     }
   });
 })();
+
+/* ---------- 배지 설명 토스트(1.5초) ---------- */
+let _toastT=null;
+function showToast(msg){
+  const el=document.getElementById('toast');if(!el)return;
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(_toastT);_toastT=setTimeout(()=>el.classList.remove('show'),1500);
+}
+document.addEventListener('click',e=>{
+  if(e.target.closest('.rgprov')){
+    showToast('레짐 라벨은 제안 단계, 통계는 확정 데이터');return;
+  }
+  if(e.target.closest('.conf')){
+    showToast('과거 표본 수 기준: 높음 n≥80, 보통 n≥30, 참고 n<30');return;
+  }
+});
 
 /* ---------- 맨위로 FAB ---------- */
 (function(){
