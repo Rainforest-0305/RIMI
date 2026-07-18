@@ -134,7 +134,7 @@
   .f b{color:var(--blue);margin-left:4px;font-weight:800}
 
   /* ---------- 소셜 채널 행(텔레그램 등, 향후 X 병렬 확장) ---------- */
-  .social{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px}
+  .social{display:flex;flex-wrap:wrap;gap:8px;padding:2px 4px;margin-top:calc(-6px - env(safe-area-inset-bottom,0px))}
   .soc-btn{flex:1 1 0;min-width:0;display:inline-flex;align-items:center;gap:9px;
     text-decoration:none;padding:10px 11px;border-radius:14px;
     background:var(--card);color:var(--t1);box-shadow:0 0 0 1px var(--line) inset;transition:.14s}
