@@ -1920,15 +1920,24 @@ if('serviceWorker' in navigator){
    SW 가 /api/alerts 캐시를 갱신하며 실제 변경(신규/삭제 공시)이 있을 때만
    'alerts-updated' 를 postMessage 한다. 스크롤을 유지한 채 재렌더하고,
    변경이 있을 때만 미니 토스트로 알린다. */
-let _quietBusy=false;
+let _quietBusy=false,_quietLast=0;
 async function reloadAlertsQuiet(){
-  if(_quietBusy)return;_quietBusy=true;
+  if(_quietBusy)return;
+  if(Date.now()-_quietLast<8000)return;   // 이벤트 폭주 가드(iOS online/SW 메시지 연사)
+  _quietBusy=true;
   try{
     const y=window.scrollY;
     const d=await jget(API+'/alerts');
-    absorb(d);
-    window.scrollTo(0,y);           // 스크롤 유지(신규는 상단 prepend)
-    if(typeof showToast==='function')showToast('새 공시 반영됨');
+    _quietLast=Date.now();
+    /* 실변경 없으면 재렌더·토스트 금지 — 무조건 absorb 시 전체 카드가 입장
+       애니메이션을 재생해 화면 전체가 떨린다(President 플리커 리포트 실측). */
+    const sigNew=(d.alerts||[]).map(a=>a.rcept_no).join(',');
+    const sigCur=(STATE.items||[]).map(a=>a.rcept_no).join(',');
+    if(sigNew!==sigCur){
+      absorb(d);
+      window.scrollTo(0,y);         // 스크롤 유지(신규는 상단 prepend)
+      if(typeof showToast==='function')showToast('새 공시 반영됨');
+    }
   }catch(e){}
   finally{_quietBusy=false;}
 }
