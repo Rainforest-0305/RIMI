@@ -1937,7 +1937,11 @@ async function reloadAlertsQuiet(){
     const sigNew=(d.alerts||[]).map(a=>a.rcept_no).join(',');
     const sigCur=(STATE.items||[]).map(a=>a.rcept_no).join(',');
     if(sigNew!==sigCur){
+      const prevShown=(typeof FEED_SHOWN==='number')?FEED_SHOWN:0;
       absorb(d);
+      /* 재렌더는 1청크(20장)로 리셋됨 — 사용자가 보던 깊이까지 미리 채워야
+         scrollTo 가 빈 영역으로 떨어지지 않는다(스크롤 점프 버그 수정). */
+      while(FEED_SHOWN<Math.min(prevShown,FEED_FILTERED.length))feedRenderChunk();
       window.scrollTo(0,y);         // 스크롤 유지(신규는 상단 prepend)
       if(typeof showToast==='function')showToast('새 공시 반영됨');
     }
