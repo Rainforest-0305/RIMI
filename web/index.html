@@ -1720,9 +1720,9 @@ async function addStock(){
     const d=await jsend('POST',API+'/watchlist',{stock_code:v,group:WLSTATE.activeGroup});
     WLSTATE.expanded=String(WLSTATE.activeGroup);   // 담은 그룹 펼쳐 새 칩 노출
     applyWatchlist(d);inp.value='';
-    setMsg('✔ 담기 완료. 피드를 갱신합니다.','ok');
+    setMsg('✔ 담기 완료. 피드에 반영했습니다.','ok');
     track('watchlist_add', {code: v, via:'input', group:WLSTATE.activeGroup});
-    loadFeed(true);
+    recomputeWatched();renderFilter();renderFeed();   // 담기=데이터 무변경, 로컬 재렌더만
   }catch(e){setMsg(e.message,'err');}
 }
 async function delStock(code,name){
@@ -1795,12 +1795,14 @@ async function registerStock(code,btn){
     applyWatchlist(d);                          // 스냅샷 재렌더(그룹·칩·STATE.stocks)
     setDone();
     track('watchlist_add', {code: code, via:'search', group:WLSTATE.activeGroup});
-    searchFlash('✔ '+esc(code)+' 담기 완료. 피드를 갱신합니다.','ok');
+    searchFlash('✔ '+esc(code)+' 담기 완료. 피드에 반영했습니다.','ok');
     // 담기 후 검색창 초기화(입력값·결과 목록 비움). 완료 문구는 잠시 남겼다 지움.
     const si=document.getElementById('searchInput');if(si)si.value='';
     const sr=document.getElementById('searchResults');if(sr)sr.innerHTML='';
     setTimeout(()=>{const m=document.getElementById('searchmsg');if(m)m.textContent='';},2500);
-    loadFeed(true);                             // 관심종목 피드 새로고침(기존 로직 재사용)
+    /* 담기는 피드 데이터 무변경 — 강제 재조회(loadFeed(true)=서버 DART 재폴링,
+       피드 5~10초 스켈레톤 공백) 대신 로컬 재계산·재렌더만(실측 버그 수정). */
+    recomputeWatched();renderFilter();renderFeed();
   }catch(e){
     console.error('registerStock',e);
     if(btn){btn.disabled=false;btn.textContent='＋ 담기';}
