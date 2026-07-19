@@ -664,8 +664,20 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
     rcept = (rcept or "").strip()
     if not rcept:
         raise HTTPException(status_code=400, detail="rcept(접수번호) 필수")
+    # 형식 검증(경로조작 차단): rcept/corp/code/dt 는 파일명·경로로 흘러가므로
+    # 숫자 형식만 허용한다(../ 등 임의 .json 파일 읽기·존재 오라클 방지).
     code = (code or "").strip()
-    corp_code = (corp or "").strip()
+    corp = (corp or "").strip()
+    dt = (dt or "").strip()
+    if not re.fullmatch(r"\d{14}", rcept):
+        raise HTTPException(status_code=400, detail="rcept 형식 오류(14자리 숫자)")
+    if code and not re.fullmatch(r"\d{6}", code):
+        raise HTTPException(status_code=400, detail="code 형식 오류(6자리 숫자)")
+    if corp and not re.fullmatch(r"\d{8}", corp):
+        raise HTTPException(status_code=400, detail="corp 형식 오류(8자리 숫자)")
+    if dt and not re.fullmatch(r"\d{8}", dt):
+        raise HTTPException(status_code=400, detail="dt 형식 오류(8자리 숫자)")
+    corp_code = corp
     if not corp_code and code:
         try:
             corp_code = dart_poll.resolve_corp(code) or ""   # 캐시된 corp_map(DART 0콜)
@@ -710,7 +722,10 @@ def add_watchlist(body: WatchAdd, request: Request):
         raise HTTPException(status_code=400,
                             detail=f"존재하지 않는 그룹입니다: {group}")
 
-    name = (body.name or "").strip()
+    name = (body.name or "").strip()[:40]   # 이름 길이 캡(payload 팽창 방지)
+    if len(stocks) >= 300:                    # 기기당 관심종목 상한
+        raise HTTPException(status_code=400,
+                            detail="관심종목은 최대 300개까지 담을 수 있습니다.")
     digits = "".join(ch for ch in raw if ch.isdigit())
     if len(digits) == 6:
         code = digits

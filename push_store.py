@@ -20,10 +20,15 @@ watch_store 패턴을 그대로 따른다:
 """
 import json
 import os
+import threading
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote as _urlquote
 
 import config
+
+# JSON 폴백 구독 저장도 전체 파일 read-modify-write → 프로세스 내 직렬화 필수.
+_JSON_LOCK = threading.Lock()
 import watch_store  # supabase_enabled() / _supabase_rest() 재사용(동일 백엔드 게이트)
 
 try:  # requests 는 이미 requirements 에 존재. 없더라도 JSON 폴백은 동작.
@@ -125,7 +130,7 @@ def _json_write(subs):
                      "endpoint 고유(upsert 기준)."),
         "subs": subs,
     }
-    tmp = _JSON_FILE.with_suffix(".tmp")
+    tmp = _JSON_FILE.with_suffix(".tmp." + uuid.uuid4().hex[:8])  # 고정 .tmp 동시쓰기 충돌 방지
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     os.replace(tmp, _JSON_FILE)  # 원자적 교체
@@ -133,14 +138,15 @@ def _json_write(subs):
 
 def _json_upsert(device_id, sub):
     endpoint = str(sub.get("endpoint") or "")
-    subs = [s for s in _json_read() if s.get("endpoint") != endpoint]
-    subs.append({
-        "device_id": str(device_id),
-        "endpoint": endpoint,
-        "sub": sub,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    _json_write(subs)
+    with _JSON_LOCK:   # read-modify-write 직렬화
+        subs = [s for s in _json_read() if s.get("endpoint") != endpoint]
+        subs.append({
+            "device_id": str(device_id),
+            "endpoint": endpoint,
+            "sub": sub,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _json_write(subs)
 
 
 def _json_all():
@@ -196,8 +202,9 @@ def delete_endpoint(endpoint):
             return
         except Exception as e:
             _log_fallback("delete", e)
-    subs = [s for s in _json_read() if s.get("endpoint") != endpoint]
-    _json_write(subs)
+    with _JSON_LOCK:
+        subs = [s for s in _json_read() if s.get("endpoint") != endpoint]
+        _json_write(subs)
 
 
 def delete_device_endpoint(device_id, endpoint):
@@ -218,13 +225,14 @@ def delete_device_endpoint(device_id, endpoint):
             return
         except Exception as e:
             _log_fallback("delete(dev)", e)
-    if endpoint:
-        subs = [s for s in _json_read()
-                if not (s.get("device_id") == device_id
-                        and s.get("endpoint") == endpoint)]
-    else:
-        subs = [s for s in _json_read() if s.get("device_id") != device_id]
-    _json_write(subs)
+    with _JSON_LOCK:
+        if endpoint:
+            subs = [s for s in _json_read()
+                    if not (s.get("device_id") == device_id
+                            and s.get("endpoint") == endpoint)]
+        else:
+            subs = [s for s in _json_read() if s.get("device_id") != device_id]
+        _json_write(subs)
 
 
 def all_subs():

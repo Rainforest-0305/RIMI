@@ -37,9 +37,15 @@
 """
 import json
 import os
+import threading
+import uuid
 from urllib.parse import quote as _urlquote
 
 import config
+
+# JSON 폴백 저장은 전체 devices 파일 read-modify-write 라 프로세스 내 직렬화 필수
+# (무락 시 동시 기기 저장이 서로를 덮어써 교차 유실). 프로세스 경계는 os.replace 원자성으로 방어.
+_JSON_LOCK = threading.Lock()
 
 try:  # requests 는 이미 requirements 에 존재(무추가). 없더라도 JSON 폴백은 동작.
     import requests
@@ -301,24 +307,27 @@ def _json_load_union():
 
 
 def _json_save(state, device_id):
-    raw = _json_load_raw()
-    devices = raw.get("devices")
-    if not isinstance(devices, dict):
-        devices = {}
-    devices[device_id] = {
-        "groups": state["groups"],
-        "stocks": state["stocks"],
-        "keywords": state["keywords"],
-    }
-    payload = {
-        "_comment": ("기기별 관심종목. devices[<device_id>] = {groups,stocks,"
-                     "keywords}. stock_code=6자리. group=소속그룹 id."),
-        "devices": devices,
-    }
-    tmp = config.WATCHLIST_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    os.replace(tmp, config.WATCHLIST_FILE)  # 원자적 교체(패턴: 트레이딩 상태파일)
+    # load-modify-write 전 구간을 락으로 감싼다(동시 기기 저장 교차 유실 방지).
+    with _JSON_LOCK:
+        raw = _json_load_raw()
+        devices = raw.get("devices")
+        if not isinstance(devices, dict):
+            devices = {}
+        devices[device_id] = {
+            "groups": state["groups"],
+            "stocks": state["stocks"],
+            "keywords": state["keywords"],
+        }
+        payload = {
+            "_comment": ("기기별 관심종목. devices[<device_id>] = {groups,stocks,"
+                         "keywords}. stock_code=6자리. group=소속그룹 id."),
+            "devices": devices,
+        }
+        # tmp 파일명 랜덤화: 고정 .tmp 는 동시 쓰기 시 서로의 임시파일을 침범(Win 파일락 충돌).
+        tmp = config.WATCHLIST_FILE.with_suffix(".tmp." + uuid.uuid4().hex[:8])
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        os.replace(tmp, config.WATCHLIST_FILE)  # 원자적 교체(패턴: 트레이딩 상태파일)
 
 
 # ============================================================

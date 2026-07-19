@@ -862,7 +862,7 @@ function renderChips(){
         `<button class="cx mv" type="button" onclick="moveChip('${esc(s.stock_code)}',-1)" aria-label="앞으로 이동" ${i===0?'disabled':''}>◀</button>`+
         `<span class="cnm">${esc(s.name)}</span>`+
         `<button class="cx grp" type="button" onclick="openMoveSheet('${esc(s.stock_code)}')" aria-label="다른 그룹으로 이동">⇄</button>`+
-        `<button class="cx del" type="button" onclick="delStock('${esc(s.stock_code)}','${esc(s.name)}')" aria-label="관심종목에서 삭제">✕</button>`+
+        `<button class="cx del" type="button" onclick="delStock('${esc(s.stock_code)}')" aria-label="관심종목에서 삭제">✕</button>`+
         `<button class="cx mv" type="button" onclick="moveChip('${esc(s.stock_code)}',1)" aria-label="뒤로 이동" ${i===list.length-1?'disabled':''}>▶</button>`+
       `</span>`;
     }
@@ -1599,14 +1599,23 @@ function openDetail(code,name){
   document.body.style.overflow='hidden';
   // 다음 프레임에 .open → translateY(100%)→0 스프링 슬라이드 + 백드롭 페이드
   requestAnimationFrame(()=>requestAnimationFrame(()=>ov.classList.add('open')));
+  // TWA/안드로이드 하드웨어 뒤로가기가 앱을 종료하지 않고 모달만 닫게 history 항목을 쌓는다.
+  if(!_detailHistPushed){try{history.pushState({miriModal:'detail'},'');_detailHistPushed=true;}catch(e){}}
   track('detail_open',{code:code,n:items.length});
 }
-function closeDetail(){
+let _detailHistPushed=false;
+function closeDetail(fromPop){
   const ov=document.getElementById('detail');if(!ov||ov.hidden)return;
   ov.classList.remove('open');DETAIL_CODE=null;
   const done=()=>{ov.hidden=true;if(!anySheetOpen())document.body.style.overflow='';};
   if(prefersReduce())done();else setTimeout(done,300);   // 전환 종료 후 언마운트
+  // 사용자가 X/백드롭/Esc로 닫으면 쌓아둔 history 항목을 되돌린다(back 이벤트로 닫힌 경우는 이미 pop됨).
+  if(_detailHistPushed){_detailHistPushed=false;if(!fromPop){try{history.back();}catch(e){}}}
 }
+window.addEventListener('popstate',function(){
+  const ov=document.getElementById('detail');
+  if(ov&&!ov.hidden){_detailHistPushed=false;closeDetail(true);}   // 뒤로가기=모달 닫기(앱 종료 아님)
+});
 (function(){
   const ov=document.getElementById('detail');if(!ov)return;
   document.getElementById('detailX').addEventListener('click',closeDetail);
@@ -1726,7 +1735,7 @@ async function addStock(){
     recomputeWatched();renderFilter();renderFeed();   // 담기=데이터 무변경, 로컬 재렌더만
   }catch(e){setMsg(e.message,'err');}
 }
-async function delStock(code,name){
+async function delStock(code){
   try{const d=await jsend('DELETE',API+'/watchlist/'+encodeURIComponent(code));
     applyWatchlist(d);
     STATE.items.forEach(a=>{if(a.stock_code===code)a.is_watched=false;});
@@ -1934,8 +1943,12 @@ async function reloadAlertsQuiet(){
     _quietLast=Date.now();
     /* 실변경 없으면 재렌더·토스트 금지 — 무조건 absorb 시 전체 카드가 입장
        애니메이션을 재생해 화면 전체가 떨린다(President 플리커 리포트 실측). */
-    const sigNew=(d.alerts||[]).map(a=>a.rcept_no).join(',');
-    const sigCur=(STATE.items||[]).map(a=>a.rcept_no).join(',');
+    /* 정렬 무관 비교: STATE.items 는 recomputeWatched 가 관심종목 우선으로
+       재정렬한 상태라 서버순 sigNew 와 순서가 다르다. 관심종목 보유자에게
+       가드가 무력화돼(신규 0건에도 재렌더·가짜 토스트) 재플리커 나던 회귀 수정.
+       접수번호 집합만 비교(정렬 후 join)해 순서 차이를 무시한다. */
+    const sigNew=(d.alerts||[]).map(a=>a.rcept_no).sort().join(',');
+    const sigCur=(STATE.items||[]).map(a=>a.rcept_no).sort().join(',');
     if(sigNew!==sigCur){
       const prevShown=(typeof FEED_SHOWN==='number')?FEED_SHOWN:0;
       absorb(d);
