@@ -549,9 +549,9 @@
   <div class="valwrap">
     <span class="vlab">대표값</span>
     <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
-      <button role="tab" data-v="avg" aria-selected="true">평균값</button>
+      <button role="tab" data-v="avg" aria-selected="false">평균값</button>
       <button role="tab" data-v="med" aria-selected="false">중앙값</button>
-      <button role="tab" data-v="car" aria-selected="false">보정값</button>
+      <button role="tab" data-v="car" aria-selected="true">보정값</button>
     </div>
   </div>
   <div class="feed" id="feed" role="feed" aria-busy="true">
@@ -683,7 +683,7 @@ const FILTERS=[['all','전체'],['up','상승우위'],['down','하락우위'],['
 let STATE={items:[],stocks:[],meta:'',filter:'all'};
 const WINSEL={};   // rcept_no -> 'd1'|'w1'|'m1'
 const DEFWIN='m1'; // 프로토타입 기본 = 1개월
-// 대표값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본 평균값.
+// 대표값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본=보정값.
 let VALMODE=(localStorage.getItem('miri-valmode2')||'car'); // 기본=보정값(President 확정 2026-07-18)
 const VALCAP={avg:'평균 등락',med:'중앙값 등락',car:'시장대비 초과등락'};
 const VALWORD={avg:'평균',med:'중앙값',car:'시장대비'};
