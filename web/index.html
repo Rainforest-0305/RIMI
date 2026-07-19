@@ -1653,6 +1653,7 @@ async function toggleWatch(btn){
     const ws=new Set((WLSTATE.stocks||[]).map(s=>String(s.stock_code)));
     const now=ws.has(String(code));
     (STATE.items||[]).forEach(a=>{a.is_watched=!!a.stock_code&&ws.has(String(a.stock_code));});
+    if(typeof renderFilter==='function')renderFilter();   // 관심탭 카운트 즉시 갱신(실측 버그)
     document.querySelectorAll('.star[data-wstar="'+code+'"]').forEach(b=>{
       b.classList.toggle('on',now);
       b.title=now?'관심종목 해제':'관심종목 담기';
