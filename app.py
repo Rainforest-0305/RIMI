@@ -622,6 +622,36 @@ def post_poll():
     return JSONResponse(_get_feed(force=True))
 
 
+def _merge_regime_scale(res: dict) -> None:
+    """/api/scale 응답에 **조회된 (유형×버킷) 1개 셀만** by_regime_scale 을 병합.
+
+    해자 보호: impact_benchmark.json(34만 이벤트 집계)의 교차 테이블을 통째로
+    내보내지 않는다 — scale_lookup 이 확정한 stype/bucket 딱 하나의 셀만 꺼낸다.
+    패리티 보호: impact.load_benchmark()(서버가 이미 로드·캐시한 사전 구운 JSON)만
+    읽는다. 런타임 DART/pykrx/bench_cache 접근 0(레짐 자동선택 없음 — 3레짐 전부 병기).
+    없으면(버킷에 by_regime_scale 미집계, 또는 labels 미확인) 두 필드 모두 생략."""
+    if not isinstance(res, dict) or res.get("status") != "ok":
+        return
+    stype, bucket = res.get("stype"), res.get("bucket")
+    if not stype or not bucket:
+        return
+    bench = impact.load_benchmark()
+    bkey = scale_extract.STYPE_BENCH_KEY.get(stype, stype)
+    entry = bench.get(bkey)
+    if not isinstance(entry, dict):
+        return
+    buckets = ((entry.get("scale_buckets") or {}).get("buckets") or {})
+    brow = buckets.get(bucket)
+    by_rs = brow.get("by_regime_scale") if isinstance(brow, dict) else None
+    if not isinstance(by_rs, dict):
+        return
+    labels = ((bench.get("_meta") or {}).get("regime_axis") or {}).get("proposed_labels_ko")
+    if not isinstance(labels, dict):
+        return
+    res["by_regime_scale"] = by_rs             # 조회 버킷 1개의 3레짐 셀만(벤치마크 값 그대로)
+    res["regime_scale_labels_ko"] = labels      # _meta 소싱(President 확정 라벨, 하드코딩 금지)
+
+
 @api.get("/api/scale")
 def get_scale(rcept: str, code: str = "", report_nm: str = "",
               corp: str = "", dt: str = ""):
@@ -646,6 +676,7 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
                                          report_nm or "", dt or None)
     except Exception as e:
         res = {"status": "error", "reason": str(e)[:150]}
+    _merge_regime_scale(res)   # WS-33A: 조회 버킷의 레짐교차 셀만 추가 병합(신규 정적노출·외부콜 0)
     return JSONResponse(res)
 
 

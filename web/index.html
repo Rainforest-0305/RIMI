@@ -225,8 +225,9 @@
   .rgwrap{margin-top:8px;padding-top:7px;border-top:1px solid var(--line-2)}
   .rgtitle{font-size:11px;font-weight:700;color:var(--t3);margin-bottom:4px}
   .rgprov{font-size:10px;font-weight:700;color:var(--t3);opacity:.7;cursor:help}
-  /* 3열 그리드: 라벨 | 수치(우측정렬 — 자릿수 정렬) | 건수. 수치가 좌측에 뭉치지 않게 */
-  .rgrow{display:grid;grid-template-columns:64px 1fr 64px;align-items:center;gap:8px;padding:2px 2px}
+  /* 3열 그리드: 라벨(1fr) | 수치(우측 스냅) | 상승확률. 수치를 오른쪽 끝으로 —
+     규모 통계 행(+2.2% 상승 49%)과 같은 정렬 질감 */
+  .rgrow{display:grid;grid-template-columns:1fr auto 58px;align-items:center;gap:8px;padding:2px 2px}
   .rglab{font-size:12px;color:var(--t2);font-weight:700}
   .rgval{font-size:14px;font-weight:800;letter-spacing:-.02em;text-align:right}
   .rgval.up{color:var(--up)} .rgval.down{color:var(--down)} .rgval.flat{color:var(--t3)}
@@ -1050,9 +1051,11 @@ function regimeBlock(imp,h){
         `<span class="rgval flat">표본부족</span><span class="rgn">${n}건</span></div>`;
     }
     const p=fmtPct(pick.val);
+    const upN=(typeof pick.up==='number')?Math.round(pick.up*100):null;
+    const up=(upN==null)?'':(pick.val<0?`하락 ${100-upN}%`:`상승 ${upN}%`);
     return `<div class="rgrow"><span class="rglab">${esc(r.label)}</span>`+
       `<span class="rgval ${p.cls} num">${p.txt}</span>`+
-      `<span class="rgn">${n}건</span></div>`;
+      `<span class="rgn">${up}</span></div>`;
   }).filter(Boolean).join('');
   if(!rows)return '';
   const prov=reg.provisional
@@ -1112,6 +1115,64 @@ function setWin(rno,k){WINSEL[rno]=k;
 function hasScale(a){return !!(a&&a.scale_eligible);}
 /* 숫자 bullet의 **...** 마커를 볼드 숫자로. esc 이후 호출(마커엔 특수문자 없음). */
 function boldNums(s){return String(s).replace(/\*\*(.+?)\*\*/g,'<b class="num">$1</b>');}
+
+/* WS-33A(리워크): 규모버킷 상세(scaleInner) 옆에 레짐(과거 시장국면) 조건부
+   교차 셀을 '참고' 로 병기. Partner 아키텍처 판정(impact_benchmark.json 직접
+   공개 기각 — 데이터 해자 노출 + 기존 서버가공 아키텍처 위반)에 따라 프론트는
+   impact_benchmark.json을 절대 직접 fetch 하지 않는다. 데이터는 /api/scale
+   응답(d)에 venture-backend가 병합할 신규 필드에서만 읽는다(데이터 계약):
+     d.by_regime_scale = {bull:{d,w,m}, neutral:{...}, crash:{...}}  (조회 버킷 1개)
+     d.regime_scale_labels_ko = {bull:'강세', neutral:'중립·보합', crash:'약세'}
+   두 필드가 없으면(백엔드 미반영·해당 버킷 데이터 없음 등) 조용히 생략 —
+   기존 규모 통계(rows)는 그대로 표시(무손상 폴백). 현재 시장국면 자동 하이라이트는
+   만들지 않는다(런타임 시장데이터 의존 0 원칙 — MIRI 배포 제약, 3레짐 전부 참고 병기만). */
+/* 레짐 교차셀(d.by_regime_scale[key][win], raw JSON과 동일 필드) -> valPick 호환
+   형태로 정규화. app.py:_regime_block 의 창 매핑과 동일 원칙
+   (car_up_prob=up_prob, up_prob=raw_up_prob 우선). */
+function regimeScaleWin(cell){
+  if(!cell||typeof cell!=='object')return null;
+  const rawUp=cell.raw_up_prob, carUp=cell.up_prob;
+  return {raw_avg:cell.raw_avg, raw_med:cell.raw_med, car_avg:cell.car_avg,
+    raw_up_prob:rawUp, car_up_prob:carUp,
+    up_prob:(rawUp!=null?rawUp:carUp), n:cell.n, conf:cell.conf};
+}
+/* d = /api/scale 응답(loadScale가 이미 받은 것). d.by_regime_scale/labels_ko가
+   있을 때만 regimeBlock과 동일 질감(rgwrap/rgtitle/rgrow/rglab/rgval/rgn/rgcap,
+   소표본 '표본부족')으로 렌더. 라벨은 d.regime_scale_labels_ko에서만(하드코딩
+   금지). 셀 없음(n<5 생략) 또는 필드 부재 시 빈 문자열. */
+function regimeScaleBlock(d){
+  if(!d)return '';
+  const brs=d.by_regime_scale;
+  if(!brs||typeof brs!=='object')return '';
+  const labels=d.regime_scale_labels_ko||{};
+  const order=Object.keys(labels).length?Object.keys(labels):['bull','neutral','crash'];
+  const winKeys=[['d','1일'],['w','1주'],['m','1개월']];
+  let groups='';
+  for(const [wk,wlab] of winKeys){
+    const rows=order.map(rk=>{
+      const cellRaw=brs[rk]&&brs[rk][wk];
+      const n=(cellRaw&&typeof cellRaw.n==='number')?cellRaw.n:null;
+      if(n==null)return '';                 // n<5: 해당 (버킷,레짐,창) 셀 생략
+      const lab=esc(labels[rk]||rk);
+      const pick=valPick(regimeScaleWin(cellRaw));
+      if(pick.val==null||isNaN(pick.val)){  // n<30: 평균 미노출 → 표본부족
+        return `<div class="rgrow"><span class="rglab">${lab}</span>`+
+          `<span class="rgval flat">표본부족</span><span class="rgn">${n}건</span></div>`;
+      }
+      const p=fmtPct(pick.val);
+      const upN=(typeof pick.up==='number')?Math.round(pick.up*100):null;
+      const up=(upN==null)?'':(pick.val<0?`하락 ${100-upN}%`:`상승 ${upN}%`);
+      return `<div class="rgrow"><span class="rglab">${lab}</span>`+
+        `<span class="rgval ${p.cls} num">${p.txt}</span>`+
+        `<span class="rgn">${up}</span></div>`;
+    }).filter(Boolean).join('');
+    if(!rows)continue;
+    groups+=`<div class="rgcap" style="margin:8px 0 2px;font-weight:700;color:var(--t2)">${esc(wlab)} 뒤</div>${rows}`;
+  }
+  if(!groups)return '';
+  return `<div class="rgwrap"><div class="rgtitle">이 규모(${esc(d.bucket||'')}) × 시장국면별 과거영향 · 참고</div>${groups}`+
+    `<div class="rgcap">과거 국면 조건부 참고 통계(현재 시장국면 자동판정 아님). 표본 30건 미만 셀은 평균 비노출.</div></div>`;
+}
 function scaleInner(d){
   /* 규모버킷은 없지만 이벤트 자체 규모(금액/비율)는 있는 유형(무상증자·공급계약·
      배당·소각): 금액+도메인 비율만 보여주고 규모별 과거통계는 유형레벨 참고 안내. */
@@ -1141,10 +1202,12 @@ function scaleInner(d){
     return `<div class="srow"><span class="slab">${lab} 뒤 평균</span>`+
       `<span class="pct ${p.cls} num" style="font-size:17px">${p.txt}<span class="sup">${upTxt}</span></span></div>`;
   }).join('');
+  const rgBlock=regimeScaleBlock(d);
   return `<div class="il">이 공시 규모 기준 · <b>${esc(sizeWord)}</b>${rel}
       <span class="conf ${confCls}"><span class="dots"><i></i><i></i><i></i></span>${esc(d.conf||'참고')} · <span class="num">${esc(d.n||0)}건</span></span></div>
     <div class="plain" style="margin-top:0;margin-bottom:8px">이벤트 금액 <b>${esc(d.amount_txt||'-')}</b> · 유사 규모(<b>${esc(d.bucket||'')}</b>) 과거 <b class="num">${esc(d.n||0)}건</b> 평균</div>
-    ${rows}`;
+    ${rows}
+    ${rgBlock}`;
 }
 async function loadScale(rno,pfx){
   pfx=pfx||'';   // ''=피드, 'd'=상세뷰(ID 충돌 방지)
