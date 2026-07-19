@@ -616,9 +616,57 @@ def get_alerts():
     return JSONResponse(_get_feed(force=False))
 
 
+# ---- /api/poll 스로틀(공유 DART 키 소진·DoS 방어) ----
+# 기기(X-Device-Id)당 최소 간격 + 일일 상한. 초과 시 에러 대신 캐시 피드 반환
+# (사용자는 데이터 계속 봄, throttled 플래그로 프론트가 안내). 헤더 없으면 IP 폴백.
+_POLL_MIN_INTERVAL = 30.0     # 초. 같은 기기 강제 재조회 최소 간격
+_POLL_DAILY_CAP = 200         # 기기당 하루 강제 새로고침 상한
+_POLL_STATE: dict = {}        # key -> {"last": ts, "day": epoch_day, "count": int}
+_POLL_LOCK = threading.Lock()
+
+
+def _poll_key(request: Request) -> str:
+    dev = _device_id(request)
+    if dev:
+        return "d:" + dev
+    xff = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    ip = xff or (request.client.host if request.client else "")
+    return "ip:" + (ip or "?")
+
+
+def _poll_allowed(request: Request) -> bool:
+    now = time.time()
+    day = int(now // 86400)
+    key = _poll_key(request)
+    with _POLL_LOCK:
+        st = _POLL_STATE.get(key)
+        if st is None or st["day"] != day:
+            _POLL_STATE[key] = {"last": now, "day": day, "count": 1}
+            return True
+        if now - st["last"] < _POLL_MIN_INTERVAL:
+            return False                      # 간격 미달 → 차단
+        if st["count"] >= _POLL_DAILY_CAP:
+            return False                      # 일일 상한 초과 → 차단
+        st["last"] = now
+        st["count"] += 1
+        # 메모리 누수 방지: 상태 dict 과대 성장 시 오래된 항목 정리
+        if len(_POLL_STATE) > 20000:
+            for k in [k for k, v in _POLL_STATE.items() if v["day"] != day][:10000]:
+                _POLL_STATE.pop(k, None)
+        return True
+
+
 @api.post("/api/poll")
-def post_poll():
-    """수동 새로고침: 캐시 무효화 후 실 DART 재조회."""
+def post_poll(request: Request):
+    """수동 새로고침: 캐시 무효화 후 실 DART 재조회.
+
+    스로틀 초과 시 강제 재조회를 건너뛰고 현재 캐시 피드를 반환한다(데이터는 계속
+    보이며 throttled=true 로 신호). 정상 사용자(30초 내 재클릭 없음)는 영향 없음.
+    """
+    if not _poll_allowed(request):
+        data = _get_feed(force=False)          # 캐시 사용(DART 0콜)
+        data = dict(data); data["throttled"] = True
+        return JSONResponse(data)
     return JSONResponse(_get_feed(force=True))
 
 

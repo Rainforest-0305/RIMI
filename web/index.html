@@ -1714,6 +1714,8 @@ async function loadFeed(force){
   try{
     const d=await (force?jsend('POST',API+'/poll'):jget(API+'/alerts'));
     absorb(d);
+    // 서버 스로틀(잦은 새로고침): 캐시로 채워졌음을 부드럽게 안내(에러 아님)
+    if(force&&d&&d.throttled&&typeof showToast==='function')showToast('잠시 후 다시 새로고침해 주세요');
   }catch(e){document.getElementById('feed').innerHTML='<div class="empty">불러오기 실패: '+esc(e.message)+'</div>';}
   finally{btn.disabled=false;}
 }
