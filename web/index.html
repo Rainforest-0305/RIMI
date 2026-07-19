@@ -93,8 +93,8 @@
   .hnm{font-weight:800;font-size:15px;letter-spacing:-.03em}
   .htag{font-size:11px;color:var(--t3);font-weight:600;letter-spacing:-.01em;margin-left:2px;white-space:nowrap}
   .live{margin-left:auto;font-size:11px;font-weight:700;color:var(--up);display:inline-flex;align-items:center;gap:5px}
-  .live .d{width:6px;height:6px;border-radius:50%;background:var(--up);animation:pl 2s infinite}
-  @keyframes pl{0%,100%{opacity:1}50%{opacity:.35}}
+  /* 점멸 금지: iOS 스티키 헤더 안 opacity 애니메이션이 플리커 유발(President 리포트) */
+  .live .d{width:6px;height:6px;border-radius:50%;background:var(--up)}
   .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:999px;border:none;
