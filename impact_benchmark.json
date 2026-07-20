@@ -170,6 +170,14 @@
       "drop_below_n": 5,
       "placement": "<유형>.scale_buckets.buckets.<버킷>.by_regime_scale = {bull|neutral|crash: {d,w,m}}. by_regime(레짐만)·scale_buckets(규모만)과 별개 신규 키 — 기존 두 축은 불변.",
       "generated_at": "2026-07-19 03:50:19"
+    },
+    "scale_conv_promote": {
+      "added": "전환청구",
+      "source": "scale_buckets.json[전환청구] (n_total=3101, 3버킷 all n>1000 conf=높음)",
+      "rel_size_def": "전환주식수(행사누계)/발행주식총수 %",
+      "car_method": "익일 시가진입 1/5/21거래일 보유, 자기시장 EW 보정(타 doc유형과 동일)",
+      "note": "앱 classify가 기타공시로 태깅하는 전환청구권행사의 규모 오버레이 전용 최상위 키(bare scale_buckets). 타입레벨 카드는 여전히 기타공시 사용 — impact_for_tags는 이 키를 조회하지 않음(classify 미방출).",
+      "generated_at": "2026-07-20 19:55:08"
     }
   },
   "감사보고서": {
@@ -8797,6 +8805,138 @@
         "p75": 52.26,
         "min": 0.0,
         "max": 96.18
+      }
+    }
+  },
+  "전환청구": {
+    "scale_buckets": {
+      "n_total": 3101,
+      "rel_label": "발행주식 대비",
+      "buckets": {
+        "소<1.7%": {
+          "rel_range": [
+            0,
+            1.7
+          ],
+          "d": {
+            "raw_avg": -0.36,
+            "raw_med": -0.65,
+            "market_avg": -0.09,
+            "car_avg": -0.27,
+            "car_med": -0.52,
+            "raw_up_prob": 0.418,
+            "up_prob": 0.433,
+            "n": 1082,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -0.72,
+            "raw_med": -1.98,
+            "market_avg": -0.04,
+            "car_avg": -0.68,
+            "car_med": -2.12,
+            "raw_up_prob": 0.394,
+            "up_prob": 0.393,
+            "n": 1082,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -2.97,
+            "raw_med": -5.84,
+            "market_avg": 0.27,
+            "car_avg": -3.24,
+            "car_med": -6.31,
+            "raw_up_prob": 0.36,
+            "up_prob": 0.317,
+            "n": 1081,
+            "conf": "높음"
+          }
+        },
+        "중1.7-3.5%": {
+          "rel_range": [
+            1.7,
+            3.5
+          ],
+          "d": {
+            "raw_avg": -0.52,
+            "raw_med": -0.68,
+            "market_avg": -0.07,
+            "car_avg": -0.45,
+            "car_med": -0.71,
+            "raw_up_prob": 0.381,
+            "up_prob": 0.392,
+            "n": 991,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -1.18,
+            "raw_med": -2.2,
+            "market_avg": 0.05,
+            "car_avg": -1.22,
+            "car_med": -2.4,
+            "raw_up_prob": 0.377,
+            "up_prob": 0.375,
+            "n": 991,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -3.71,
+            "raw_med": -7.25,
+            "market_avg": 0.59,
+            "car_avg": -4.3,
+            "car_med": -7.59,
+            "raw_up_prob": 0.32,
+            "up_prob": 0.301,
+            "n": 991,
+            "conf": "높음"
+          }
+        },
+        "대3.5%+": {
+          "rel_range": [
+            3.5,
+            null
+          ],
+          "d": {
+            "raw_avg": -1.09,
+            "raw_med": -0.98,
+            "market_avg": -0.12,
+            "car_avg": -0.97,
+            "car_med": -0.88,
+            "raw_up_prob": 0.375,
+            "up_prob": 0.389,
+            "n": 1028,
+            "conf": "높음"
+          },
+          "w": {
+            "raw_avg": -1.7,
+            "raw_med": -2.47,
+            "market_avg": 0.02,
+            "car_avg": -1.71,
+            "car_med": -2.97,
+            "raw_up_prob": 0.353,
+            "up_prob": 0.364,
+            "n": 1028,
+            "conf": "높음"
+          },
+          "m": {
+            "raw_avg": -6.53,
+            "raw_med": -8.96,
+            "market_avg": 0.23,
+            "car_avg": -6.76,
+            "car_med": -9.03,
+            "raw_up_prob": 0.285,
+            "up_prob": 0.281,
+            "n": 1023,
+            "conf": "높음"
+          }
+        }
+      },
+      "rel_pctl": {
+        "p25": 1.42,
+        "p50": 2.27,
+        "p75": 4.58,
+        "min": 0.05,
+        "max": 69.92
       }
     }
   }
