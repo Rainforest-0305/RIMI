@@ -1696,11 +1696,12 @@ function mezzCard(h){
   const dil=(h.dilution_vs_mktcap_pct!=null)?h.dilution_vs_mktcap_pct.toFixed(0)+'%':'—';
   const cur=(h.current_price!=null)?h.current_price.toLocaleString():'—';
   const cv=(h.min_conv_price!=null)?h.min_conv_price.toLocaleString():'—';
+  const basisLabel=(h.basis==='net')?'순잔량(전환청구 반영) 기준':'누적 발행 기준';
   return `<div class="mezz-card ${isIn?'mz-in':'mz-out'}">`+
     `<div class="mezz-ch"><b>${esc(h.corp_name||'')}</b><small>${esc(h.stock_code||'')} · ${mkt}</small>`+
     `<span class="mezz-bdg ${isIn?'bi':'bo'}">${bdg}</span></div>`+
     `<div class="mezz-r">현재가 <span class="num">${cur}</span>원 · 최저전환가 <span class="num">${cv}</span>원 <small>(괴리 ${prem})</small></div>`+
-    `<div class="mezz-r">시총 대비 잠재 희석 <span class="num">${dil}</span> <small>(누적 발행 기준)</small></div></div>`;
+    `<div class="mezz-r">시총 대비 잠재 희석 <span class="num">${dil}</span> <small>(${basisLabel})</small></div></div>`;
 }
 async function loadMezz(){
   if(_mezzLoaded)return;
@@ -1710,7 +1711,7 @@ async function loadMezz(){
     const m=d.moneyness_summary||{},di=d.dilution_summary||{};
     const sum=`<div class="mezz-sum"><span>in-the-money ${m.in||0}</span>`+
       `<span>out-of-the-money ${m.out||0}</span>`+
-      `<span>희석 중앙값 ${di.median!=null?Math.round(di.median)+'%':'—'}</span></div>`;
+      `<span>희석 최대 ${di.max!=null?Math.round(di.max)+'%':'—'}</span></div>`;
     const cards=(d.top_holdings||[]).map(mezzCard).join('')||'<div class="mezz-empty">표시할 종목이 없습니다.</div>';
     body.innerHTML=`<p class="mezz-disc">${esc(d.disclaimer||'')} ${esc(d.note||'')}</p>`+sum+cards;
     _mezzLoaded=true;

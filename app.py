@@ -775,7 +775,7 @@ def _build_mezzanine_payload(top_n: int = 5, upcoming_only: bool = True) -> dict
         "dart_live_calls": 0,
         "market_scope": "코스피·코스닥",
         "disclaimer": "공시·시세 기반 사실/통계 정보이며 투자권유가 아닙니다.",
-        "note": "시총대비 희석은 누적 발행 기준(상환·기전환분 미차감).",
+        "note": "시총대비 희석은 종목별 기준 표기(순잔량=전환청구 반영 후 잔량, 누적 발행=상환·기전환분 미차감)에 따릅니다.",
         "calendar": {
             "items": calendar[:50],
             "count_total": len(calendar),

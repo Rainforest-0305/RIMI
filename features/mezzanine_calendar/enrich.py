@@ -20,6 +20,8 @@
 시세/시총 소스는 KRX(pykrx)·FDR 뿐. DART 라이브 콜 = 0.
 시세는 상위 N종목(기본 5) 라이브만, 전부 try/except + 스킵/실패 카운트.
 """
+import json
+import os
 from datetime import date, timedelta
 
 # 가격 조회는 price_parity 재사용(중복 구현 금지, DART 콜 0).
@@ -27,6 +29,38 @@ try:
     from price_parity import _fetch_last_close  # type: ignore
 except ImportError:  # pragma: no cover
     from features.mezzanine_calendar.price_parity import _fetch_last_close  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# WS-34 순잔량 오버행 스냅샷 (리픽싱·전환청구 반영). DART 콜 0(로컬 JSON).
+# 파일 없으면 기존 gross 동작 그대로 폴백(다른 경로 불파괴).
+# ---------------------------------------------------------------------------
+_OVERHANG = {"loaded": False, "map": {}, "as_of": None}
+
+
+def _overhang_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "mezz_overhang.json")
+
+
+def _load_overhang_snapshot():
+    """mezz_overhang.json -> {corp_code(8): stock_dict}. 1회 캐시. 부재/오류시 빈 dict."""
+    if _OVERHANG["loaded"]:
+        return _OVERHANG["map"]
+    m = {}
+    as_of = None
+    try:
+        with open(_overhang_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        as_of = data.get("as_of")
+        for cc, s in (data.get("stocks") or {}).items():
+            m[str(cc).zfill(8)] = s
+    except (OSError, ValueError):
+        pass
+    _OVERHANG["loaded"] = True
+    _OVERHANG["map"] = m
+    _OVERHANG["as_of"] = as_of
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +190,7 @@ def enrich_top_holdings(holdings, top_n: int = 5):
       dilution_stats{min,max,median,n}(총물량 시총희석%),
       dart_live_calls=0
     """
+    overhang_map = _load_overhang_snapshot()
     result = {
         "results": [],
         "checked": 0,
@@ -166,6 +201,9 @@ def enrich_top_holdings(holdings, top_n: int = 5):
         "moneyness_dist": {"in": 0, "out": 0, "at": 0},
         "tranche_moneyness_dist": {"in": 0, "out": 0, "at": 0},
         "dilution_stats": {"min": None, "max": None, "median": None, "n": 0},
+        "gross_dilution_stats": {"min": None, "max": None, "median": None, "n": 0},
+        "basis_counts": {"net": 0, "gross": 0},
+        "overhang_as_of": _OVERHANG.get("as_of"),
         "dart_live_calls": 0,
     }
 
@@ -183,12 +221,29 @@ def enrich_top_holdings(holdings, top_n: int = 5):
 
     listing_map = _load_listing_map() if candidates else {}
     dilution_values = []
+    gross_dilution_values = []
 
     for h in candidates:
         code = h["stock_code"]
-        min_conv = h["min_conv_price"]
+        min_conv_gross = h["min_conv_price"]
         total_shares = h.get("total_shares") or 0
         active_shares = h.get("active_shares") or 0
+
+        # WS-34: 순잔량 오버행 스냅샷이 있으면 (a)전환가=리픽싱 조정후 최신,
+        # (b)희석 shares=순잔량 으로 교정. 없으면 gross 폴백(기존 동작 유지).
+        ov = overhang_map.get(str(h.get("corp_code") or "").zfill(8))
+        if ov and ov.get("net_remaining_total") is not None:
+            basis = "net"
+            net_shares = ov.get("net_remaining_total") or 0
+            min_conv = ov.get("min_conv_price") or min_conv_gross
+        else:
+            basis = "gross"
+            net_shares = None
+            min_conv = min_conv_gross
+        # moneyness/premium 은 교정된(조정후) 전환가 기준.
+        effective_shares = net_shares if basis == "net" else total_shares
+        result["basis_counts"][basis] += 1
+
         # 공시 발행주식대비 최댓값(비교용)
         vs_disc = None
         for t in h.get("tranches", []):
@@ -211,15 +266,19 @@ def enrich_top_holdings(holdings, top_n: int = 5):
             "market": market,
             "current_price": price,
             "price_source": psrc,
-            "min_conv_price": min_conv,
+            "basis": basis,                       # 'net'(교정) | 'gross'(폴백)
+            "min_conv_price": min_conv,           # net이면 리픽싱 조정후 최신가
+            "min_conv_price_gross": min_conv_gross,
             "moneyness": None,
             "premium_pct": None,
             "market_cap": marcap,
             "listed_shares": listed,
             "mktcap_source": msrc,
-            "total_shares": total_shares,
+            "total_shares": total_shares,         # gross 누적 발행(비교용)
             "active_shares": active_shares,
-            "dilution_vs_mktcap_pct": None,
+            "net_remaining_shares": net_shares,   # 순잔량(만료·전환완료 제외)
+            "dilution_vs_mktcap_pct": None,       # 교정 기준(basis) 희석
+            "gross_dilution_vs_mktcap_pct": None,  # 누적 발행 기준(교정 전)
             "active_dilution_vs_mktcap_pct": None,
             "vs_pct_disclosure": vs_disc,
             "tranches": [],
@@ -238,13 +297,17 @@ def enrich_top_holdings(holdings, top_n: int = 5):
         if marcap is None:
             result["mktcap_fail"] += 1
 
-        # ④ 시총 대비 희석 (총물량/활성물량)
-        d_total = dilution_vs_mktcap(total_shares, price, marcap)
+        # ④ 시총 대비 희석. 교정(basis) 기준 + gross 기준을 함께 산출.
+        d_gross = dilution_vs_mktcap(total_shares, price, marcap)
+        d_eff = dilution_vs_mktcap(effective_shares, price, marcap)
         d_active = dilution_vs_mktcap(active_shares, price, marcap)
-        rec["dilution_vs_mktcap_pct"] = d_total
+        rec["gross_dilution_vs_mktcap_pct"] = d_gross
+        rec["dilution_vs_mktcap_pct"] = d_eff
         rec["active_dilution_vs_mktcap_pct"] = d_active
-        if d_total is not None:
-            dilution_values.append(d_total)
+        if d_eff is not None:
+            dilution_values.append(d_eff)
+        if d_gross is not None:
+            gross_dilution_values.append(d_gross)
 
         # 트랜치별 ③④ (현재가/시총 확보 시)
         for t in h.get("tranches", []):
@@ -263,12 +326,15 @@ def enrich_top_holdings(holdings, top_n: int = 5):
 
         result["results"].append(rec)
 
-    # 희석 분포 통계
-    if dilution_values:
-        sv = sorted(dilution_values)
+    # 희석 분포 통계 (교정 basis + gross 대조)
+    def _stats(vals):
+        if not vals:
+            return {"min": None, "max": None, "median": None, "n": 0}
+        sv = sorted(vals)
         n = len(sv)
-        median = sv[n // 2] if n % 2 else round((sv[n // 2 - 1] + sv[n // 2]) / 2, 3)
-        result["dilution_stats"] = {
-            "min": sv[0], "max": sv[-1], "median": median, "n": n,
-        }
+        med = sv[n // 2] if n % 2 else round((sv[n // 2 - 1] + sv[n // 2]) / 2, 3)
+        return {"min": sv[0], "max": sv[-1], "median": med, "n": n}
+
+    result["dilution_stats"] = _stats(dilution_values)
+    result["gross_dilution_stats"] = _stats(gross_dilution_values)
     return result
