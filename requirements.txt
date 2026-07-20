@@ -5,3 +5,4 @@ uvicorn[standard]>=0.29
 pillow>=10.0
 requests-oauthlib==2.0.0
 pywebpush>=2.0
+finance-datareader>=0.9.90
