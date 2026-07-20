@@ -575,6 +575,13 @@
     </a>
   </div>
 
+  <button class="mezz-entry" id="mezzEntry" type="button" aria-label="메자닌 전환 캘린더 열기">
+    <span class="me-ic" aria-hidden="true">🗓️</span>
+    <span class="me-txt"><span class="me-t">메자닌(CB·BW·EB) 전환 캘린더</span>
+      <span class="me-s">전환가 대비 현재가·시총 대비 잠재 희석 미리보기 · 코스피·코스닥</span></span>
+    <span class="me-arw" aria-hidden="true">›</span>
+  </button>
+
   <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
 
   <section class="wl" aria-labelledby="wlTitle">
@@ -669,6 +676,53 @@
     <div class="detail-body" id="detailBody"></div>
   </div>
 </div>
+
+<!-- 메자닌 전환 캘린더 오버레이 (WS-34) — /api/mezzanine 지연 로딩. detail 셸 재사용 -->
+<div class="detail" id="mezz" hidden role="dialog" aria-modal="true" aria-label="메자닌 전환 캘린더">
+  <div class="detail-back" id="mezzBack"></div>
+  <div class="detail-panel">
+    <div class="detail-head">
+      <div class="detail-tt"><span>메자닌 전환 캘린더</span><span class="mezz-scope">코스피·코스닥</span></div>
+      <button class="detail-x" id="mezzX" type="button" aria-label="닫기">✕</button>
+    </div>
+    <div class="detail-body" id="mezzBody">
+      <div class="mezz-loading">불러오는 중…</div>
+    </div>
+  </div>
+</div>
+<style>
+  .mezz-entry{width:100%;display:flex;align-items:center;gap:11px;margin:2px 0 10px;padding:12px 14px;
+    background:var(--card);border:none;border-radius:14px;box-shadow:0 0 0 1px var(--line) inset;
+    cursor:pointer;font-family:inherit;text-align:left}
+  .mezz-entry:active{transform:translateY(1px)}
+  .mezz-entry:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .mezz-entry .me-ic{width:30px;height:30px;flex:none;border-radius:9px;display:grid;place-items:center;
+    background:var(--blue-soft);font-size:16px}
+  .mezz-entry .me-txt{min-width:0;display:flex;flex-direction:column;line-height:1.35}
+  .mezz-entry .me-t{font-size:13.5px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
+  .mezz-entry .me-s{font-size:11px;color:var(--t3);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mezz-entry .me-arw{margin-left:auto;color:var(--t3);font-size:20px;font-weight:700;flex:none}
+  .mezz-scope{font-size:11px;color:var(--t3);font-weight:600;margin-left:6px}
+  #mezzBody{padding:14px 16px 20px}
+  .mezz-loading,.mezz-empty{color:var(--t3);font-size:13px;font-weight:600;text-align:center;padding:24px 0}
+  .mezz-disc{font-size:11px;color:var(--t3);font-weight:500;line-height:1.45;margin:0 0 12px}
+  .mezz-sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .mezz-sum span{font-size:11.5px;font-weight:700;color:var(--t2);background:var(--card-2);
+    box-shadow:0 0 0 1px var(--line) inset;border-radius:999px;padding:5px 10px}
+  .mezz-card{background:var(--card-2);border-radius:12px;padding:11px 12px;margin-bottom:9px;
+    box-shadow:0 0 0 1px var(--line) inset}
+  .mezz-card.mz-in{box-shadow:0 0 0 1px var(--line) inset;border-left:3px solid var(--up)}
+  .mezz-card.mz-out{border-left:3px solid var(--t4)}
+  .mezz-ch{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+  .mezz-ch b{font-size:13.5px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
+  .mezz-ch small{font-size:11px;color:var(--t3);font-weight:600}
+  .mezz-bdg{margin-left:auto;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px}
+  .mezz-bdg.bi{background:var(--up-soft);color:var(--up)}
+  .mezz-bdg.bo{background:var(--card);color:var(--t3);box-shadow:0 0 0 1px var(--line) inset}
+  .mezz-r{font-size:12.5px;color:var(--t2);font-weight:600;margin-top:3px}
+  .mezz-r .num{font-variant-numeric:tabular-nums}
+  .mezz-r small{color:var(--t3);font-weight:500}
+</style>
 
 <!-- 맨위로 FAB — 일정 스크롤 이상에서 노출 -->
 <button class="fab" id="toTop" type="button" aria-label="맨 위로" title="맨 위로">↑</button>
@@ -1629,6 +1683,62 @@ window.addEventListener('popstate',function(){
     if(e.key!=='Enter'&&e.key!==' ')return;
     const t=e.target.closest('[data-detail]');if(!t)return;
     e.preventDefault();openDetail(t.dataset.detail,t.dataset.nm||'');
+  });
+})();
+
+/* ---------- 메자닌 전환 캘린더 오버레이 (WS-34) — /api/mezzanine 지연 로딩 ---------- */
+let _mezzLoaded=false,_mezzHistPushed=false;
+function mezzCard(h){
+  const isIn=h.moneyness==='in';
+  const bdg=h.moneyness==='in'?'in-the-money':h.moneyness==='out'?'out-of-the-money':h.moneyness==='at'?'등가':'시세없음';
+  const mkt=h.market==='KOSPI'?'코스피':h.market==='KOSDAQ'?'코스닥':(h.market||'');
+  const prem=(h.premium_pct!=null)?(h.premium_pct>0?'+':'')+h.premium_pct.toFixed(1)+'%':'—';
+  const dil=(h.dilution_vs_mktcap_pct!=null)?h.dilution_vs_mktcap_pct.toFixed(0)+'%':'—';
+  const cur=(h.current_price!=null)?h.current_price.toLocaleString():'—';
+  const cv=(h.min_conv_price!=null)?h.min_conv_price.toLocaleString():'—';
+  return `<div class="mezz-card ${isIn?'mz-in':'mz-out'}">`+
+    `<div class="mezz-ch"><b>${esc(h.corp_name||'')}</b><small>${esc(h.stock_code||'')} · ${mkt}</small>`+
+    `<span class="mezz-bdg ${isIn?'bi':'bo'}">${bdg}</span></div>`+
+    `<div class="mezz-r">현재가 <span class="num">${cur}</span>원 · 최저전환가 <span class="num">${cv}</span>원 <small>(괴리 ${prem})</small></div>`+
+    `<div class="mezz-r">시총 대비 잠재 희석 <span class="num">${dil}</span> <small>(누적 발행 기준)</small></div></div>`;
+}
+async function loadMezz(){
+  if(_mezzLoaded)return;
+  const body=document.getElementById('mezzBody');
+  try{
+    const d=await jget(API+'/mezzanine');
+    const m=d.moneyness_summary||{},di=d.dilution_summary||{};
+    const sum=`<div class="mezz-sum"><span>in-the-money ${m.in||0}</span>`+
+      `<span>out-of-the-money ${m.out||0}</span>`+
+      `<span>희석 중앙값 ${di.median!=null?Math.round(di.median)+'%':'—'}</span></div>`;
+    const cards=(d.top_holdings||[]).map(mezzCard).join('')||'<div class="mezz-empty">표시할 종목이 없습니다.</div>';
+    body.innerHTML=`<p class="mezz-disc">${esc(d.disclaimer||'')} ${esc(d.note||'')}</p>`+sum+cards;
+    _mezzLoaded=true;
+  }catch(e){ body.innerHTML='<div class="mezz-empty">메자닌 데이터를 불러오지 못했습니다.</div>'; }
+}
+function openMezz(){
+  const ov=document.getElementById('mezz');if(!ov)return;
+  ov.hidden=false;document.body.style.overflow='hidden';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>ov.classList.add('open')));
+  if(!_mezzHistPushed){try{history.pushState({miriModal:'mezz'},'');_mezzHistPushed=true;}catch(e){}}
+  if(typeof track==='function')track('mezz_open',{});
+  loadMezz();
+}
+function closeMezz(fromPop){
+  const ov=document.getElementById('mezz');if(!ov||ov.hidden)return;
+  ov.classList.remove('open');
+  const done=()=>{ov.hidden=true;if(!anySheetOpen())document.body.style.overflow='';};
+  if(prefersReduce())done();else setTimeout(done,300);
+  if(_mezzHistPushed){_mezzHistPushed=false;if(!fromPop){try{history.back();}catch(e){}}}
+}
+(function(){
+  const ov=document.getElementById('mezz');if(!ov)return;
+  document.getElementById('mezzEntry').addEventListener('click',openMezz);
+  document.getElementById('mezzX').addEventListener('click',()=>closeMezz());
+  document.getElementById('mezzBack').addEventListener('click',()=>closeMezz());
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!ov.hidden)closeMezz();});
+  window.addEventListener('popstate',function(){
+    if(!ov.hidden){_mezzHistPushed=false;closeMezz(true);}
   });
 })();
 

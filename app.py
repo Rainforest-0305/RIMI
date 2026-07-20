@@ -557,6 +557,14 @@ def _prewarm():
         print(f"[prewarm] 실패(무시, 기동 유지): {e}")
     finally:
         _PREWARM_DONE = True
+    # 메자닌 캐시도 미리 채운다(라이브 시세 콜드 ~수십초 → 첫 사용자 클릭 즉시화).
+    try:
+        t1 = time.time()
+        _MEZZ_CACHE["data"] = _build_mezzanine_payload()
+        _MEZZ_CACHE["ts"] = time.time()
+        print(f"[prewarm] mezz cache 채움 in {(time.time() - t1) * 1000:.0f}ms")
+    except Exception as e:
+        print(f"[prewarm] mezz 실패(무시): {e}")
 
 
 @api.on_event("startup")
@@ -738,6 +746,75 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
         res = {"status": "error", "reason": str(e)[:150]}
     _merge_regime_scale(res)   # WS-33A: 조회 버킷의 레짐교차 셀만 추가 병합(신규 정적노출·외부콜 0)
     return JSONResponse(res)
+
+
+# ---------------- 메자닌(CB/BW/EB) 전환 캘린더 (WS-34) ----------------
+# features/mezzanine_calendar 격리 모듈을 지연 import(부재/실패해도 앱 전체 무영향).
+# 발행데이터=로컬 캐시(DART 0콜), 시세/시총=pykrx·FDR(비-DART, 상위 N종목만).
+# 시세 라이브 비용 큼 → TTL 15분 캐시.
+_MEZZ_CACHE = {"data": None, "ts": 0.0, "lock": threading.Lock()}
+_MEZZ_TTL_SEC = 900
+
+
+def _build_mezzanine_payload(top_n: int = 5, upcoming_only: bool = True) -> dict:
+    """collect → calendar/holdings → enrich(③moneyness ④시총희석). DART 콜 0."""
+    import sys as _sys
+    _mdir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "features", "mezzanine_calendar")
+    if _mdir not in _sys.path:
+        _sys.path.insert(0, _mdir)
+    import collect as _mc          # noqa: E402
+    import calendar_view as _mcal  # noqa: E402
+    import enrich as _menr         # noqa: E402
+    records, _stats = _mc.collect_all()
+    calendar, skipped = _mcal.build_calendar(records, upcoming_only=upcoming_only)
+    holdings = _mcal.build_holdings(records)
+    enriched = _menr.enrich_top_holdings(holdings, top_n=top_n)
+    return {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "dart_live_calls": 0,
+        "market_scope": "코스피·코스닥",
+        "disclaimer": "공시·시세 기반 사실/통계 정보이며 투자권유가 아닙니다.",
+        "note": "시총대비 희석은 누적 발행 기준(상환·기전환분 미차감).",
+        "calendar": {
+            "items": calendar[:50],
+            "count_total": len(calendar),
+            "skipped_no_start_date": skipped,
+        },
+        "moneyness_summary": enriched["moneyness_dist"],
+        "tranche_moneyness_summary": enriched["tranche_moneyness_dist"],
+        "dilution_summary": enriched["dilution_stats"],
+        "top_holdings": enriched["results"],
+        "enrich_quality": {
+            "checked": enriched["checked"],
+            "price_fail": enriched["price_fail"],
+            "mktcap_fail": enriched["mktcap_fail"],
+            "skipped_no_code": enriched["skipped_no_code"],
+            "skipped_no_price": enriched["skipped_no_price"],
+        },
+    }
+
+
+@api.get("/api/mezzanine")
+def get_mezzanine(top_n: int = 5, upcoming_only: bool = True):
+    """온디맨드 메자닌 전환 캘린더 + moneyness/시총희석(참고 통계). 실패해도 500 대신
+    마지막 캐시/503. TTL 15분(라이브 시세 비용 흡수)."""
+    top_n = max(1, min(int(top_n), 20))
+    now = time.time()
+    with _MEZZ_CACHE["lock"]:
+        if _MEZZ_CACHE["data"] is not None and now - _MEZZ_CACHE["ts"] < _MEZZ_TTL_SEC:
+            return JSONResponse(_MEZZ_CACHE["data"])
+    try:
+        data = _build_mezzanine_payload(top_n=top_n, upcoming_only=upcoming_only)
+    except Exception as e:  # noqa: BLE001
+        if _MEZZ_CACHE["data"] is not None:
+            return JSONResponse(_MEZZ_CACHE["data"])
+        return JSONResponse({"error": "mezzanine_build_failed", "detail": str(e)[:200]},
+                            status_code=503)
+    with _MEZZ_CACHE["lock"]:
+        _MEZZ_CACHE["data"] = data
+        _MEZZ_CACHE["ts"] = now
+    return JSONResponse(data)
 
 
 @api.get("/api/watchlist")
