@@ -2088,6 +2088,45 @@ if('serviceWorker' in navigator&&navigator.serviceWorker){
   window.addEventListener('online',()=>{sync();try{reloadAlertsQuiet();}catch(e){}});
   sync();   // 초기 상태 반영(오프라인 진입 시 즉시 배너)
 })();
+
+/* ---------- 경량 자동 폴링(화면 활성 시에만) ----------
+   서버 /api/alerts 는 60초 캐시(app.py) → 60초 미만 폴링은 무의미하다.
+   85초 주기로 reloadAlertsQuiet 를 호출해 최신 공시를 자동 반영한다.
+   핵심: 반드시 reloadAlertsQuiet(접수번호 시그니처 가드) 경유 → 무변경 시
+   재렌더·토스트 0(오늘 여러 번 고친 플리커 회귀 방지). 새 폴링 코드는
+   "언제 호출할지"만 결정하고, 실제 갱신·가드·스크롤복원은 전부 기존 함수 재사용.
+   배터리·부하 배려:
+   - visibilityState==='visible' 일 때만 interval 가동. 백그라운드 탭·화면
+     꺼짐 시 stop() 으로 타이머 자체를 정지(틱만 건너뛰는 게 아니라 해제).
+   - 상세뷰(#detail)·바텀시트(.sheet) 열림 중엔 skip — 열린 오버레이 뒤에서
+     피드가 재배치되면 닫을 때 어긋나므로 조용히 건너뛴다(다음 틱 또는 복귀 시 반영).
+   - visibilitychange 로 탭 복귀 시 즉시 1회 갱신(오버레이 닫혀있을 때만).
+   - pagehide 에서 clearInterval(페이지 이탈 정리). */
+(function(){
+  const POLL_MS=85000;                 // 서버 60초 캐시 초과(75~90초 권장 범위)
+  let timer=null;
+  function overlayOpen(){
+    const dt=document.getElementById('detail');
+    return (typeof anySheetOpen==='function'&&anySheetOpen())||!!(dt&&!dt.hidden);
+  }
+  function tick(){
+    if(document.visibilityState!=='visible')return;   // 백그라운드/화면꺼짐이면 정지
+    if(overlayOpen())return;                           // 상세·시트 열림 중 방해 금지
+    try{reloadAlertsQuiet();}catch(e){}                // 시그니처 가드 경유(무변경=무렌더·무토스트)
+  }
+  function start(){ if(timer===null)timer=setInterval(tick,POLL_MS); }
+  function stop(){ if(timer!==null){clearInterval(timer);timer=null;} }
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'){
+      start();
+      if(!overlayOpen()){try{reloadAlertsQuiet();}catch(e){}}   // 복귀 즉시 1회(8초 스로틀은 함수 내부에서 처리)
+    }else{
+      stop();                                          // 숨김 시 폴링 정지(배터리)
+    }
+  });
+  window.addEventListener('pagehide',stop);            // 페이지 이탈 정리
+  if(document.visibilityState==='visible')start();     // 초기 활성 시 가동(배경 탭 로드면 복귀 시 start)
+})();
 /* PWA 설치 프롬프트 추적(track 헬퍼는 아래 analytics 블록에서 정의) */
 window.addEventListener('beforeinstallprompt',function(e){
   track('install_prompt_shown',{platform:(e && e.platforms && e.platforms[0])||''});
