@@ -36,6 +36,7 @@
     --blue:#0061ff; --blue-ink:#0049c7; --blue-soft:#e6f0ff;
     --up:#f0454f; --up-soft:#fdecee; --down:#0061ff; --down-soft:#e6f0ff;
     --slate:#8892a0; --slate-soft:#eef1f5; --ok:#12b886; --radius:22px;
+    --warn:#f59e0b; --warn-soft:#fdf0dd; --warn-ink:#b45309;
     --kr:"Pretendard","Pretendard Variable",-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
     --mono:ui-monospace,"SFMono-Regular","Consolas",monospace;
   }
@@ -43,14 +44,17 @@
     :root{--bg:#0e1116;--card:#171b21;--card-2:#1c212a;--t1:#e9edf2;--t2:#aab3bf;--t3:#7d8794;--t4:#565f6b;
       --line:#252b34;--line-2:#1c212a;
       --blue:#4d94ff;--blue-ink:#8fbcff;--blue-soft:#0b2545;
-      --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a}
+      --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a;
+      --warn:#fbbf24;--warn-soft:#3a2c12;--warn-ink:#fcd34d}
   }
   :root[data-theme="light"]{--bg:#f1f4f7;--card:#fff;--card-2:#f4f7fa;--t1:#171c26;--t2:#4a5563;--t3:#8892a0;--t4:#aeb6c2;
     --line:#e8ebef;--line-2:#f1f4f7;--blue:#0061ff;--blue-ink:#0049c7;--blue-soft:#e6f0ff;
-    --up:#f0454f;--up-soft:#fdecee;--down:#0061ff;--down-soft:#e6f0ff;--slate:#8892a0;--slate-soft:#eef1f5;--ok:#12b886}
+    --up:#f0454f;--up-soft:#fdecee;--down:#0061ff;--down-soft:#e6f0ff;--slate:#8892a0;--slate-soft:#eef1f5;--ok:#12b886;
+    --warn:#f59e0b;--warn-soft:#fdf0dd;--warn-ink:#b45309}
   :root[data-theme="dark"]{--bg:#0e1116;--card:#171b21;--card-2:#1c212a;--t1:#e9edf2;--t2:#aab3bf;--t3:#7d8794;--t4:#565f6b;
     --line:#252b34;--line-2:#1c212a;--blue:#4d94ff;--blue-ink:#8fbcff;--blue-soft:#0b2545;
-    --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a}
+    --up:#ff5b64;--up-soft:#33161a;--down:#4d94ff;--down-soft:#0b2545;--slate:#7d8794;--slate-soft:#1c212a;--ok:#2dd48a;
+    --warn:#fbbf24;--warn-soft:#3a2c12;--warn-ink:#fcd34d}
 
   /* 종목코드·접수번호 텍스트 색 — 라이트에서 4.5:1 이상 확보(다크는 기존값 유지) */
   :root{--code:#6b7684}
@@ -87,7 +91,7 @@
        (President 리포트 2026-07-19). 완전 불투명 배경으로 스크롤 시 카드 비침 제거. */
     background:var(--bg);
     transform:translateZ(0);
-    padding:calc(env(safe-area-inset-top,0px) + 10px) calc(50vw - 50% + 2px) 6px;
+    padding:calc(env(safe-area-inset-top,0px) + 10px) calc(50vw - 50% + 2px) 4px;
     /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
     margin-inline:calc(50% - 50vw)}
   .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 8px}
@@ -120,8 +124,8 @@
   .pushbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
   .pushbtn:disabled{opacity:.6;cursor:default}
   .pushnote{font-size:11.5px;color:var(--t3);line-height:1.35}
-  .searchwrap{padding:6px 2px 2px;position:relative}
-  .searchwrap .sicon{position:absolute;left:14px;top:28px;transform:translateY(-50%);
+  .searchwrap{padding:2px 2px 2px;position:relative}
+  .searchwrap .sicon{position:absolute;left:14px;top:24px;transform:translateY(-50%);
     width:15px;height:15px;pointer-events:none;color:var(--t3)}
   .searchwrap input{width:100%;padding:11px 13px 11px 36px;border-radius:12px;border:none;
     box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
@@ -295,6 +299,25 @@
     background:linear-gradient(90deg,#0061ff,#2f86ff);transition:width .5s ease}
   #splash .sp-loadtxt{margin-top:7px;font-size:11px;font-weight:600;color:var(--t3)}
 
+  /* ---------- 15-B 웹 부트 로더 (설치 PWA standalone 전용 · 테마 무관 고정 블루) ---------- */
+  #bootloader{display:none}                    /* 기본: 일반 브라우저 첫 방문자 미표시 */
+  @media (display-mode:standalone){
+    #bootloader{position:fixed;inset:0;z-index:300;background:#0061ff;   /* 라이트/다크 동일 블루 */
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      opacity:1;transition:opacity .4s ease}
+    #bootloader.gone{opacity:0;pointer-events:none}
+  }
+  #bootloader .bl-logo{width:74px;height:74px;border-radius:20px;display:grid;place-items:center;
+    background:rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.28)}
+  #bootloader .bl-logo svg{width:42px;height:42px}
+  #bootloader .bl-name{margin-top:16px;font-size:24px;font-weight:800;letter-spacing:-.04em;color:#fff}
+  #bootloader .bl-bar{margin-top:22px;width:min(180px,54vw);height:4px;border-radius:3px;
+    background:rgba(255,255,255,.28);overflow:hidden}
+  #bootloader .bl-bar i{display:block;height:100%;width:38%;border-radius:3px;background:#fff;
+    animation:blslide 1.05s ease-in-out infinite}
+  @keyframes blslide{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+  @media (prefers-reduced-motion:reduce){#bootloader{transition:none} #bootloader .bl-bar i{animation:none;width:100%}}
+
   /* ---------- 베타 대기자(waitlist) 섹션 ---------- */
   .wl{background:var(--card);border-radius:var(--radius);padding:20px 19px;margin-top:6px}
   .wl h3{margin:0 0 5px;font-size:16px;font-weight:800;letter-spacing:-.03em;color:var(--t1)}
@@ -418,9 +441,10 @@
   .sheet.open .sheet-back{opacity:1}
   .sheet-panel{position:relative;width:100%;max-width:460px;max-height:88dvh;display:flex;flex-direction:column;
     background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.32);
-    padding:0 15px calc(18px + env(safe-area-inset-bottom,0px));
+    padding:0 15px calc(18px + env(safe-area-inset-bottom,0px));overflow:hidden;
     transform:translateY(100%);transition:transform .26s cubic-bezier(.22,1,.36,1)}
   .sheet.open .sheet-panel{transform:none}
+  .sheet.half .sheet-panel{max-height:50vh}   /* 풀스크린 금지 — 절반 캡 */
   .sheet-grip{display:block;width:38px;height:4px;border-radius:3px;background:var(--line);margin:9px auto 2px}
   .sheet-head{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;gap:9px;
     padding:6px 2px 12px;z-index:1}
@@ -508,11 +532,17 @@
   @media (prefers-reduced-motion:reduce){
     *{animation:none!important}
     .sheet-panel,.sheet-back,.detail-panel,.detail-back,.feed,.card,.chip,.f,.seg button,
-    .valmode button,.btn2,.star,.soc-btn,.wl-gtab,.wl-gmanage,.scaletog,.cardshare,.sheet-x,.detail-x{transition:none!important}
+    .valmode button,.btn2,.star,.soc-btn,.wl-gtab,.wl-gmanage,.scaletog,.cardshare,.sheet-x,.detail-x,
+    .cal-ev,.cal-cell,.cal-nav button,.set-sw,.set-sw::after{transition:none!important}
   }
 </style>
 </head>
 <body>
+<div id="bootloader" aria-hidden="true">
+  <div class="bl-logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></div>
+  <div class="bl-name">MIRI</div>
+  <div class="bl-bar" aria-hidden="true"><i></i></div>
+</div>
 <div id="splash" role="dialog" aria-label="미리 시작">
   <img class="sp-ic" src="/icon-192.png" alt="미리 아이콘">
   <div class="sp-name">미리 MIRI</div>
@@ -541,6 +571,10 @@
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="오늘">
+    <div class="today-ctl">
+      <button class="newpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
+      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침">↻</button>
+    </div>
     <div id="todayBody" class="today-body">
       <div class="empty" id="todayLoading">오늘의 브리핑을 불러오는 중…</div>
     </div>
@@ -556,10 +590,10 @@
         <span class="txt"><span class="t">X(옛 트위터)</span><span class="s">공시 요약과 업데이트 소식</span></span>
       </a>
     </div>
-    <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
+    <p class="disc">과거 유사공시 표본 통계 · 투자 권유 아님 · 출처 DART</p>
     <section class="wl" aria-labelledby="wlTitle">
       <h3 id="wlTitle">베타 알림 받기</h3>
-      <p class="wl-sub">정식 오픈과 실시간 공시 알림 기능이 준비되면 가장 먼저 알려드립니다. 대기자 명단에 이메일을 남겨주세요.</p>
+      <p class="wl-sub">정식 오픈 시 가장 먼저 알려드려요</p>
       <form class="wl-form" id="wlForm" novalidate>
         <input id="wlEmail" type="email" inputmode="email" autocomplete="email"
                placeholder="이메일 주소" aria-label="이메일 주소" required>
@@ -570,14 +604,16 @@
       <div class="wl-msg" id="wlMsg" role="status" aria-live="polite"></div>
       <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
     </section>
-    <div class="bar-btns">
-      <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐ 테마</button>
-      <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
-    </div>
   </section>
 
   <!-- ============ ② 관심종목 (기존 header 그룹/칩/필터/피드 이설) ============ -->
   <section class="tabpanel" id="p-watch" role="tabpanel" aria-label="관심종목">
+    <div class="searchwrap">
+      <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <input id="searchInput" type="search" placeholder="종목명·코드 검색" autocomplete="off" aria-label="종목 검색">
+      <div class="formmsg" id="searchmsg"></div>
+      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+    </div>
     <div class="wl-grouprow" id="wlGroups" role="tablist" aria-label="관심종목 그룹"></div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
     <div class="pushrow" id="pushRow" hidden></div>
@@ -610,39 +646,60 @@
 
   <!-- ============ ③ 랭킹 (GET /api/ranking · cardHTML 재사용) ============ -->
   <section class="tabpanel" id="p-ranking" role="tabpanel" aria-label="랭킹">
-    <div class="sec-h"><span class="st">공시 반응 랭킹</span><span class="ss">과거 유사공시 통계 기준</span></div>
+    <div class="sec-h"><span class="st">반응 랭킹</span></div>
     <div class="rk-seg" id="rankSeg" role="tablist" aria-label="랭킹 종류">
-      <button role="tab" data-rseg="disc" class="on" aria-selected="true">공시多</button>
+      <button role="tab" data-rseg="disc" class="on" aria-selected="true">공시순</button>
       <button role="tab" data-rseg="move" aria-selected="false">급등락</button>
-      <button role="tab" data-rseg="buzz" aria-selected="false" disabled title="준비중">화제도</button>
+      <button role="tab" data-rseg="buzz" aria-selected="false" disabled title="준비중">화제</button>
     </div>
-    <div id="rankBody"><div class="empty">랭킹을 불러오는 중…</div></div>
-    <p class="disc">랭킹은 과거 유사공시 표본 통계 기준 · 미래 수익을 보장하지 않습니다. · 출처: 금융감독원 DART.</p>
+    <div id="rankBody"><div class="empty">불러오는 중</div></div>
+    <p class="disc">과거 표본 통계 · 수익 보장 아님 · 출처 DART</p>
   </section>
 
-  <!-- ============ ④ 캘린더 (메자닌 승격 + 일정 준비중) ============ -->
+  <!-- ============ ④ 캘린더 (메자닌 월그리드 + 이벤트 리스트) ============ -->
   <section class="tabpanel" id="p-calendar" role="tabpanel" aria-label="캘린더">
+    <div class="cal-count"><span class="lb">이번 달 예상 공시</span><b class="num" id="calCount">–</b><span class="u">건</span></div>
     <div class="cal-tabs" id="calTabs" role="tablist" aria-label="캘린더 종류">
       <button role="tab" data-cseg="mezz" class="on" aria-selected="true">메자닌 전환</button>
-      <button role="tab" data-cseg="earn" aria-selected="false" disabled title="준비중">실적·주총</button>
-      <button role="tab" data-cseg="div" aria-selected="false" disabled title="준비중">배당·상장</button>
+      <button role="tab" data-cseg="earn" aria-selected="false" disabled>실적·주총<span class="soon">준비중</span></button>
+      <button role="tab" data-cseg="div" aria-selected="false" disabled>배당·상장<span class="soon">준비중</span></button>
     </div>
-    <div class="sec-h"><span class="st">메자닌(CB·BW·EB) 전환</span><span class="ss">코스피·코스닥</span></div>
-    <div class="detail-body" id="mezzBody">
-      <div class="mezz-loading">불러오는 중…</div>
-    </div>
+    <div class="cal-nav"><button id="calPrev" aria-label="이전 달">‹</button><b id="calMonth" class="num">–</b><button id="calNext" aria-label="다음 달">›</button></div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-daylabel" id="calDayLabel"></div>
+    <div class="cal-list" id="calList"><div class="mezz-empty">불러오는 중</div></div>
+    <div class="sec-h" id="mezzHoldHead" hidden><span class="st">메자닌 종목 현황</span></div>
+    <div id="mezzHoldings"></div>
+    <p class="disc" id="calDisc"></p>
   </section>
 
-  <!-- ============ ⑤ 검색 (기존 searchwrap 이설 · 상세는 전역 모달) ============ -->
-  <section class="tabpanel" id="p-search" role="tabpanel" aria-label="검색">
-    <div class="searchwrap">
-      <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-      <input id="searchInput" type="search" placeholder="종목 검색 (예: 삼성, 005930) — 공시 보기·관심 담기"
-             autocomplete="off" aria-label="종목 검색">
-      <div class="formmsg" id="searchmsg"></div>
-      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+  <!-- ============ ⑤ 설정 (토스식 그룹 리스트 + 토글) ============ -->
+  <section class="tabpanel" id="p-settings" role="tabpanel" aria-label="설정">
+    <div class="set-group">
+      <div class="set-gh">화면</div>
+      <div class="set-row"><span class="set-lb">테마</span>
+        <div class="set-seg" id="setTheme" data-key="theme">
+          <button data-v="light">라이트</button><button data-v="dark">다크</button><button data-v="system">시스템</button></div></div>
+      <div class="set-row"><span class="set-lb">글자 크기</span>
+        <div class="set-seg" id="setFont" data-key="font">
+          <button data-v="sm">작게</button><button data-v="md">보통</button><button data-v="lg">크게</button></div></div>
+      <div class="set-row"><span class="set-lb">표시 밀도</span>
+        <div class="set-seg" id="setDensity" data-key="density">
+          <button data-v="roomy">넉넉</button><button data-v="md">기본</button><button data-v="compact">촘촘</button></div></div>
     </div>
-    <div class="sec-h"><span class="st">종목을 검색해 공시를 보고 관심에 담아보세요</span></div>
+    <div class="set-group">
+      <div class="set-gh">시작</div>
+      <div class="set-row"><span class="set-lb">시작 탭</span>
+        <div class="set-seg" id="setStart" data-key="start">
+          <button data-v="today">오늘</button><button data-v="watch">관심</button><button data-v="ranking">랭킹</button><button data-v="calendar">캘린더</button></div></div>
+    </div>
+    <div class="set-group">
+      <div class="set-gh">알림</div>
+      <button class="set-row set-toggle" id="setPushRow" type="button" aria-pressed="false">
+        <span class="set-lb">관심종목 공시 알림<small class="set-sub" id="setPushSub">브라우저 푸시</small></span>
+        <span class="set-sw" aria-hidden="true"></span></button>
+    </div>
+    <p class="disc">MIRI · 정보 제공 서비스 · 투자 권유 아님 · 출처 금융감독원 DART</p>
   </section>
 </div>
 
@@ -663,8 +720,8 @@
     <button class="tabitem" role="tab" aria-selected="false" data-tab="calendar">
       <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2.5"/><path d="M4 9.5h16M8.5 3.5v3M15.5 3.5v3"/></svg><span class="tl">캘린더</span>
     </button>
-    <button class="tabitem" role="tab" aria-selected="false" data-tab="search">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg><span class="tl">검색</span>
+    <button class="tabitem" role="tab" aria-selected="false" data-tab="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M12 2.6v3M12 18.4v3M21.4 12h-3M5.6 12h-3M18.36 5.64l-2.1 2.1M7.74 16.26l-2.1 2.1M18.36 18.36l-2.1-2.1M7.74 7.74l-2.1-2.1"/></svg><span class="tl">설정</span>
     </button>
   </div>
 </nav>
@@ -681,7 +738,7 @@
     </div>
     <div class="sheet-target" id="sheetSearchTarget"></div>
     <div class="sheet-body">
-      <p class="sheet-hint">위쪽 검색창에서 종목명으로도 담을 수 있어요. 여기선 6자리 코드로 바로 추가합니다.</p>
+      <p class="sheet-hint">6자리 코드로 바로 담기</p>
       <div class="addrow show" id="addrow">
         <input id="addInput" placeholder="6자리 종목코드 (예: 005930)" inputmode="numeric"
                autocomplete="off" onkeydown="if(event.key==='Enter')addStock()">
@@ -728,6 +785,17 @@
   </div>
 </div>
 
+<!-- 공시 예정 상세(하프시트 · ≤50vh) -->
+<div class="sheet half" id="sheetCalEv" hidden role="dialog" aria-modal="true" aria-label="공시 예정 상세">
+  <div class="sheet-back" data-sheet-close="sheetCalEv"></div>
+  <div class="sheet-panel">
+    <span class="sheet-grip" aria-hidden="true"></span>
+    <div class="sheet-head"><h3 class="sheet-tt" id="calEvTt">–</h3>
+      <button class="sheet-x" type="button" data-sheet-close="sheetCalEv" aria-label="닫기">✕</button></div>
+    <div class="sheet-body" id="calEvBody"></div>
+  </div>
+</div>
+
 <!-- 종목 상세뷰 오버레이 — STATE.items(로드된 /api/alerts)를 stock_code로 필터해 렌더 -->
 <div class="detail" id="detail" hidden role="dialog" aria-modal="true" aria-label="종목 상세">
   <div class="detail-back" id="detailBack"></div>
@@ -763,14 +831,16 @@
     box-shadow:0 0 0 1px var(--line) inset;border-radius:999px;padding:5px 10px}
   .mezz-card{background:var(--card-2);border-radius:12px;padding:11px 12px;margin-bottom:9px;
     box-shadow:0 0 0 1px var(--line) inset}
-  .mezz-card.mz-in{box-shadow:0 0 0 1px var(--line) inset;border-left:3px solid var(--up)}
+  .mezz-card.mz-in,.mezz-card.mz-at{border-left:3px solid var(--warn)}
   .mezz-card.mz-out{border-left:3px solid var(--t4)}
+  .mezz-card.mz-none{border-left:3px solid var(--line)}
   .mezz-ch{display:flex;align-items:center;gap:6px;margin-bottom:5px}
   .mezz-ch b{font-size:13.5px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
   .mezz-ch small{font-size:11px;color:var(--t3);font-weight:600}
   .mezz-bdg{margin-left:auto;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px}
-  .mezz-bdg.bi{background:var(--up-soft);color:var(--up)}
-  .mezz-bdg.bo{background:var(--card);color:var(--t3);box-shadow:0 0 0 1px var(--line) inset}
+  .mezz-bdg.bi,.mezz-bdg.ba{background:var(--warn-soft);color:var(--warn-ink)}
+  .mezz-bdg.bo{background:var(--slate-soft);color:var(--t3)}
+  .mezz-bdg.bn{background:var(--slate-soft);color:var(--t4)}
   .mezz-r{font-size:12.5px;color:var(--t2);font-weight:600;margin-top:3px}
   .mezz-r .num{font-variant-numeric:tabular-nums}
   .mezz-r small{color:var(--t3);font-weight:500}
@@ -786,7 +856,7 @@
   .htitle{font-weight:800;font-size:17px;letter-spacing:-.03em}
   .today-body{display:flex;flex-direction:column;gap:11px}
   /* 섹션 헤더 */
-  .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:2px}
+  .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:0}
   .sec-h .st{font-size:14px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
   .sec-h .ss{font-size:11px;font-weight:700;color:var(--t3)}
   .sec-h .more{margin-left:auto;font-size:12px;font-weight:700;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:4px 2px}
@@ -808,17 +878,71 @@
   .rk-no{font-size:15px;font-weight:800;color:var(--t3);width:20px;text-align:center;font-variant-numeric:tabular-nums;flex:none}
   .rk-no.top{color:var(--blue)}
   .rk-info{min-width:0;flex:1}
-  .rk-nm{font-size:14.5px;font-weight:700;color:var(--t1)}
+  .rk-nm{font-size:14.5px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rk-nm .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;margin-left:5px}
   .rk-sub{font-size:11.5px;color:var(--t3);font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rk-val{font-size:14px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums;flex:none}
   .rk-val.up{color:var(--up)} .rk-val.down{color:var(--down)} .rk-val.flat{color:var(--t3)}
-  /* 캘린더 하위탭 */
-  .cal-tabs{display:flex;gap:8px;padding:2px 2px 4px}
-  .cal-tabs button{flex:1;font-family:inherit;font-size:13px;font-weight:700;padding:9px 0;border-radius:11px;border:none;cursor:pointer;
-    background:var(--card);color:var(--t3);box-shadow:0 0 0 1px var(--line) inset}
+  /* 캘린더 세그 (준비중 pill) */
+  .cal-tabs{display:flex;gap:6px;padding:2px 2px 6px}
+  .cal-tabs button{flex:1;position:relative;font-family:inherit;font-size:13px;font-weight:700;padding:9px 0;border-radius:11px;
+    border:none;cursor:pointer;background:var(--card);color:var(--t3);box-shadow:0 0 0 1px var(--line) inset}
   .cal-tabs button.on{background:var(--blue);color:#fff;box-shadow:none}
-  .cal-tabs button:disabled{opacity:.5;cursor:default}
+  .cal-tabs button:disabled{opacity:.55;cursor:default}
+  .cal-tabs .soon{display:block;font-size:9px;font-weight:800;color:var(--t4);margin-top:1px;letter-spacing:0}
+  /* 카운트 밴드 */
+  .cal-count{display:flex;align-items:baseline;gap:6px;padding:13px 15px;background:var(--card);border-radius:14px;
+    box-shadow:0 0 0 1px var(--line) inset;margin:2px 2px 2px}
+  .cal-count .lb{font-size:13px;font-weight:700;color:var(--t2)}
+  .cal-count b{font-size:22px;font-weight:800;color:var(--t1);letter-spacing:-.03em;margin-left:auto}
+  .cal-count .u{font-size:13px;font-weight:700;color:var(--t2)}
+  /* 월 이동 */
+  .cal-nav{display:flex;align-items:center;justify-content:center;gap:20px;padding:4px 2px 6px}
+  .cal-nav b{font-size:16px;font-weight:800;letter-spacing:-.02em;min-width:78px;text-align:center;color:var(--t1)}
+  .cal-nav button{width:38px;height:38px;border-radius:11px;border:none;cursor:pointer;font-size:18px;font-weight:700;
+    background:var(--card);color:var(--t2);box-shadow:0 0 0 1px var(--line) inset}
+  .cal-nav button:active{transform:scale(.95)}
+  /* 그리드 (일요일 시작) */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 2px 4px}
+  .cal-wd{text-align:center;font-size:11px;font-weight:700;color:var(--t3);padding:5px 0 3px}
+  .cal-wd.sun{color:var(--up)} .cal-wd.sat{color:var(--down)}
+  .cal-cell{aspect-ratio:1/1;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:3px;border:none;background:none;cursor:pointer;font-family:inherit;border-radius:12px;position:relative;padding:0}
+  .cal-cell .dnum{font-size:13.5px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums}
+  .cal-cell.oth .dnum{color:var(--t4);opacity:.55}
+  .cal-cell.sun .dnum{color:var(--up)} .cal-cell.sat .dnum{color:var(--down)}
+  .cal-cell.today{box-shadow:0 0 0 1.5px var(--blue) inset}
+  .cal-cell.sel{background:var(--blue)}
+  .cal-cell.sel .dnum,.cal-cell.sel.sun .dnum,.cal-cell.sel.sat .dnum{color:#fff}
+  .cal-cell:disabled{cursor:default}
+  .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--blue)}
+  .cal-cnt{font-size:9px;font-weight:800;color:#fff;background:var(--blue);border-radius:7px;min-width:14px;height:14px;
+    padding:0 3px;display:grid;place-items:center;line-height:1}
+  .cal-cell.sel .cal-dot{background:#fff}
+  .cal-cell.sel .cal-cnt{background:#fff;color:var(--blue)}
+  /* 이벤트 리스트 */
+  .cal-daylabel{font-size:12px;font-weight:800;color:var(--t2);padding:8px 4px 2px}
+  .cal-list{display:flex;flex-direction:column;gap:8px;padding:2px 2px 2px}
+  .cal-ev{display:flex;align-items:center;gap:10px;padding:12px 13px;background:var(--card);border-radius:14px;
+    box-shadow:0 0 0 1px var(--line) inset;cursor:pointer;width:100%;text-align:left;border:none;font-family:inherit}
+  .cal-ev:active{transform:scale(.99)}
+  .cal-ev .ev-main{min-width:0;flex:1}
+  .cal-ev .ev-nm{font-size:14px;font-weight:800;color:var(--t1)}
+  .cal-ev .ev-nm .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;margin-left:5px}
+  .cal-ev .ev-sub{font-size:11.5px;color:var(--t3);font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-ev .ev-type{flex:none;font-size:10px;font-weight:800;padding:3px 7px;border-radius:6px}
+  .cal-ev .ev-type.cb{background:var(--blue-soft);color:var(--blue)}
+  .cal-ev .ev-type.bw{background:var(--warn-soft);color:var(--warn-ink)}
+  .cal-ev .ev-type.eb{background:var(--slate-soft);color:var(--t2)}
+  .cal-ev .ev-vs{flex:none;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+  .cal-ev .ev-vs.up{color:var(--up)} .cal-ev .ev-vs.down{color:var(--down)} .cal-ev .ev-vs.flat{color:var(--t3)}
+  /* 하프시트 이벤트 본문 */
+  .cal-ev-note{font-size:11px;color:var(--t3);font-weight:500;margin:12px 0 0;line-height:1.45;border-top:1px solid var(--line-2);padding-top:12px}
+  #calEvBody .srow{padding:9px 2px}
+  #calEvBody .slab{font-size:13px;color:var(--t3);font-weight:600}
+  #calEvBody .sval{font-size:13.5px;color:var(--t1);font-weight:700;text-align:right;display:flex;align-items:center;gap:6px;justify-content:flex-end}
+  #calEvBody .sval.up{color:var(--up)} #calEvBody .sval.down{color:var(--down)} #calEvBody .sval.flat{color:var(--t3)}
+  #calEvBody .sval small{color:var(--t3);font-weight:600;font-size:11px}
   /* ===== 하단 5탭 네비 ===== */
   .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:flex;justify-content:center;
     background:var(--bg);border-top:1px solid var(--line);
@@ -835,6 +959,62 @@
   .tabitem:focus-visible{outline:2px solid var(--blue);outline-offset:-3px;border-radius:12px}
   /* bar-btns: 탭 셸에선 비고정(하단 네비와 충돌 방지) */
   .tabpanel .bar-btns{position:static;background:none;padding:6px 0 2px}
+
+  /* ===== 설정 탭 (그룹 리스트 + 토글) ===== */
+  .set-group{background:var(--card);border-radius:16px;box-shadow:0 0 0 1px var(--line) inset;overflow:hidden;margin:2px 2px 4px}
+  .set-gh{font-size:11px;font-weight:800;color:var(--t3);letter-spacing:.02em;padding:12px 15px 6px}
+  .set-row{display:flex;align-items:center;gap:10px;min-height:52px;padding:9px 15px;border-top:1px solid var(--line-2);
+    width:100%;background:none;border-left:none;border-right:none;border-bottom:none;font-family:inherit;text-align:left}
+  .set-gh + .set-row{border-top:none}
+  .set-lb{font-size:14.5px;font-weight:700;color:var(--t1);flex:1;display:flex;flex-direction:column;gap:2px}
+  .set-sub{font-size:11px;font-weight:600;color:var(--t3)}
+  .set-seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;flex:none}
+  .set-seg button{font-family:inherit;font-size:12px;font-weight:700;color:var(--t3);border:none;background:none;
+    padding:7px 11px;border-radius:8px;cursor:pointer;min-height:34px}
+  .set-seg button.on{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .set-sw{flex:none;width:46px;height:28px;border-radius:999px;background:var(--slate-soft);position:relative;transition:background .18s}
+  .set-sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s}
+  .set-toggle[aria-pressed="true"] .set-sw{background:var(--blue)}
+  .set-toggle[aria-pressed="true"] .set-sw::after{transform:translateX(18px)}
+  .set-toggle[aria-disabled="true"]{opacity:.55;cursor:default}
+  .set-seg button:focus-visible,.set-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+  /* ===== 글자크기 zoom(콘텐츠 래퍼 .app 에만 · 고정 tabbar 불변) + 표시밀도 ===== */
+  .app{zoom:var(--fs,1)}
+  html[data-fs="sm"]{--fs:.94} html[data-fs="md"]{--fs:1} html[data-fs="lg"]{--fs:1.08}
+  html[data-density="compact"] .card{padding:12px 14px 10px}
+  html[data-density="compact"] .feed{gap:6px}
+  html[data-density="roomy"] .card{padding:20px 18px 16px}
+  html[data-density="roomy"] .feed{gap:12px}
+
+  /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
+  .tabpanel>*:first-child{margin-top:0}
+
+  /* ===== 오늘 탭 상단 컨트롤(소형 새로고침 + 신규 필) — 구 거대버튼 대체 ===== */
+  .today-ctl{display:flex;align-items:center;gap:8px;padding:0 2px}
+  .newpill{flex:none;font-family:inherit;font-size:12.5px;font-weight:800;color:#fff;background:var(--blue);border:none;
+    border-radius:999px;padding:7px 14px;cursor:pointer;box-shadow:0 3px 12px rgba(0,97,255,.28);display:inline-flex;
+    align-items:center;gap:5px;transition:transform .08s ease}
+  .newpill[hidden]{display:none}
+  .newpill b{font-variant-numeric:tabular-nums}
+  .newpill:active{transform:scale(.96)}
+  .miniref{margin-left:auto;flex:none;width:34px;height:34px;border-radius:10px;border:none;cursor:pointer;
+    background:var(--card);color:var(--t2);font-size:16px;line-height:1;box-shadow:0 0 0 1px var(--line) inset;
+    font-family:inherit;transition:transform .08s ease}
+  .miniref:active{transform:scale(.94)}
+  .miniref:disabled{opacity:.5;cursor:default}
+  .miniref:focus-visible,.newpill:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+  /* ===== 데스크톱 창모드(PC설치 PWA) — 460 컬럼 중앙정렬·헤더 풀블리드 억제 ===== */
+  @media (min-width:600px){
+    body{background:var(--card-2)}                    /* 컬럼 밖 캔버스를 은은히 구분 */
+    .app{background:var(--bg)}                         /* 460 컬럼만 본문 배경 */
+    header{margin-inline:0;padding-inline:2px;background:var(--bg)}  /* 헤더 풀블리드 억제(컬럼 폭) */
+    .tabbar{background:transparent;border-top:none}   /* 풀폭 스트립 제거 → 중앙 460 바만 */
+    .tabbar-in{background:var(--bg);border-radius:14px 14px 0 0;
+      box-shadow:0 -2px 16px rgba(0,0,0,.12),0 0 0 1px var(--line)}
+  }
 </style>
 
 <!-- 맨위로 FAB — 일정 스크롤 이상에서 노출 -->
@@ -929,6 +1109,49 @@ function toggleTheme(){const cur=document.documentElement.getAttribute('data-the
   const sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
   const eff=cur||(sysDark?'dark':'light');applyTheme(eff==='dark'?'light':'dark');}
 (function(){const s=localStorage.getItem('miri-theme');if(s)applyTheme(s);})();
+/* 부팅 시 글자크기·표시밀도 즉시 반영(첫 페인트 전) */
+document.documentElement.setAttribute('data-fs',localStorage.getItem('miri-fontscale')||'md');
+document.documentElement.setAttribute('data-density',localStorage.getItem('miri-density')||'md');
+
+/* ---------- 설정 탭 바인딩 ---------- */
+function syncSettingsPush(){
+  const row=document.getElementById('setPushRow');if(!row)return;
+  const sub=document.getElementById('setPushSub');
+  function off(msg){row.setAttribute('aria-disabled','true');row.setAttribute('aria-pressed','false');if(sub)sub.textContent=msg;}
+  if(!PUSH_SUPPORTED){off((typeof isIOS==='function'&&isIOS()&&typeof isStandalone==='function'&&!isStandalone())?'홈 화면 추가 후 사용':'이 브라우저 미지원');return;}
+  if(!PUSH_STATE.key){off('준비중');return;}
+  const perm=(window.Notification&&Notification.permission)||'default';
+  if(perm==='denied'){off('브라우저에서 차단됨');return;}
+  row.removeAttribute('aria-disabled');
+  row.setAttribute('aria-pressed',PUSH_STATE.subscribed?'true':'false');
+  if(sub)sub.textContent='브라우저 푸시';
+}
+function initSettings(){
+  document.querySelectorAll('#p-settings .set-seg').forEach(function(seg){
+    const key=seg.dataset.key;
+    const cur = key==='theme' ? (localStorage.getItem('miri-theme')||'system')
+      : key==='font' ? (localStorage.getItem('miri-fontscale')||'md')
+      : key==='density' ? (localStorage.getItem('miri-density')||'md')
+      : (localStorage.getItem('miri-starttab')||'today');
+    seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===cur);});
+    seg.addEventListener('click',function(e){
+      const b=e.target.closest('button[data-v]');if(!b)return;
+      const v=b.dataset.v;
+      seg.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+      if(key==='theme'){ if(v==='system'){localStorage.removeItem('miri-theme');document.documentElement.removeAttribute('data-theme');}else{applyTheme(v);} }
+      if(key==='font'){ localStorage.setItem('miri-fontscale',v); document.documentElement.setAttribute('data-fs',v); }
+      if(key==='density'){ localStorage.setItem('miri-density',v); document.documentElement.setAttribute('data-density',v); }
+      if(key==='start'){ localStorage.setItem('miri-starttab',v); }
+    });
+  });
+  const pr=document.getElementById('setPushRow');
+  if(pr)pr.addEventListener('click',function(){
+    if(pr.getAttribute('aria-disabled')==='true')return;
+    if(PUSH_STATE.subscribed){if(typeof disablePush==='function')disablePush();}
+    else{if(typeof enablePush==='function')enablePush();}
+  });
+  syncSettingsPush();
+}
 
 /* ---------- 관심종목: 그룹 모델 + 칩 (토스식) ----------
    진실원본 = GET /api/watchlist 및 모든 변이의 전체 스냅샷 {stocks,keywords,groups}.
@@ -1808,36 +2031,151 @@ window.addEventListener('popstate',function(){
   });
 })();
 
-/* ---------- 메자닌 전환 캘린더 오버레이 (WS-34) — /api/mezzanine 지연 로딩 ---------- */
+/* ---------- 메자닌 전환 캘린더 (월그리드 + 이벤트 리스트 · /api/mezzanine 지연 로딩) ---------- */
 let _mezzLoaded=false,_mezzHistPushed=false;
+let CAL_YM=null,CAL_SEL=null,CAL_ITEMS=[],_mezzData=null,_calBound=false,CAL_OUTLOOK=null;
+const CAL_WD=['일','월','화','수','목','금','토'];
+function _pad2(n){return('0'+n).slice(-2);}
+function _ymdLocal(dt){return dt.getFullYear()+'-'+_pad2(dt.getMonth()+1)+'-'+_pad2(dt.getDate());}
+function _itemsOn(ds){return CAL_ITEMS.filter(it=>it.date===ds);}
+function _monthItems(ym){return CAL_ITEMS.filter(it=>(it.date||'').slice(0,7)===ym);}
+function _evTypeCls(t){t=(t||'').toLowerCase();return(t==='cb'||t==='bw'||t==='eb')?t:'eb';}
+function calEvCard(it){
+  const type=(it.sec_type||'').toUpperCase();
+  const vs=it.vs_pct;
+  const vcls=vs>0?'up':vs<0?'down':'flat';
+  const vtxt=(vs!=null)?(vs>0?'+':'')+Number(vs).toFixed(1)+'%':'—';
+  const cp=(it.conv_price!=null)?Number(it.conv_price).toLocaleString():'—';
+  const sub=`${esc(it.event||'전환 개시')} · 전환가 ${cp}원`;
+  return `<button class="cal-ev" data-calidx="${it._idx}">`+
+    `<span class="ev-main"><span class="ev-nm">${esc(it.corp_name||'')}<span class="cd">${esc(it.stock_code||'')}</span></span>`+
+    `<span class="ev-sub">${sub}</span></span>`+
+    `<span class="ev-type ${_evTypeCls(type)}">${esc(type||'CB')}</span>`+
+    `<span class="ev-vs ${vcls}">${vtxt}</span></button>`;
+}
+function renderCalList(){
+  const list=document.getElementById('calList'),label=document.getElementById('calDayLabel');
+  if(!CAL_SEL){if(label)label.textContent='';if(list)list.innerHTML='<div class="mezz-empty">이번 달 예정 공시 없음</div>';return;}
+  const p=CAL_SEL.split('-').map(Number),wd=CAL_WD[new Date(p[0],p[1]-1,p[2]).getDay()];
+  if(label)label.textContent=p[1]+'월 '+p[2]+'일 ('+wd+')';
+  const evs=_itemsOn(CAL_SEL);
+  if(list)list.innerHTML=evs.length?evs.map(calEvCard).join(''):'<div class="mezz-empty">이 날 예정 공시 없음</div>';
+}
+function renderCal(){
+  if(!CAL_YM)return;
+  const yp=CAL_YM.split('-').map(Number),y=yp[0],m=yp[1];
+  const mlab=document.getElementById('calMonth');if(mlab)mlab.textContent=y+'.'+m;
+  let cnt=_monthItems(CAL_YM).length;
+  if(CAL_OUTLOOK&&CAL_OUTLOOK.month===CAL_YM&&CAL_OUTLOOK.count!=null)cnt=CAL_OUTLOOK.count;
+  const cc=document.getElementById('calCount');if(cc)cc.textContent=cnt;
+  const startWd=new Date(y,m-1,1).getDay();
+  const daysInMonth=new Date(y,m,0).getDate();
+  const prevDays=new Date(y,m-1,0).getDate();
+  const todayStr=_ymdLocal(new Date());
+  const cells=[];
+  for(let i=0;i<startWd;i++){const d=prevDays-startWd+1+i;cells.push({d:d,ymd:_ymdLocal(new Date(y,m-2,d)),oth:true});}
+  for(let d=1;d<=daysInMonth;d++){cells.push({d:d,ymd:_ymdLocal(new Date(y,m-1,d)),oth:false});}
+  let td=1;while(cells.length%7!==0){cells.push({d:td,ymd:_ymdLocal(new Date(y,m,td)),oth:true});td++;}
+  let html='';
+  CAL_WD.forEach((w,i)=>{html+=`<div class="cal-wd${i===0?' sun':i===6?' sat':''}">${w}</div>`;});
+  cells.forEach((c,p)=>{
+    const wd=p%7,evs=_itemsOn(c.ymd),cl=['cal-cell'];
+    if(c.oth)cl.push('oth');
+    if(wd===0)cl.push('sun');if(wd===6)cl.push('sat');
+    if(c.ymd===todayStr)cl.push('today');
+    if(c.ymd===CAL_SEL)cl.push('sel');
+    let mk='';
+    if(evs.length===1)mk='<span class="cal-dot"></span>';
+    else if(evs.length>=2)mk=`<span class="cal-cnt">${evs.length}</span>`;
+    html+=`<button class="${cl.join(' ')}" data-caldayselect="${c.ymd}"><span class="dnum">${c.d}</span>${mk}</button>`;
+  });
+  const grid=document.getElementById('calGrid');if(grid)grid.innerHTML=html;
+  renderCalList();
+}
+function calSelect(ds){if(ds.slice(0,7)!==CAL_YM)CAL_YM=ds.slice(0,7);CAL_SEL=ds;renderCal();}
+function calMove(delta){
+  const yp=CAL_YM.split('-').map(Number);let y=yp[0],m=yp[1]+delta;
+  if(m<1){m=12;y--;}if(m>12){m=1;y++;}
+  CAL_YM=y+'-'+_pad2(m);
+  const mi=_monthItems(CAL_YM).slice().sort((a,b)=>a.date<b.date?-1:1);
+  CAL_SEL=mi.length?mi[0].date:null;
+  renderCal();
+}
+function openCalEv(idx){
+  const it=CAL_ITEMS[idx];if(!it)return;
+  const type=(it.sec_type||'').toUpperCase();
+  const tt=document.getElementById('calEvTt');if(tt)tt.textContent=it.corp_name||'';
+  const vs=it.vs_pct,vcls=vs>0?'up':vs<0?'down':'flat';
+  const vtxt=(vs!=null)?(vs>0?'+':'')+Number(vs).toFixed(1)+'%':'—';
+  const cp=(it.conv_price!=null)?Number(it.conv_price).toLocaleString():'—';
+  const sh=(it.shares!=null)?Number(it.shares).toLocaleString():'—';
+  const bcls=type==='CB'?'bi':type==='BW'?'ba':'bn';
+  const body=document.getElementById('calEvBody');
+  if(body)body.innerHTML=
+    `<div class="srow"><span class="slab">종목</span><span class="sval">${esc(it.corp_name||'')} <small>${esc(it.stock_code||'')}</small> <span class="mezz-bdg ${bcls}">${esc(type||'')}</span></span></div>`+
+    `<div class="srow"><span class="slab">${esc(it.event||'전환 개시')}</span><span class="sval num">${esc(it.date||'—')}</span></div>`+
+    `<div class="srow"><span class="slab">전환가</span><span class="sval num">${cp}원</span></div>`+
+    `<div class="srow"><span class="slab">현재가 대비</span><span class="sval num ${vcls}">${vtxt}</span></div>`+
+    `<div class="srow"><span class="slab">예정 물량</span><span class="sval num">${sh}주</span></div>`+
+    `<p class="cal-ev-note">전환가에 닿으면 신주가 시장에 나올 수 있어요.</p>`;
+  openSheet('sheetCalEv');
+  if(typeof track==='function')track('cal_event_open',{code:it.stock_code||'',type:type});
+}
+function bindCal(){
+  if(_calBound)return;_calBound=true;
+  const prev=document.getElementById('calPrev'),next=document.getElementById('calNext');
+  if(prev)prev.addEventListener('click',()=>calMove(-1));
+  if(next)next.addEventListener('click',()=>calMove(1));
+  const grid=document.getElementById('calGrid');
+  if(grid)grid.addEventListener('click',e=>{const b=e.target.closest('[data-caldayselect]');if(b)calSelect(b.getAttribute('data-caldayselect'));});
+  const list=document.getElementById('calList');
+  if(list)list.addEventListener('click',e=>{const b=e.target.closest('[data-calidx]');if(b)openCalEv(Number(b.getAttribute('data-calidx')));});
+}
 function mezzCard(h){
-  const isIn=h.moneyness==='in';
-  const bdg=h.moneyness==='in'?'in-the-money':h.moneyness==='out'?'out-of-the-money':h.moneyness==='at'?'등가':'시세없음';
+  const st=h.moneyness; // 'in'|'at'|'out'|null
+  const LB={in:'전환가 위',at:'전환가 부근',out:'전환가 아래'};
+  const bdg=LB[st]||'시세 없음';
+  const cls=st==='in'?'mz-in':st==='at'?'mz-at':st==='out'?'mz-out':'mz-none';
+  const bcls=st==='in'?'bi':st==='at'?'ba':st==='out'?'bo':'bn';
   const mkt=h.market==='KOSPI'?'코스피':h.market==='KOSDAQ'?'코스닥':(h.market||'');
   const prem=(h.premium_pct!=null)?(h.premium_pct>0?'+':'')+h.premium_pct.toFixed(1)+'%':'—';
   const dil=(h.dilution_vs_mktcap_pct!=null)?h.dilution_vs_mktcap_pct.toFixed(0)+'%':'—';
   const cur=(h.current_price!=null)?h.current_price.toLocaleString():'—';
   const cv=(h.min_conv_price!=null)?h.min_conv_price.toLocaleString():'—';
-  const basisLabel=(h.basis==='net')?'순잔량(전환청구 반영) 기준':'누적 발행 기준';
-  return `<div class="mezz-card ${isIn?'mz-in':'mz-out'}">`+
+  const basisLabel=(h.basis==='net')?'순잔량 기준':'누적발행 기준';
+  return `<div class="mezz-card ${cls}">`+
     `<div class="mezz-ch"><b>${esc(h.corp_name||'')}</b><small>${esc(h.stock_code||'')} · ${mkt}</small>`+
-    `<span class="mezz-bdg ${isIn?'bi':'bo'}">${bdg}</span></div>`+
-    `<div class="mezz-r">현재가 <span class="num">${cur}</span>원 · 최저전환가 <span class="num">${cv}</span>원 <small>(괴리 ${prem})</small></div>`+
-    `<div class="mezz-r">시총 대비 잠재 희석 <span class="num">${dil}</span> <small>(${basisLabel})</small></div></div>`;
+    `<span class="mezz-bdg ${bcls}">${bdg}</span></div>`+
+    `<div class="mezz-r">현재가 <span class="num">${cur}</span>원 · 전환가 <span class="num">${cv}</span>원 <small>괴리 ${prem}</small></div>`+
+    `<div class="mezz-r">시총 대비 희석 <span class="num">${dil}</span> <small>${basisLabel}</small></div></div>`;
 }
 async function loadMezz(){
+  bindCal();
   if(_mezzLoaded)return;
-  const body=document.getElementById('mezzBody');
+  const list=document.getElementById('calList');
   try{
     const d=await jget(API+'/mezzanine');
+    _mezzData=d;
+    CAL_OUTLOOK=d.monthly_outlook||null;
+    CAL_ITEMS=(((d.calendar&&d.calendar.items)||[]).map((it,i)=>{it._idx=i;return it;}));
+    // 메자닌 종목 현황(항목1 병존)
     const m=d.moneyness_summary||{},di=d.dilution_summary||{};
-    const sum=`<div class="mezz-sum"><span>in-the-money ${m.in||0}</span>`+
-      `<span>out-of-the-money ${m.out||0}</span>`+
-      `<span>희석 최대 ${di.max!=null?Math.round(di.max)+'%':'—'}</span></div>`;
-    const cards=(d.top_holdings||[]).map(mezzCard).join('')||'<div class="mezz-empty">표시할 종목이 없습니다.</div>';
-    body.innerHTML=`<p class="mezz-disc">${esc(d.disclaimer||'')} ${esc(d.note||'')}</p>`+sum+cards;
+    const sum=`<div class="mezz-sum"><span>전환가 위 ${m.in||0}</span>`+
+      `<span>전환가 아래 ${m.out||0}</span>`+
+      `<span>최대 희석 ${di.max!=null?Math.round(di.max)+'%':'—'}</span></div>`;
+    const cards=(d.top_holdings||[]).map(mezzCard).join('');
+    const hold=document.getElementById('mezzHoldings'),head=document.getElementById('mezzHoldHead');
+    if(cards){if(head)head.hidden=false;if(hold)hold.innerHTML=sum+cards;}
+    else{if(head)head.hidden=true;if(hold)hold.innerHTML='';}
+    const disc=document.getElementById('calDisc');
+    if(disc)disc.textContent=(d.disclaimer||'')+(d.note?' '+d.note:'');
+    const todayStr=_ymdLocal(new Date());
+    CAL_YM=todayStr.slice(0,7);
+    if(_itemsOn(todayStr).length){CAL_SEL=todayStr;}
+    else{const fut=_monthItems(CAL_YM).filter(it=>it.date>=todayStr).sort((a,b)=>a.date<b.date?-1:1);CAL_SEL=fut.length?fut[0].date:null;}
+    renderCal();
     _mezzLoaded=true;
-  }catch(e){ body.innerHTML='<div class="mezz-empty">메자닌 데이터를 불러오지 못했습니다.</div>'; }
+  }catch(e){ if(list)list.innerHTML='<div class="mezz-empty">불러오지 못했어요</div>'; }
 }
 function openMezz(){
   const ov=document.getElementById('mezz');if(!ov)return;
@@ -1956,6 +2294,12 @@ async function loadFeed(force){
   finally{btn.disabled=false;}
 }
 function refresh(){loadFeed(true);}
+/* 신규 공시 필(오늘 탭 상단) — 탭하면 관심 피드로 이동 + 상단 정렬 */
+function onNewPill(){
+  const p=document.getElementById('newPill');if(p)p.hidden=true;
+  try{if(window.__miriActivateTab)window.__miriActivateTab('watch');}catch(e){}
+  window.scrollTo({top:0,behavior:prefersReduce()?'auto':'smooth'});
+}
 
 async function addStock(){
   const inp=document.getElementById('addInput');
@@ -2087,6 +2431,7 @@ async function pushCurrentSub(){
   catch(e){return null;}
 }
 function renderPushToggle(){
+  try{syncSettingsPush();}catch(e){}
   const row=document.getElementById('pushRow');if(!row)return;
   // 미지원: iOS 미설치면 설치 안내 1줄, 그 외엔 완전 숨김(우아 폴백).
   if(!PUSH_SUPPORTED){
@@ -2188,6 +2533,8 @@ async function reloadAlertsQuiet(){
     const sigNew=(d.alerts||[]).map(a=>a.rcept_no).sort().join(',');
     const sigCur=(STATE.items||[]).map(a=>a.rcept_no).sort().join(',');
     if(sigNew!==sigCur){
+      const curSet=new Set((STATE.items||[]).map(a=>a.rcept_no));
+      const added=(d.alerts||[]).filter(a=>!curSet.has(a.rcept_no)).length;   // 신규 필 카운트(트리거 UI)
       const prevShown=(typeof FEED_SHOWN==='number')?FEED_SHOWN:0;
       absorb(d);
       /* 재렌더는 1청크(20장)로 리셋됨 — 사용자가 보던 깊이까지 미리 채워야
@@ -2195,6 +2542,8 @@ async function reloadAlertsQuiet(){
       while(FEED_SHOWN<Math.min(prevShown,FEED_FILTERED.length))feedRenderChunk();
       window.scrollTo(0,y);         // 스크롤 유지(신규는 상단 prepend)
       if(typeof showToast==='function')showToast('새 공시 반영됨');
+      if(added>0){const np=document.getElementById('newPill'),npn=document.getElementById('newPillN');
+        if(np&&npn){npn.textContent=added;np.hidden=false;}}   // 오늘 탭 신규 필 노출(새 데이터 있을 때만)
     }
   }catch(e){}
   finally{_quietBusy=false;}
@@ -2389,6 +2738,7 @@ document.addEventListener('click',e=>{
 })();
 
 /* ---------- init ---------- */
+try{initSettings();}catch(e){console.error('initSettings',e);}
 renderGroups();renderChips();   // 로딩 스켈레톤 먼저 노출
 loadWatchlist();                // 진실원본: GET /api/watchlist (X-Device-Id 스코프)
 loadFeed(false);
@@ -2397,6 +2747,22 @@ loadFeed(false);
 try{if(PUSH_SUPPORTED)initPush();}catch(e){}
 /* claim(/?claim=<TOKEN>) 채택 시 1회성 안내 토스트 */
 if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목록에 연결했어요.');}catch(e){}},1300);}
+
+/* ---------- 15-B: 웹 부트 로더 페이드아웃(standalone 전용 · 초기 렌더 완료 시점) ---------- */
+(function(){
+  const bl=document.getElementById('bootloader');if(!bl)return;
+  let done=false;
+  function hide(){
+    if(done)return;done=true;
+    if(prefersReduce()){try{bl.remove();}catch(e){}return;}
+    bl.classList.add('gone');
+    setTimeout(()=>{try{bl.remove();}catch(e){}},450);   // 페이드 후 언마운트
+  }
+  // 초기 렌더 완료(load) 다음 프레임에 페이드 + 네트워크 지연 대비 안전 상한
+  if(document.readyState==='complete')requestAnimationFrame(()=>requestAnimationFrame(hide));
+  else window.addEventListener('load',()=>requestAnimationFrame(hide),{once:true});
+  setTimeout(hide,2500);
+})();
 </script>
 <!-- 5탭 셸 라우터: 인라인 스크립트 전역(STATE·renderFeed·loadMezz·cardHTML 등)과 같은 스코프 공유(classic script, 모듈 아님). 인라인 스크립트 뒤에 로드. -->
 <script src="/app/shell.js"></script>

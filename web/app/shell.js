@@ -3,13 +3,13 @@
    → STATE, FEED_OBSERVER, renderFeed, renderFilter, feedSwap, passFilter, cardHTML,
      attachSegToggle, loadMezz, closeDetail, closeSheet, jget, esc, valPick, WLSTATE 등을
      '맨이름'으로 직접 참조/대입한다(window.X 아님 — let/const 전역은 window 속성이 아니므로).
-   해시 라우터는 '탭 해시(#today/#watch/#ranking/#calendar/#search)'만 소유한다.
+   해시 라우터는 '탭 해시(#today/#watch/#ranking/#calendar/#settings)'만 소유한다.
    종목상세(#detail)는 전역 모달로 자기 pushState 뒤로가기 트랩을 그대로 유지(무접촉). */
 (function(){
   'use strict';
-  var TABS=['today','watch','ranking','calendar','search'];
+  var TABS=['today','watch','ranking','calendar','settings'];
   var TAB_SET={}; TABS.forEach(function(t){TAB_SET[t]=true;});
-  var TAB_TITLES={today:null,watch:'관심종목',ranking:'랭킹',calendar:'캘린더',search:'검색'};
+  var TAB_TITLES={today:null,watch:'관심종목',ranking:'랭킹',calendar:'캘린더',settings:'설정'};
   window.CUR_TAB='today';
 
   var _todayLoaded=false;
@@ -32,11 +32,29 @@
     if(n>0){ el.textContent=(n>99?'99+':String(n)); el.hidden=false; }
     else { el.hidden=true; }
   }
-  /* 오늘 배지=밤사이 신규(is_new) · 관심 배지=관심종목 신규(is_new&&is_watched). 신규 API 불요. */
+  /* ── 확인('seen') 집합: 관심 신규 이슈를 확인(알림함 진입/상세 오픈)하면 rcept_no를
+        localStorage('miri-seen')에 영속 → 관심 빨간점에서 제외(소멸). NEW=백엔드 is_new(최근3일창). ── */
+  var SEEN_KEY='miri-seen';
+  function _seenSet(){ try{var v=JSON.parse(localStorage.getItem(SEEN_KEY)||'[]');return (v&&v.length)?v:[];}catch(e){return [];} }
+  function _seenHas(set,id){ return id!=null&&set.indexOf(String(id))>=0; }
+  function _seenSave(set){ try{localStorage.setItem(SEEN_KEY,JSON.stringify(set.slice(-500)));}catch(e){} } // 최근 500건 상한(무한증식 방지)
+  // 관심 신규(미확인)를 seen 처리. codeFilter 주면 해당 종목만(상세 오픈), 없으면 전부(알림함 진입).
+  function markSeenWatchedNew(codeFilter){
+    var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
+    var set=_seenSet(), changed=false;
+    items.forEach(function(a){
+      if(codeFilter!=null&&String(a.stock_code)!==String(codeFilter))return;
+      if(a.is_new&&a.is_watched&&a.rcept_no&&!_seenHas(set,a.rcept_no)){ set.push(String(a.rcept_no)); changed=true; }
+    });
+    if(changed)_seenSave(set);
+    return changed;
+  }
+  /* 오늘 배지=밤사이 신규(is_new) · 관심 배지=관심 신규 중 '미확인'만(is_new&&is_watched&&!seen). 신규 API 불요. */
   function updateTabBadges(){
     var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
+    var seen=_seenSet();
     var newCnt=items.filter(function(a){return a.is_new;}).length;
-    var inboxCnt=items.filter(function(a){return a.is_new&&a.is_watched;}).length;
+    var inboxCnt=items.filter(function(a){return a.is_new&&a.is_watched&&!_seenHas(seen,a.rcept_no);}).length;
     setBadge('badgeToday',newCnt);
     setBadge('badgeWatch',inboxCnt);
     // 오늘 탭이 활성인데 /api/today 미확정이면 폴백 브리핑을 최신 STATE.items 로 재구성
@@ -99,6 +117,8 @@
       var on=b.dataset.seg===WATCH_SEG; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
     STATE.filter=(WATCH_SEG==='inbox')?'inbox':'watch';
+    // 알림함 진입 = 신규 이슈 확인 → seen 처리 후 관심 빨간점 갱신(소멸)
+    if(WATCH_SEG==='inbox'&&markSeenWatchedNew())updateTabBadges();
     if(typeof renderFilter==='function')renderFilter();
     function doRender(){
       if(typeof renderFeed==='function')renderFeed();
@@ -124,7 +144,7 @@
     return null;
   }
   function rankRowHTML(it,i){
-    var rank=it.rank||(i+1);
+    var rank=i+1;   // 표시 순번 = 화면(정렬 후) 위치. it.rank(원본 disc 순위) 쓰면 정렬 뷰에서 1,5,3… 뒤섞임(결함C)
     var code=String(it.stock_code||'');
     var v=rankValue(it), valHTML='';
     if(v!=null){ var cls=v>0?'up':(v<0?'down':'flat'); valHTML='<span class="rk-val '+cls+' num">'+(v>0?'+':'')+v.toFixed(1)+'%</span>'; }
@@ -152,6 +172,12 @@
   /* ---------- ④ 캘린더 (메자닌 lazy-load, #mezzBody 승격) ---------- */
   function loadCalendar(){ if(typeof loadMezz==='function')loadMezz(); }
 
+  /* ---------- ⑤ 설정 — no-op (CTO 정정) ----------
+     설정 컨트롤 바인딩(initSettings/applyTheme·miri-starttab 저장 등)은 frontend가 index.html에서
+     소유(index.html 함수 의존 + #p-settings 마크업 소유). shell.js는 패널 show만 담당(그건 activateTab의
+     .tabpanel 토글이 이미 처리) → 여기선 이중바인딩 방지 위해 아무것도 하지 않는다. 분기만 유지. */
+  function loadSettings(){ /* no-op: 정적 패널, 바인딩은 frontend(index.html) 소유 */ }
+
   /* ---------- 탭 전환 ---------- */
   function activateTab(name){
     if(!TAB_SET[name])name='today';
@@ -174,12 +200,16 @@
     else if(name==='watch')applyWatchSeg();
     else if(name==='ranking')loadRanking();
     else if(name==='calendar')loadCalendar();
+    else if(name==='settings')loadSettings();
   }
   window.__miriActivateTab=activateTab;
 
   function applyRoute(){
     var raw=(location.hash||'').replace(/^#/,'');
-    activateTab(TAB_SET[raw]?raw:'today');
+    if(raw){ activateTab(TAB_SET[raw]?raw:'today'); return; }  // 명시 해시(딥링크) 우선
+    // 빈 해시 = 앱 시작 → 설정 시작탭(miri-starttab, frontend가 저장) 존중. 유효 TAB만, 아니면 today.
+    var start=''; try{start=localStorage.getItem('miri-starttab')||'';}catch(e){}
+    activateTab(TAB_SET[start]?start:'today');
   }
 
   /* ---------- 바인딩 ---------- */
@@ -204,7 +234,77 @@
     renderRanking();
   });
 
+  // 상세 오픈 = 해당 종목 신규 이슈 확인 → seen 처리(관심 빨간점 소멸). openDetail(index.html) 무접촉,
+  // capture 리스너로 병렬 관측만(중복닫힘/충돌 없음). data-detail = stock_code.
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('[data-detail]'); if(!t)return;
+    if(markSeenWatchedNew(t.dataset.detail))updateTabBadges();
+  },true);
+
+  /* ── 시트 뒤로가기 트랩(항목7·CTO정정3): openSheet(index.html)는 history를 안 쌓아
+        back이 밑의 탭 엔트리를 소비(탭이동 유발)한다. 시트가 '열릴 때' 동일-해시 가드
+        엔트리를 대신 push해 → back=시트만 닫힘(탭 유지). detail/mezz는 자체 트랩 보유 → 무접촉.
+        __miriP 플래그로 팝-경유(닫힘 이미 소비) vs 수동닫힘(X/백드롭/Esc, 엔트리 되돌림) 구분. ── */
+  try{
+    var _mo=new MutationObserver(function(muts){
+      for(var i=0;i<muts.length;i++){
+        var t=muts[i].target;
+        if(!t||t.nodeType!==1||!t.classList||!t.classList.contains('sheet'))continue;
+        var open=!t.hasAttribute('hidden');
+        if(open&&!t.__miriP){                    // 시트 open 감지 → 대응 엔트리 1개 push(해시 불변=탭유지)
+          t.__miriP=true; try{history.pushState({miriSheet:1},'');}catch(_){}
+        }else if(!open&&t.__miriP){               // 시트 close 감지
+          t.__miriP=false;
+          if(!t.__miriPop){ try{history.back();}catch(_){} }  // 수동닫힘 → 쌓아둔 엔트리 되돌림(detail 패턴)
+          t.__miriPop=false;
+        }
+      }
+    });
+    _mo.observe(document.body,{attributes:true,attributeFilter:['hidden'],subtree:true});
+  }catch(_){}
+
+  /* ================= 안드로이드/TWA 하드웨어 뒤로가기 (항목7 · P0 재설계) =================
+     [불변] 종료 아밍/토스트는 '오직' 뒤로가기가 앱 최하단(부트) 경계를 소비할 때만.
+     탭 전진클릭·탭↔탭 back 은 절대 arm 안 함 — 이를 '기전 무관'하게 보장하려고
+     '전용 종료센티넬(부트 엔트리)'에 착지했을 때만 arm 한다(기법B). 부트 엔트리는 boot 시
+     replaceState 로 {miriBoot} 태깅 → 이 상태는 '뒤로가기로 최하단에 도달'해야만 popstate
+     e.state 로 관측된다. 탭 내비가 만드는 엔트리는 null 또는 {miriRoot}/{miriSheet} 이라
+     e.state.miriBoot 로는 절대 안 옴 → 전진클릭이 유발하는 popstate(하네스 특성)도 오발화 0.
+     핸들러 순서: (a)#detail/#mezz=자체 리스너 → 무개입. (b)시트=자체리스너無 → 최상단 직접 닫기.
+     (c)부트경계(miriBoot)+루트 착지 시에만 double-back-to-exit. 그 외 popstate=무개입(arm 절대 없음). */
+  function _rootTab(){ var r=(location.hash||'').replace(/^#/,''); return TAB_SET[r]?r:'today'; }
+  var _exitArmed=false,_exitT=null;
+  window.addEventListener('popstate',function(e){
+    // (a) 상세/메자닌 = 자체 리스너 보유 → 이중닫힘 금지, 개입 안 함
+    var dv=document.getElementById('detail'); if(dv&&!dv.hidden)return;
+    var mz=document.getElementById('mezz');   if(mz&&!mz.hidden)return;
+    // (b) 열린 시트(자체 리스너 없음) → 최상단만 직접 닫고 종료. __miriPop=true 로 옵저버 close-branch의 back 억제
+    var sheets=document.querySelectorAll('.sheet:not([hidden])');
+    if(sheets.length){
+      var top=sheets[sheets.length-1];
+      top.__miriPop=true;                       // 이 닫힘은 back이 이미 엔트리 소비함 → 옵저버는 history.back 하지 말 것
+      if(typeof closeSheet==='function')closeSheet(top.id); else top.hidden=true;
+      return;
+    }
+    // (c) 종료 경계: 부트 센티넬(miriBoot)에 루트에서 착지했을 때만. 탭 전진/back 엔트리(null·miriRoot)는 여기 못 옴 → 오발화 0
+    if(!(e&&e.state&&e.state.miriBoot)||_rootTab()!=='today')return;
+    if(_exitArmed){                             // 2차 back = 실제 종료
+      _exitArmed=false; if(_exitT){clearTimeout(_exitT);_exitT=null;}
+      try{history.back();}catch(_){}             // TWA: 부트 엔트리 이탈 → 액티비티 종료
+      return;
+    }
+    _exitArmed=true;                            // 1차 back = 종료 아밍
+    try{history.pushState({miriRoot:true},'');}catch(_){}   // 가드 재-push(첫 back 소비, pos=가드 복귀). state≠miriBoot 라 재-arm 안 됨
+    if(typeof showToast==='function')showToast('한 번 더 누르면 종료');
+    _exitT=setTimeout(function(){_exitArmed=false;_exitT=null;},2000);
+  });
+
+  // 부트(최하단) 엔트리를 종료 센티넬로 태깅(replaceState). shell.js 는 index.html 인라인 이후 로드되므로
+  // (initDeviceId 의 replaceState 포함) 마지막 태깅이 유효.
+  try{history.replaceState({miriBoot:true},'');}catch(_){}
   window.addEventListener('hashchange',applyRoute);
-  applyRoute();               // 초기 해시 반영(빈 해시 → today, 딥링크 #watch 등 존중)
+  applyRoute();               // 초기 해시 반영(빈 해시 → 시작탭 miri-starttab, 딥링크 #watch 등 존중)
+  // 루트(today) 진입 시에만 작업 가드 1개 push(첫 back이 즉시 부트경계로 안 떨어지게 완충). 딥링크 비루트는 미설치.
+  if(_rootTab()==='today'){ try{history.pushState({miriRoot:true},'');}catch(_){} }
   updateTabBadges();          // 부팅 시 이미 absorb 됐을 수 있음(멱등)
 })();

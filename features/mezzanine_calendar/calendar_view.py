@@ -113,3 +113,54 @@ def build_holdings(records: List["MezzRecord"], ref_date: date = None):
         out.append(a)
     out.sort(key=lambda x: (-x["active_shares"], -x["total_shares"]))
     return out
+
+
+def build_monthly_outlook(calendar_items, ref_date: date = None):
+    """이번 달 / 다음 달 예상 전환·행사 개시 공시 건수 집계(순수함수, DART 0콜).
+
+    근거(집계 소스): build_calendar(records, upcoming_only=True) 가 만든
+    calendar_items 를 재사용한다. 각 item["date"] 는 'YYYY-MM-DD' 형식의
+    전환/행사(청구) 개시일이다. 이미 메모리에 있는 리스트만 순회하므로
+    신규 DART/시세 콜은 0.
+
+    집계 로직:
+      - month              : ref_date(기본 today)의 'YYYY-MM'
+      - count              : item["date"] 의 연-월이 이번 달인 item 수
+      - by_type            : 이번 달 item 을 sec_type(CB/BW/EB)별로 카운트
+      - next_month.month   : 다음 달 'YYYY-MM'
+      - next_month.count   : item["date"] 의 연-월이 다음 달인 item 수
+
+    주의: calendar_items 가 upcoming_only=True 로 생성됐다면 이번 달 카운트는
+    ref_date '이후' 개시분만 포함한다(이미 지난 이번 달 개시건은 build_calendar
+    단계에서 제외됨). 과거 포함 전체월 집계가 필요하면 upcoming_only=False 로
+    만든 items 를 넘기면 된다.
+
+    반환: {"month":str, "count":int, "by_type":{"CB":int,"BW":int,"EB":int},
+           "next_month":{"month":str, "count":int}}
+    """
+    ref = ref_date or date.today()
+    cur_ym = f"{ref.year:04d}-{ref.month:02d}"
+    if ref.month == 12:
+        nxt_y, nxt_m = ref.year + 1, 1
+    else:
+        nxt_y, nxt_m = ref.year, ref.month + 1
+    nxt_ym = f"{nxt_y:04d}-{nxt_m:02d}"
+
+    by_type = {"CB": 0, "BW": 0, "EB": 0}
+    cur_count = 0
+    nxt_count = 0
+    for it in calendar_items:
+        ym = (it.get("date") or "")[:7]  # 'YYYY-MM'
+        if ym == cur_ym:
+            cur_count += 1
+            st = it.get("sec_type")
+            if st in by_type:
+                by_type[st] += 1
+        elif ym == nxt_ym:
+            nxt_count += 1
+    return {
+        "month": cur_ym,
+        "count": cur_count,
+        "by_type": by_type,
+        "next_month": {"month": nxt_ym, "count": nxt_count},
+    }

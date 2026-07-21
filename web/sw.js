@@ -1,7 +1,7 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v14';   // v13→v14: 5탭 셸 재편(index.html 구조 변경 + /app/shell.js 추가)
+const CACHE = 'miri-v15';   // v14→v15: shell.js 개정(항목7 뒤로가기·검색→설정 라우팅·랭킹순번·관심배지 seen). shell.js는 cache-first 정적자산이라 버전 bump 없으면 구버전 고착
 const DATA_CACHE = 'miri-data-v1';   // /api/alerts 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
 const SHELL = ['/', '/index.html', '/manifest.json', '/app/shell.js', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png'];
 

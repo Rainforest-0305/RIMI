@@ -283,6 +283,27 @@ def _fmt_date(rcept_dt: str) -> str:
     return s
 
 
+# NEW 배지 recency 창(공시일 rcept_dt 기준). '최근 3일' = 공시일 포함 오늘·어제·그제.
+_NEW_WINDOW_DAYS = 3
+
+
+def _is_recent(rcept_dt: str, days: int = _NEW_WINDOW_DAYS) -> bool:
+    """rcept_dt(YYYYMMDD=공시일)가 오늘 기준 최근 `days`일 이내인지(공시일 포함).
+
+    delta = today - 공시일(일수). 0<=delta<days → True(예: days=3 이면 0,1,2일 전).
+    파싱 실패/미래일자는 False. DART 콜 0(로컬 계산).
+    """
+    s = (rcept_dt or "").strip()
+    if len(s) != 8 or not s.isdigit():
+        return False
+    try:
+        d = datetime.strptime(s, "%Y%m%d").date()
+    except ValueError:
+        return False
+    delta = (datetime.now().date() - d).days
+    return 0 <= delta < days
+
+
 # 실제 주가 영향 테마만 노출(지분변동·소유상황·대량보유·정정단독·기타공시 = 노이즈로 제외)
 IMPACT_TAGS = {"유상증자", "무상증자", "전환사채", "자사주", "최대주주변경",
                "주식소각", "배당", "실적", "합병분할", "공급계약",
@@ -452,7 +473,10 @@ def _build_feed(force: bool = False) -> dict:
                 "impact": _attach_regime(impact.impact_for_tags(res["tags"]),
                                          res["tags"]),
                 "url": dart_poll.dart_url(rno),
-                "is_new": rno not in seen,
+                # NEW 배지 = 미열람(seen 밖) AND 공시일 최근 3일 이내(_NEW_WINDOW_DAYS).
+                # 3일창 정합: seen 회전(SEEN_MAX)으로 오래된 미열람건이 NEW로 새는 것 차단.
+                # (mobile 이 기기별 seen-state 를 추가로 담당 — 서버는 recency 상한만 보증.)
+                "is_new": (rno not in seen) and _is_recent(it.get("rcept_dt", "")),
                 # is_watched 는 기기별 → 프론트가 계산. 전역 피드엔 항상 False.
                 "is_watched": False,
             })
@@ -798,6 +822,9 @@ def _build_mezzanine_payload(top_n: int = 5, upcoming_only: bool = True) -> dict
     calendar, skipped = _mcal.build_calendar(records, upcoming_only=upcoming_only)
     holdings = _mcal.build_holdings(records)
     enriched = _menr.enrich_top_holdings(holdings, top_n=top_n)
+    # 이번 달/다음 달 예상 개시 건수(순수 in-memory 집계, DART 0콜).
+    # 근거=위 calendar(전체, truncate 전)를 연-월 그룹핑. build_monthly_outlook 주석 참조.
+    monthly_outlook = _mcal.build_monthly_outlook(calendar)
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "dart_live_calls": 0,
@@ -809,6 +836,7 @@ def _build_mezzanine_payload(top_n: int = 5, upcoming_only: bool = True) -> dict
             "count_total": len(calendar),
             "skipped_no_start_date": skipped,
         },
+        "monthly_outlook": monthly_outlook,
         "moneyness_summary": enriched["moneyness_dist"],
         "tranche_moneyness_summary": enriched["tranche_moneyness_dist"],
         "dilution_summary": enriched["dilution_stats"],
@@ -1480,6 +1508,57 @@ def _today_feed_builder():
     return _tb
 
 
+def _curation_windows_valid(windows) -> bool:
+    """windows(d1/w1/m1) 중 적어도 한 창에 숫자 raw_avg 또는 n 이 있으면 유효(True).
+    피드 알럿 impact(impact_for_tags→status='ok')와 동형 판정. 진짜 데이터 부재
+    (windows 비었거나 전부 무효)는 False → '집계 중' 유지(DoD: 집계중은 실제 부재만)."""
+    if not isinstance(windows, dict) or not windows:
+        return False
+    for w in windows.values():
+        if not isinstance(w, dict):
+            continue
+        for k in ("raw_avg", "n"):
+            v = w.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return True
+    return False
+
+
+def _normalize_curation_items(data: dict) -> dict:
+    """SEAM 후처리(app.py 격리 정규화 — build.py/daily_curation.py 무수정).
+
+    [13-a] build_curation_fallback 산출 impact 는 grade/confidence/windows 만 있고
+      status 키가 없어(keys=['confidence','grade','windows']) 프론트 게이트
+      (imp.status!=='ok')가 전부 '⏳ 집계 중'으로 폴백된다. windows 가 유효하면
+      피드 알럿과 동형으로 status='ok' 를 부착(진짜 부재는 손대지 않음).
+    [13-b] 기재정정(report_nm 에 '정정' 포함) 공시를 비정정 뒤로 안정정렬(소비측,
+      daily_curation._score 시그니처 불변). 정렬 후 rank 만 표시순으로 재부여.
+
+    스키마 하위호환: status 추가·정렬만, 키 제거 없음. items 없으면 no-op."""
+    if not isinstance(data, dict):
+        return data
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        return data
+    # [13-a] windows 유효 → status='ok' 복원(알럿과 동형). 무효/부재는 그대로.
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        imp = it.get("impact")
+        if isinstance(imp, dict) and imp.get("status") != "ok" \
+                and _curation_windows_valid(imp.get("windows")):
+            imp["status"] = "ok"
+    # [13-b] 기재정정 후순위(안정정렬: 비정정 상대순서 보존, 정정만 뒤로).
+    def _is_correction(it):
+        return 1 if ("정정" in str((it or {}).get("report_nm") or "")) else 0
+    items = sorted(items, key=_is_correction)
+    for i, it in enumerate(items, 1):        # 표시순 rank 재부여(중요도값 rank_score 불변)
+        if isinstance(it, dict):
+            it["rank"] = i
+    data["items"] = items
+    return data
+
+
 def _today_curation(alerts=None) -> dict:
     """SEAM(단일 계약점): '오늘 공시 TOP 큐레이션' → CurationItem[] (중요도순).
 
@@ -1498,7 +1577,8 @@ def _today_curation(alerts=None) -> dict:
         if _CURATION_CACHE["data"] is not None and now - _CURATION_CACHE["ts"] < _CURATION_TTL_SEC:
             return _CURATION_CACHE["data"]
     try:
-        data = _today_feed_builder().build_curation_fallback(alerts)
+        data = _normalize_curation_items(
+            _today_feed_builder().build_curation_fallback(alerts))
     except Exception as e:  # noqa: BLE001
         print(f"[today] curation 폴백 실패(무시, 빈 items): {e}")
         if _CURATION_CACHE["data"] is not None:
