@@ -38,29 +38,36 @@
   function _seenSet(){ try{var v=JSON.parse(localStorage.getItem(SEEN_KEY)||'[]');return (v&&v.length)?v:[];}catch(e){return [];} }
   function _seenHas(set,id){ return id!=null&&set.indexOf(String(id))>=0; }
   function _seenSave(set){ try{localStorage.setItem(SEEN_KEY,JSON.stringify(set.slice(-500)));}catch(e){} } // 최근 500건 상한(무한증식 방지)
+  // 관심 여부는 a.is_watched(index.html가 매김, stale/타이밍으로 빈 목록에도 샐 수 있음) 대신 WLSTATE.stocks 에서
+  // 직접 파생(항목17). 빈 워치리스트면 ws 비어 → 관심 카운트 0 보장.
+  function _watchedSet(){
+    var ws={}; (typeof WLSTATE!=='undefined'&&WLSTATE.stocks?WLSTATE.stocks:[]).forEach(function(s){ ws[String(s.stock_code)]=1; });
+    return ws;
+  }
   // 관심 신규(미확인)를 seen 처리. codeFilter 주면 해당 종목만(상세 오픈), 없으면 전부(알림함 진입).
   function markSeenWatchedNew(codeFilter){
     var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
-    var set=_seenSet(), changed=false;
+    var ws=_watchedSet(), set=_seenSet(), changed=false;
     items.forEach(function(a){
       if(codeFilter!=null&&String(a.stock_code)!==String(codeFilter))return;
-      if(a.is_new&&a.is_watched&&a.rcept_no&&!_seenHas(set,a.rcept_no)){ set.push(String(a.rcept_no)); changed=true; }
+      if(a.is_new&&a.stock_code&&ws[String(a.stock_code)]&&a.rcept_no&&!_seenHas(set,a.rcept_no)){ set.push(String(a.rcept_no)); changed=true; }
     });
     if(changed)_seenSave(set);
     return changed;
   }
-  /* 오늘 배지=밤사이 신규(is_new) · 관심 배지=관심 신규 중 '미확인'만(is_new&&is_watched&&!seen). 신규 API 불요. */
+  /* 오늘 배지=밤사이 신규(is_new) · 관심 배지=관심(WLSTATE 직접파생) 신규 중 '미확인'만(!seen). 신규 API 불요. */
   function updateTabBadges(){
     var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
-    var seen=_seenSet();
+    var seen=_seenSet(), ws=_watchedSet();
     var newCnt=items.filter(function(a){return a.is_new;}).length;
-    var inboxCnt=items.filter(function(a){return a.is_new&&a.is_watched&&!_seenHas(seen,a.rcept_no);}).length;
+    var inboxCnt=items.filter(function(a){return a.is_new&&a.stock_code&&ws[String(a.stock_code)]&&!_seenHas(seen,a.rcept_no);}).length;
     setBadge('badgeToday',newCnt);
     setBadge('badgeWatch',inboxCnt);
     // 오늘 탭이 활성인데 /api/today 미확정이면 폴백 브리핑을 최신 STATE.items 로 재구성
     if(window.CUR_TAB==='today'&&!_todayLoaded)loadToday(true);
   }
   window.updateTabBadges=updateTabBadges;
+  window.__miriRenderToday=function(){ loadToday(true); };   // 항목16-b: valmode 변경 시 오늘 큐레이션 강제 재렌더(frontend index.html:1860 훅)
 
   function markWatched(arr){
     var ws={}; (typeof WLSTATE!=='undefined'?(WLSTATE.stocks||[]):[]).forEach(function(s){ws[String(s.stock_code)]=1;});

@@ -575,6 +575,14 @@
       <button class="newpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
       <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침">↻</button>
     </div>
+    <div class="valwrap">
+      <span class="vlab">대표값</span>
+      <div class="valmode" id="valmodeToday" role="tablist" aria-label="대표값 선택">
+        <button role="tab" data-v="avg" aria-selected="false">평균값</button>
+        <button role="tab" data-v="med" aria-selected="false">중앙값</button>
+        <button role="tab" data-v="car" aria-selected="true">보정값</button>
+      </div>
+    </div>
     <div id="todayBody" class="today-body">
       <div class="empty" id="todayLoading">오늘의 브리핑을 불러오는 중…</div>
     </div>
@@ -956,6 +964,7 @@
   .tabitem.on .tl{font-weight:800}
   .tabitem .badge{position:absolute;top:7px;left:calc(50% + 8px);min-width:16px;height:16px;padding:0 4px;
     border-radius:9px;background:var(--up);color:#fff;font-size:9.5px;font-weight:800;display:grid;place-items:center;line-height:1}
+  .tabitem .badge[hidden]{display:none}   /* 17-b: author display:grid가 UA hidden을 눌러 숫자없는 빨간점 상시노출되던 버그 수정 */
   .tabitem:focus-visible{outline:2px solid var(--blue);outline-offset:-3px;border-radius:12px}
   /* bar-btns: 탭 셸에선 비고정(하단 네비와 충돌 방지) */
   .tabpanel .bar-btns{position:static;background:none;padding:6px 0 2px}
@@ -1838,19 +1847,23 @@ function setFilter(f){STATE.filter=f;renderFilter();feedSwap(renderFeed);}
 
 /* ---------- 대표값 3-way 토글(전역) ---------- */
 function syncValmode(){
-  document.querySelectorAll('#valmode button').forEach(b=>
+  document.querySelectorAll('.valmode button').forEach(b=>   // 관심탭(#valmode)+오늘탭(#valmodeToday) 동시 하이라이트
     b.setAttribute('aria-selected', String(b.dataset.v===VALMODE)));
 }
 function setValmode(v){
   if(v===VALMODE)return;
   VALMODE=v;localStorage.setItem('miri-valmode2',v);
   syncValmode();feedSwap(renderFeed);   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
+  // 오늘 탭이 활성이면 큐레이션 카드도 새 대표값으로 재렌더(renderToday=shell.js 소유 → 노출 훅 경유).
+  // 주의: __miriActivateTab('today')는 _todayLoaded 가드로 재렌더 안 되고 scrollTo(0,0) 점프만 유발 →
+  //       정식 재렌더 훅(window.__miriRenderToday, mobile 노출요청)만 호출. 없으면 다음 today 로드에 수렴.
+  const pt=document.getElementById('p-today');
+  if(pt&&pt.classList.contains('on')&&typeof window.__miriRenderToday==='function')window.__miriRenderToday();
 }
 (function(){
-  const el=document.getElementById('valmode');
-  if(el)el.addEventListener('click',e=>{
+  document.querySelectorAll('.valmode').forEach(el=>el.addEventListener('click',e=>{
     const b=e.target.closest('button[data-v]');if(b)setValmode(b.dataset.v);
-  });
+  }));
   syncValmode();
 })();
 

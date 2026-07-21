@@ -1524,7 +1524,7 @@ def _curation_windows_valid(windows) -> bool:
     return False
 
 
-def _normalize_curation_items(data: dict) -> dict:
+def _normalize_curation_items(data: dict, alerts=None) -> dict:
     """SEAM 후처리(app.py 격리 정규화 — build.py/daily_curation.py 무수정).
 
     [13-a] build_curation_fallback 산출 impact 는 grade/confidence/windows 만 있고
@@ -1533,13 +1533,24 @@ def _normalize_curation_items(data: dict) -> dict:
       피드 알럿과 동형으로 status='ok' 를 부착(진짜 부재는 손대지 않음).
     [13-b] 기재정정(report_nm 에 '정정' 포함) 공시를 비정정 뒤로 안정정렬(소비측,
       daily_curation._score 시그니처 불변). 정렬 후 rank 만 표시순으로 재부여.
+    [16-a] build_curation_fallback 이 소스 알럿의 scale_eligible 을 드롭 → 큐레이션
+      카드에 '📏 규모로 보기' 버튼(hasScale=!!a.scale_eligible) 미노출. 소스 알럿을
+      rcept_no 로 매칭해 scale_eligible 을 동형 복원(피드/랭킹과 동일 플래그).
+      매칭 실패/부재는 False(프론트 게이트 안전). daily_curation.py 무수정.
 
-    스키마 하위호환: status 추가·정렬만, 키 제거 없음. items 없으면 no-op."""
+    스키마 하위호환: status/scale_eligible 추가·정렬만, 키 제거 없음. items 없으면 no-op."""
     if not isinstance(data, dict):
         return data
     items = data.get("items")
     if not isinstance(items, list) or not items:
         return data
+    # [16-a] 소스 알럿 rcept_no -> scale_eligible 맵(알럿엔 이미 산출됨: app.py _build_feed).
+    scale_by_rno = {}
+    for a in (alerts or []):
+        if isinstance(a, dict):
+            rno = str(a.get("rcept_no") or "")
+            if rno:
+                scale_by_rno[rno] = bool(a.get("scale_eligible"))
     # [13-a] windows 유효 → status='ok' 복원(알럿과 동형). 무효/부재는 그대로.
     for it in items:
         if not isinstance(it, dict):
@@ -1548,6 +1559,9 @@ def _normalize_curation_items(data: dict) -> dict:
         if isinstance(imp, dict) and imp.get("status") != "ok" \
                 and _curation_windows_valid(imp.get("windows")):
             imp["status"] = "ok"
+        # [16-a] scale_eligible 동형 복원(소스 알럿 우선, 매칭 실패 시 False).
+        rno = str(it.get("rcept_no") or "")
+        it["scale_eligible"] = scale_by_rno.get(rno, bool(it.get("scale_eligible")))
     # [13-b] 기재정정 후순위(안정정렬: 비정정 상대순서 보존, 정정만 뒤로).
     def _is_correction(it):
         return 1 if ("정정" in str((it or {}).get("report_nm") or "")) else 0
@@ -1578,7 +1592,7 @@ def _today_curation(alerts=None) -> dict:
             return _CURATION_CACHE["data"]
     try:
         data = _normalize_curation_items(
-            _today_feed_builder().build_curation_fallback(alerts))
+            _today_feed_builder().build_curation_fallback(alerts), alerts)
     except Exception as e:  # noqa: BLE001
         print(f"[today] curation 폴백 실패(무시, 빈 items): {e}")
         if _CURATION_CACHE["data"] is not None:
