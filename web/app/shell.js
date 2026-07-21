@@ -190,6 +190,9 @@
       var hasSig=items.some(function(it){return rankValue(it)!=null;});
       if(!hasSig)moveBanner='<div class="empty" style="padding:12px 10px">급등락 데이터 준비 중 · 시세 연동 후 제공 <small>(현재는 정렬 불가, 아래는 공시 순서)</small></div>';
     }
+    // 항목39-b: 세그 캡션(rankCap) 갱신 — items 비었을 때도 세팅되게 early-return 전에.
+    var cap=document.getElementById('rankCap');
+    if(cap)cap.textContent = RANK_SEG==='disc'?'오늘 반응 많은 공시 순' : RANK_SEG==='move'?(hasSig?'전일 대비 등락률 순':'') : '';
     if(!items.length){
       host.innerHTML='<div class="empty" style="padding:30px 10px">랭킹 집계 준비중 — 공시 반응 랭킹이 곧 제공됩니다.</div>';
       return;
@@ -273,7 +276,9 @@
   });
   var rseg=document.getElementById('rankSeg');
   if(rseg)rseg.addEventListener('click',function(e){
-    var b=e.target.closest('button[data-rseg]'); if(!b||b.disabled)return;
+    var b=e.target.closest('button[data-rseg]'); if(!b)return;
+    // 항목39-a: 준비중 세그(aria-disabled)는 비활성 무반응 대신 토스트로 상태 안내
+    if(b.getAttribute('aria-disabled')==='true'){ if(typeof showToast==='function')showToast('화제 랭킹은 준비 중이에요'); return; }
     RANK_SEG=b.dataset.rseg;
     rseg.querySelectorAll('button').forEach(function(x){var on=x.dataset.rseg===RANK_SEG;x.classList.toggle('on',on);x.setAttribute('aria-selected',String(on));});
     renderRanking();
