@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6157088418081406"
-     crossorigin="anonymous"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<!-- 항목42: charset/viewport 선두. AdSense는 첫 페인트 이후 지연 로드(하단 인라인) — 광고슬롯 없어 조기로드 이득 0, 콜드로드 첫 연결을 동일출처 앱리소스에 우선 -->
 <link rel="icon" type="image/svg+xml" href="icon.svg"/>
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>미리 · MIRI — 미리 알면, 덜 흔들린다.</title>
 <meta name="description" content="코스피·코스닥 신규 공시를 감지해 핵심 요약 + 과거 유사공시의 평균 등락(1일/1주/1개월)과 상승/하락 확률을 보여주는 공시 알림 웹앱.">
 <!-- 공유 프리뷰(OG) 고정 메타 — 정적 SPA라 스크레이퍼는 JS 미실행, head 리터럴만 읽힘. 동적 기업/공시 정보는 여기 못 넣음(앱 내 navigator.share가 담당). -->
@@ -2711,6 +2710,22 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     s.setAttribute('data-domains', location.hostname);   // 자기 도메인만
     document.head.appendChild(s);
   }).catch(function(){});
+})();
+
+/* ---------- 항목42: AdSense 지연 로드(첫 페인트·초기 데이터 이후) ----------
+   광고슬롯(ins.adsbygoogle) 미배치라 조기 로드 이득 0. async였으나 head 최상단이라
+   콜드로드 첫 아웃바운드 연결이 3rd-party로 감 → idle/load 후 주입으로 동일출처 우선.
+   pub-id·crossorigin 보존 → 광고·사이트검증 기능 유지(Google는 JS 렌더링). */
+(function(){
+  var loaded=false;
+  function loadAds(){
+    if(loaded)return;loaded=true;
+    var s=document.createElement('script');s.async=true;s.crossOrigin='anonymous';
+    s.src='https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6157088418081406';
+    document.head.appendChild(s);
+  }
+  if('requestIdleCallback' in window){requestIdleCallback(loadAds,{timeout:3500});}
+  else{window.addEventListener('load',function(){setTimeout(loadAds,1200);});}
 })();
 
 /* ---------- 베타 대기자(waitlist) 등록 ---------- */

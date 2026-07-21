@@ -1,12 +1,26 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v16';   // v15→v16: manifest.json 테마색(#0061ff) + shell.js 관심배지 WLSTATE 직접파생(항목17). SHELL precache 정적자산이라 bump 없으면 구색/구셸 고착
-const DATA_CACHE = 'miri-data-v1';   // /api/alerts 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
-const SHELL = ['/', '/index.html', '/manifest.json', '/app/shell.js', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png'];
+const CACHE = 'miri-v17';   // v16→v17(항목42): 앱셸 precache 확장(splash 11종)+읽기API SWR 런타임 캐시. SHELL precache 정적자산이라 bump 없으면 구셸/구스플래시 고착
+const DATA_CACHE = 'miri-data-v1';   // 읽기 API(/api/alerts·today·ranking·mezzanine) 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
+/* 41-a iOS 스플래시(11종) — 재방문·오프라인 즉시 렌더용 precache */
+const SPLASH = [
+  '/splash/splash-640x1136.png', '/splash/splash-750x1334.png', '/splash/splash-828x1792.png',
+  '/splash/splash-1125x2436.png', '/splash/splash-1170x2532.png', '/splash/splash-1179x2556.png',
+  '/splash/splash-1206x2622.png', '/splash/splash-1242x2688.png', '/splash/splash-1284x2778.png',
+  '/splash/splash-1290x2796.png', '/splash/splash-1320x2868.png'
+];
+const SHELL = ['/', '/index.html', '/manifest.json', '/app/shell.js',
+  '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png',
+  '/apple-touch-icon.png'].concat(SPLASH);
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 개별 add + catch: 스플래시 1종이 없어도 install 이 브릭되지 않게(구셸 고착 방지, 가드레일③)
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {}))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -51,16 +65,39 @@ async function swrAlerts(request) {
   return new Response(JSON.stringify({ alerts: [], offline: true, errors: [] }),
     { status: 200, headers: { 'Content-Type': 'application/json' } });  // 오프라인+캐시없음
 }
+/* 범용 SWR(today·ranking·mezzanine): 캐시 즉시 반환 + 백그라운드 revalidate로 캐시 갱신.
+   alerts 와 달리 변경 notify 불요(폴링 대상 아님) — 다음 진입/재조회에서 갱신본 수렴. */
+async function swrData(request) {
+  const cache = await caches.open(DATA_CACHE);
+  const cached = await cache.match(request);
+  const netP = fetch(request).then((res) => {
+    if (res && res.ok) { cache.put(request, res.clone()).catch(() => {}); }
+    return res;
+  }).catch(() => null);
+  if (cached) { netP.catch(() => {}); return cached; }         // 재방문: 캐시 즉시 표시(+백그라운드 갱신)
+  const res = await netP;
+  if (res) return res;                                          // 최초 방문: 네트워크 대기
+  return new Response(JSON.stringify({ offline: true }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+/* SWR 대상 읽기 API 화이트리스트(개인화 없는 공용 데이터만). watchlist 등은 절대 불포함. */
+const SWR_DATA_PATHS = { '/api/today': 1, '/api/ranking': 1, '/api/mezzanine': 1 };
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;          // Umami 등 외부 트래픽은 SW 미개입
   if (e.request.method !== 'GET') return;              // 등록/삭제(POST/DELETE)는 통과
-  if (url.pathname === '/api/alerts') {                // 피드만 SWR(재방문 즉시표시+오프라인)
+  // ⚠️ 개인화 API는 절대 캐시 금지(가드레일②): watchlist 는 항상 네트워크(no-store)
+  if (url.pathname.startsWith('/api/watchlist')) return;
+  if (url.pathname === '/api/alerts') {                // 피드: SWR + 변경 notify(재방문 즉시표시+오프라인)
     e.respondWith(swrAlerts(e.request));
     return;
   }
-  if (url.pathname.startsWith('/api/')) return;        // 그 외 API는 항상 네트워크(실시간)
+  if (SWR_DATA_PATHS[url.pathname]) {                   // today·ranking·mezzanine: 범용 SWR(캐시 즉시+백그라운드 갱신)
+    e.respondWith(swrData(e.request));
+    return;
+  }
+  if (url.pathname.startsWith('/api/')) return;        // 그 외 API(개인화·기타)는 항상 네트워크(실시간)
   // HTML/내비게이션은 network-first(항상 최신 UI), 실패 시에만 캐시
   const isHTML = e.request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html');
   if (isHTML) {
