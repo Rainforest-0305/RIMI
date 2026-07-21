@@ -66,8 +66,9 @@
     -webkit-font-smoothing:antialiased;line-height:1.5;letter-spacing:-.01em;
     overscroll-behavior-y:none;
     min-height:100dvh;display:flex;justify-content:center;
-    /* 상단 safe-area는 sticky 헤더가 담당(중복 방지). 좌우·하단만 body. */
-    padding:0 15px calc(22px + env(safe-area-inset-bottom, 0px))}
+    /* 상단 safe-area는 sticky 헤더가 담당(중복 방지). 좌우·하단만 body.
+       하단 = 고정 5탭 네비(56px) + 여유 22px + safe-area 만큼 확보(콘텐츠 가림 방지). */
+    padding:0 15px calc(56px + 22px + env(safe-area-inset-bottom, 0px))}
   .num{font-variant-numeric:tabular-nums}
   .app{width:100%;max-width:460px;display:flex;flex-direction:column;gap:11px}
 
@@ -83,8 +84,8 @@
   /* 꼭대기(로고)부터 검색창까지 헤더 블록 전체를 상단 고정. safe-area 위에 스틱. */
   header{position:sticky;top:0;z-index:10;
     /* backdrop-filter 제거: iOS 실기기에서 sticky+blur 조합이 헤더 플리커를 유발
-       (President 리포트 2026-07-19). 불투명도만 살짝 남긴다. */
-    background:color-mix(in srgb,var(--bg) 97%,transparent);
+       (President 리포트 2026-07-19). 완전 불투명 배경으로 스크롤 시 카드 비침 제거. */
+    background:var(--bg);
     transform:translateZ(0);
     padding:calc(env(safe-area-inset-top,0px) + 10px) calc(50vw - 50% + 2px) 6px;
     /* 화면 양끝까지 풀블리드 — 좌우 여백 틈으로 카드가 비치지 않게 */
@@ -200,6 +201,14 @@
   .facts li{display:flex;gap:9px;font-size:13.5px;color:var(--t2);align-items:baseline}
   .facts li::before{content:"";flex:none;width:3px;height:3px;border-radius:50%;background:var(--t4);transform:translateY(-3px)}
   .facts b{color:var(--t1);font-weight:700}
+
+  /* 핵심요약 패널(상세뷰 한정, summary_ui 플래그 on일 때만 렌더). 카드/impact 톤 재사용. */
+  .sumbox{background:var(--card-2);border-radius:14px;padding:11px 12px;margin:0 0 11px;box-shadow:0 0 0 1px var(--line) inset}
+  .sumbox .sl{font-size:11.5px;font-weight:800;color:var(--blue-ink);margin-bottom:8px;letter-spacing:-.01em}
+  .sumlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .sumlist li{display:flex;gap:9px;font-size:13.5px;line-height:1.45;color:var(--t1);align-items:baseline}
+  .sumlist li::before{content:"";flex:none;width:5px;height:5px;border-radius:50%;background:var(--blue);transform:translateY(-1px)}
+  .sumlist b{color:var(--t1);font-weight:800}
 
   .impact{background:var(--card-2);border-radius:16px;padding:10px 11px}
   .il{font-size:11.5px;font-weight:700;color:var(--t3);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -342,7 +351,7 @@
 
   /* ---------- 맨위로 FAB (긴 피드 네비 보조) ---------- */
   .fab{position:fixed;z-index:40;right:max(14px, calc(50vw - 228px));
-    bottom:calc(86px + env(safe-area-inset-bottom, 0px));
+    bottom:calc(56px + 18px + env(safe-area-inset-bottom, 0px));
     width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;
     background:var(--card);color:var(--t1);font-size:19px;line-height:1;
     box-shadow:0 4px 16px rgba(0,0,0,.18),0 0 0 1px var(--line) inset;
@@ -519,18 +528,113 @@
   <button type="button" class="sp-skip" id="spSkip">건너뛰고 시작하기</button>
 </div>
 <div class="app">
+  <!-- 탭 공용 슬림 상단바: 오늘 탭=브랜드행, 그 외=페이지 타이틀(shell.js updateTopbar) -->
   <header>
     <div class="offbar" id="offlineBar" role="status" aria-live="polite" hidden>오프라인 — 마지막 데이터 표시 중</div>
-    <div class="hrow">
+    <div class="hrow" id="topbar">
       <span class="hi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round"><circle cx="7.5" cy="12" r="2.3" fill="#fff" stroke="none"/><path d="M12 7.4 A6 6 0 0 1 12 16.6" stroke-width="2.2"/><path d="M15.7 5.1 A9.2 9.2 0 0 1 15.7 18.9" stroke-width="2.2" opacity=".5"/></svg></span>
       <span class="hnm">MIRI</span>
       <span class="htag">미리 알면, 덜 흔들린다.</span>
       <span class="live"><span class="d"></span>실시간</span>
     </div>
+  </header>
+
+  <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
+  <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="오늘">
+    <div id="todayBody" class="today-body">
+      <div class="empty" id="todayLoading">오늘의 브리핑을 불러오는 중…</div>
+    </div>
+    <div class="social" role="group" aria-label="MIRI 소셜 채널">
+      <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
+         aria-label="MIRI 텔레그램 채널 열기 (새 창)">
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M21.94 4.3 18.5 20.02c-.26 1.15-.94 1.43-1.9.89l-5.24-3.86-2.53 2.43c-.28.28-.51.51-1.05.51l.37-5.3 9.63-8.7c.42-.37-.09-.58-.65-.21L5.13 13.4l-5.13-1.6c-1.11-.35-1.13-1.11.23-1.64L20.5 2.9c.93-.34 1.74.21 1.44 1.4z"/></svg></span>
+        <span class="txt"><span class="t">텔레그램 채널</span><span class="s">실시간 공시 3줄 요약</span></span>
+      </a>
+      <a class="soc-btn x" href="https://x.com/mirialert" target="_blank" rel="noopener noreferrer"
+         aria-label="MIRI X(옛 트위터) 프로필 열기 (새 창)">
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M17.53 3h3.02l-6.6 7.54L21.75 21h-6.09l-4.77-6.23L5.43 21H2.4l7.06-8.07L2.25 3h6.24l4.31 5.7L17.53 3zm-1.06 16.2h1.67L7.6 4.7H5.8l10.67 14.5z"/></svg></span>
+        <span class="txt"><span class="t">X(옛 트위터)</span><span class="s">공시 요약과 업데이트 소식</span></span>
+      </a>
+    </div>
+    <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
+    <section class="wl" aria-labelledby="wlTitle">
+      <h3 id="wlTitle">베타 알림 받기</h3>
+      <p class="wl-sub">정식 오픈과 실시간 공시 알림 기능이 준비되면 가장 먼저 알려드립니다. 대기자 명단에 이메일을 남겨주세요.</p>
+      <form class="wl-form" id="wlForm" novalidate>
+        <input id="wlEmail" type="email" inputmode="email" autocomplete="email"
+               placeholder="이메일 주소" aria-label="이메일 주소" required>
+        <input id="wlTelegram" type="text" autocomplete="off"
+               placeholder="텔레그램 핸들 (선택, 예: @miri)" aria-label="텔레그램 핸들 (선택)">
+        <button type="submit" class="wl-btn" id="wlBtn">알림 받기</button>
+      </form>
+      <div class="wl-msg" id="wlMsg" role="status" aria-live="polite"></div>
+      <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
+    </section>
+    <div class="bar-btns">
+      <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐ 테마</button>
+      <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
+    </div>
+  </section>
+
+  <!-- ============ ② 관심종목 (기존 header 그룹/칩/필터/피드 이설) ============ -->
+  <section class="tabpanel" id="p-watch" role="tabpanel" aria-label="관심종목">
     <div class="wl-grouprow" id="wlGroups" role="tablist" aria-label="관심종목 그룹"></div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
     <div class="pushrow" id="pushRow" hidden></div>
     <div class="formmsg" id="formmsg"></div>
+    <!-- 관심 탭 서브뷰 세그: 관심피드 / 알림함 (신규 API 불요, 클라 재구성) -->
+    <div class="rk-seg" id="watchSeg" role="tablist" aria-label="관심 보기">
+      <button role="tab" data-seg="feed" class="on" aria-selected="true">관심피드</button>
+      <button role="tab" data-seg="inbox" aria-selected="false">알림함</button>
+    </div>
+    <!-- #filter: renderFilter 대상(무변경). 관심 탭에선 세그가 필터를 대신하므로 숨김. -->
+    <div class="filter" id="filter" role="tablist" aria-label="필터" hidden></div>
+    <div class="valwrap">
+      <span class="vlab">대표값</span>
+      <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
+        <button role="tab" data-v="avg" aria-selected="false">평균값</button>
+        <button role="tab" data-v="med" aria-selected="false">중앙값</button>
+        <button role="tab" data-v="car" aria-selected="true">보정값</button>
+      </div>
+    </div>
+    <div id="banner"></div>
+    <div class="feedmeta" id="feedmeta"></div>
+    <div class="feed" id="feed" role="feed" aria-busy="true">
+      <div class="skfeed" id="skfeed" aria-hidden="true">
+        <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+        <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+        <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ③ 랭킹 (GET /api/ranking · cardHTML 재사용) ============ -->
+  <section class="tabpanel" id="p-ranking" role="tabpanel" aria-label="랭킹">
+    <div class="sec-h"><span class="st">공시 반응 랭킹</span><span class="ss">과거 유사공시 통계 기준</span></div>
+    <div class="rk-seg" id="rankSeg" role="tablist" aria-label="랭킹 종류">
+      <button role="tab" data-rseg="disc" class="on" aria-selected="true">공시多</button>
+      <button role="tab" data-rseg="move" aria-selected="false">급등락</button>
+      <button role="tab" data-rseg="buzz" aria-selected="false" disabled title="준비중">화제도</button>
+    </div>
+    <div id="rankBody"><div class="empty">랭킹을 불러오는 중…</div></div>
+    <p class="disc">랭킹은 과거 유사공시 표본 통계 기준 · 미래 수익을 보장하지 않습니다. · 출처: 금융감독원 DART.</p>
+  </section>
+
+  <!-- ============ ④ 캘린더 (메자닌 승격 + 일정 준비중) ============ -->
+  <section class="tabpanel" id="p-calendar" role="tabpanel" aria-label="캘린더">
+    <div class="cal-tabs" id="calTabs" role="tablist" aria-label="캘린더 종류">
+      <button role="tab" data-cseg="mezz" class="on" aria-selected="true">메자닌 전환</button>
+      <button role="tab" data-cseg="earn" aria-selected="false" disabled title="준비중">실적·주총</button>
+      <button role="tab" data-cseg="div" aria-selected="false" disabled title="준비중">배당·상장</button>
+    </div>
+    <div class="sec-h"><span class="st">메자닌(CB·BW·EB) 전환</span><span class="ss">코스피·코스닥</span></div>
+    <div class="detail-body" id="mezzBody">
+      <div class="mezz-loading">불러오는 중…</div>
+    </div>
+  </section>
+
+  <!-- ============ ⑤ 검색 (기존 searchwrap 이설 · 상세는 전역 모달) ============ -->
+  <section class="tabpanel" id="p-search" role="tabpanel" aria-label="검색">
     <div class="searchwrap">
       <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <input id="searchInput" type="search" placeholder="종목 검색 (예: 삼성, 005930) — 공시 보기·관심 담기"
@@ -538,72 +642,32 @@
       <div class="formmsg" id="searchmsg"></div>
       <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
     </div>
-  </header>
-
-  <!-- 필터 행: sticky 제외(검색창까지만 고정). 스크롤 시 함께 올라감. -->
-  <div class="filter" id="filter" role="tablist" aria-label="필터"></div>
-
-  <div id="banner"></div>
-  <div class="feedmeta" id="feedmeta"></div>
-
-  <div class="valwrap">
-    <span class="vlab">대표값</span>
-    <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
-      <button role="tab" data-v="avg" aria-selected="false">평균값</button>
-      <button role="tab" data-v="med" aria-selected="false">중앙값</button>
-      <button role="tab" data-v="car" aria-selected="true">보정값</button>
-    </div>
-  </div>
-  <div class="feed" id="feed" role="feed" aria-busy="true">
-    <div class="skfeed" id="skfeed" aria-hidden="true">
-      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
-      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
-      <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
-    </div>
-  </div>
-
-  <div class="social" role="group" aria-label="MIRI 소셜 채널">
-    <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
-       aria-label="MIRI 텔레그램 채널 열기 (새 창)">
-      <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M21.94 4.3 18.5 20.02c-.26 1.15-.94 1.43-1.9.89l-5.24-3.86-2.53 2.43c-.28.28-.51.51-1.05.51l.37-5.3 9.63-8.7c.42-.37-.09-.58-.65-.21L5.13 13.4l-5.13-1.6c-1.11-.35-1.13-1.11.23-1.64L20.5 2.9c.93-.34 1.74.21 1.44 1.4z"/></svg></span>
-      <span class="txt"><span class="t">텔레그램 채널</span><span class="s">실시간 공시 3줄 요약</span></span>
-    </a>
-    <a class="soc-btn x" href="https://x.com/mirialert" target="_blank" rel="noopener noreferrer"
-       aria-label="MIRI X(옛 트위터) 프로필 열기 (새 창)">
-      <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="#fff"><path d="M17.53 3h3.02l-6.6 7.54L21.75 21h-6.09l-4.77-6.23L5.43 21H2.4l7.06-8.07L2.25 3h6.24l4.31 5.7L17.53 3zm-1.06 16.2h1.67L7.6 4.7H5.8l10.67 14.5z"/></svg></span>
-      <span class="txt"><span class="t">X(옛 트위터)</span><span class="s">공시 요약과 업데이트 소식</span></span>
-    </a>
-  </div>
-
-  <button class="mezz-entry" id="mezzEntry" type="button" aria-label="메자닌 전환 캘린더 열기">
-    <span class="me-ic" aria-hidden="true">🗓️</span>
-    <span class="me-txt"><span class="me-t">메자닌(CB·BW·EB) 전환 캘린더</span>
-      <span class="me-s">전환가 대비 현재가·시총 대비 잠재 희석 미리보기 · 코스피·코스닥</span></span>
-    <span class="me-arw" aria-hidden="true">›</span>
-  </button>
-
-  <p class="disc">대표값 — <b>평균값</b>: 원자료 등락 평균 · <b>중앙값</b>: 원자료 등락 중앙값(이상치 완화) · <b>보정값</b>: 같은 기간 시장대비 초과등락(CAR). 과거 유사공시 표본 통계일 뿐 미래를 보장하지 않습니다. 정보 제공이며 투자 권유가 아닙니다. · 출처: 금융감독원 DART.</p>
-
-  <section class="wl" aria-labelledby="wlTitle">
-    <h3 id="wlTitle">베타 알림 받기</h3>
-    <p class="wl-sub">정식 오픈과 실시간 공시 알림 기능이 준비되면 가장 먼저 알려드립니다. 대기자 명단에 이메일을 남겨주세요.</p>
-    <form class="wl-form" id="wlForm" novalidate>
-      <input id="wlEmail" type="email" inputmode="email" autocomplete="email"
-             placeholder="이메일 주소" aria-label="이메일 주소" required>
-      <input id="wlTelegram" type="text" autocomplete="off"
-             placeholder="텔레그램 핸들 (선택, 예: @miri)" aria-label="텔레그램 핸들 (선택)">
-      <button type="submit" class="wl-btn" id="wlBtn">알림 받기</button>
-    </form>
-    <div class="wl-msg" id="wlMsg" role="status" aria-live="polite"></div>
-    <p class="wl-note">베타 대기자 등록 용도로만 사용하며 외부로 발송·공유하지 않습니다. 언제든 등록을 취소할 수 있습니다.</p>
+    <div class="sec-h"><span class="st">종목을 검색해 공시를 보고 관심에 담아보세요</span></div>
   </section>
-
-  <!-- 하단 고정 바: .app 마지막 요소로 배치 — 스크롤 끝에서 제자리로 복귀해 아무 콘텐츠도 가리지 않음 -->
-  <div class="bar-btns">
-    <button class="btn2 sec" id="btnTheme" aria-label="테마 전환" onclick="toggleTheme()">◐</button>
-    <button class="btn2 pri" id="btnRefresh" onclick="refresh()">지금 새로고침</button>
-  </div>
 </div>
+
+<!-- ============ 하단 5탭 네비 (fixed · 460 센터 · 불투명) ============ -->
+<nav class="tabbar" role="tablist" aria-label="주요 탭">
+  <div class="tabbar-in">
+    <button class="tabitem on" role="tab" aria-selected="true" data-tab="today">
+      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/></svg><span class="tl">오늘</span>
+      <span class="badge" id="badgeToday" hidden></span>
+    </button>
+    <button class="tabitem" role="tab" aria-selected="false" data-tab="watch">
+      <svg viewBox="0 0 24 24"><path d="M12 4.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 10.2l5.4-.8z"/></svg><span class="tl">관심종목</span>
+      <span class="badge" id="badgeWatch" hidden></span>
+    </button>
+    <button class="tabitem" role="tab" aria-selected="false" data-tab="ranking">
+      <svg viewBox="0 0 24 24"><path d="M6 20V11"/><path d="M12 20V5"/><path d="M18 20v-6"/></svg><span class="tl">랭킹</span>
+    </button>
+    <button class="tabitem" role="tab" aria-selected="false" data-tab="calendar">
+      <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2.5"/><path d="M4 9.5h16M8.5 3.5v3M15.5 3.5v3"/></svg><span class="tl">캘린더</span>
+    </button>
+    <button class="tabitem" role="tab" aria-selected="false" data-tab="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg><span class="tl">검색</span>
+    </button>
+  </div>
+</nav>
 
 <!-- ============ 관심종목 바텀시트(토스식) ============ -->
 <!-- 검색해서 담기 -->
@@ -677,19 +741,7 @@
   </div>
 </div>
 
-<!-- 메자닌 전환 캘린더 오버레이 (WS-34) — /api/mezzanine 지연 로딩. detail 셸 재사용 -->
-<div class="detail" id="mezz" hidden role="dialog" aria-modal="true" aria-label="메자닌 전환 캘린더">
-  <div class="detail-back" id="mezzBack"></div>
-  <div class="detail-panel">
-    <div class="detail-head">
-      <div class="detail-tt"><span>메자닌 전환 캘린더</span><span class="mezz-scope">코스피·코스닥</span></div>
-      <button class="detail-x" id="mezzX" type="button" aria-label="닫기">✕</button>
-    </div>
-    <div class="detail-body" id="mezzBody">
-      <div class="mezz-loading">불러오는 중…</div>
-    </div>
-  </div>
-</div>
+<!-- 메자닌 전환 캘린더: 오버레이 폐기 → ④캘린더 탭 본문(#mezzBody)으로 승격(shell.js lazy-load). -->
 <style>
   .mezz-entry{width:100%;display:flex;align-items:center;gap:11px;margin:2px 0 10px;padding:12px 14px;
     background:var(--card);border:none;border-radius:14px;box-shadow:0 0 0 1px var(--line) inset;
@@ -722,6 +774,67 @@
   .mezz-r{font-size:12.5px;color:var(--t2);font-weight:600;margin-top:3px}
   .mezz-r .num{font-variant-numeric:tabular-nums}
   .mezz-r small{color:var(--t3);font-weight:500}
+  #mezzBody{padding:2px 0 4px}
+</style>
+
+<style>
+  /* ===== 5탭 셸 (venture-frontend: 하단 네비 승격 · 기존 토큰 재사용) ===== */
+  .tabpanel{display:none;flex-direction:column;gap:11px}
+  .tabpanel.on{display:flex}
+  /* .filter{display:flex}가 UA [hidden]를 이기므로 id 특이성으로 강제 숨김(관심 탭은 세그가 필터 대체) */
+  #filter[hidden]{display:none}
+  .htitle{font-weight:800;font-size:17px;letter-spacing:-.03em}
+  .today-body{display:flex;flex-direction:column;gap:11px}
+  /* 섹션 헤더 */
+  .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:2px}
+  .sec-h .st{font-size:14px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
+  .sec-h .ss{font-size:11px;font-weight:700;color:var(--t3)}
+  .sec-h .more{margin-left:auto;font-size:12px;font-weight:700;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:4px 2px}
+  /* 브리핑 패널(오늘 탭) */
+  .brief{background:var(--card);border-radius:var(--radius);padding:14px 15px;box-shadow:0 0 0 1px var(--line) inset}
+  .brief .bl{display:flex;gap:9px;font-size:13.5px;color:var(--t2);padding:5px 0;align-items:baseline}
+  .brief .bl::before{content:"";flex:none;width:3px;height:3px;border-radius:50%;background:var(--t4);transform:translateY(-3px)}
+  .brief .bl b{color:var(--t1);font-weight:700}
+  .brief.hero-am{box-shadow:0 0 0 1.5px var(--blue)}
+  /* 세그(관심 서브뷰 / 랭킹 종류) — 기존 slate-soft 톤 재사용 */
+  .rk-seg{display:flex;background:var(--slate-soft);border-radius:11px;padding:3px;gap:2px;margin:2px 2px 4px}
+  .rk-seg button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:8px 0;border-radius:8px;cursor:pointer}
+  .rk-seg button.on{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .rk-seg button:disabled{opacity:.45;cursor:default}
+  /* 랭킹 리스트 카드(급등락 뱃지 additive) */
+  .rank{background:var(--card);border-radius:var(--radius);padding:6px 4px;box-shadow:0 0 0 1px var(--line) inset}
+  .rk-row{display:flex;align-items:center;gap:11px;padding:11px 12px;border-top:1px solid var(--line-2);cursor:pointer;width:100%;text-align:left;background:none;border-left:none;border-right:none;border-bottom:none;font-family:inherit}
+  .rk-row:first-child{border-top:none}
+  .rk-no{font-size:15px;font-weight:800;color:var(--t3);width:20px;text-align:center;font-variant-numeric:tabular-nums;flex:none}
+  .rk-no.top{color:var(--blue)}
+  .rk-info{min-width:0;flex:1}
+  .rk-nm{font-size:14.5px;font-weight:700;color:var(--t1)}
+  .rk-nm .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;margin-left:5px}
+  .rk-sub{font-size:11.5px;color:var(--t3);font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rk-val{font-size:14px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums;flex:none}
+  .rk-val.up{color:var(--up)} .rk-val.down{color:var(--down)} .rk-val.flat{color:var(--t3)}
+  /* 캘린더 하위탭 */
+  .cal-tabs{display:flex;gap:8px;padding:2px 2px 4px}
+  .cal-tabs button{flex:1;font-family:inherit;font-size:13px;font-weight:700;padding:9px 0;border-radius:11px;border:none;cursor:pointer;
+    background:var(--card);color:var(--t3);box-shadow:0 0 0 1px var(--line) inset}
+  .cal-tabs button.on{background:var(--blue);color:#fff;box-shadow:none}
+  .cal-tabs button:disabled{opacity:.5;cursor:default}
+  /* ===== 하단 5탭 네비 ===== */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:flex;justify-content:center;
+    background:var(--bg);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom,0px)}
+  .tabbar-in{width:100%;max-width:460px;display:flex}
+  .tabitem{flex:1;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);position:relative}
+  .tabitem svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .tabitem .tl{font-size:10.5px;font-weight:700;letter-spacing:-.02em}
+  .tabitem.on{color:var(--blue)}
+  .tabitem.on .tl{font-weight:800}
+  .tabitem .badge{position:absolute;top:7px;left:calc(50% + 8px);min-width:16px;height:16px;padding:0 4px;
+    border-radius:9px;background:var(--up);color:#fff;font-size:9.5px;font-weight:800;display:grid;place-items:center;line-height:1}
+  .tabitem:focus-visible{outline:2px solid var(--blue);outline-offset:-3px;border-radius:12px}
+  /* bar-btns: 탭 셸에선 비고정(하단 네비와 충돌 방지) */
+  .tabpanel .bar-btns{position:static;background:none;padding:6px 0 2px}
 </style>
 
 <!-- 맨위로 FAB — 일정 스크롤 이상에서 노출 -->
@@ -1081,6 +1194,7 @@ function passFilter(a,f){
   if(f==='down')return c.dir==='down';
   if(f==='earn')return c.earn;
   if(f==='watch')return c.watch;
+  if(f==='inbox')return c.watch&&!!a.is_new;   // 알림함(관심탭 서브뷰): 관심종목 신규 공시만
   return true;
 }
 
@@ -1542,12 +1656,20 @@ function cardHTML(a,pfx){
   const ttl=pfx
     ? `<h3 class="ttl">${esc(a.report_nm)}</h3>`
     : `<h3 class="ttl" role="button" tabindex="0" data-detail="${esc(a.stock_code)}" data-nm="${esc(a.corp_name)}" title="${esc(a.corp_name)} 상세 보기">${esc(a.report_nm)}</h3>`;
+  // 핵심요약 패널: 상세뷰(pfx==='d')이고 summary_ui 플래그 on이며 summary가 3줄 문자열 배열일 때만.
+  // pfx==='' (피드)에선 항상 '' → ttl 뒤에 아무것도 붙지 않아 피드 카드 출력 바이트 불변.
+  const summaryPanel=(pfx==='d'&&window.__SUMMARY_UI===true
+      &&Array.isArray(a.summary)&&a.summary.length===3
+      &&a.summary.every(s=>typeof s==='string'&&s.trim()))
+    ? `<div class="sumbox"><div class="sl">핵심 요약</div><ul class="sumlist">`+
+      a.summary.map(l=>`<li>${boldNums(esc(l))}</li>`).join('')+`</ul></div>`
+    : '';
   return `<article class="card${a.is_watched?' watched':''}">
     <div class="top">
       ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}
       <span class="tm">${newpill} ${esc(a.date||a.rcept_dt)}</span>
     </div>
-    ${ttl}
+    ${ttl}${summaryPanel}
     ${facts?`<ul class="facts">${facts}</ul>`:''}
     <div class="impact" id="${pfx}imp-${id}">${impactInner(a)}</div>
     ${scale}
@@ -1801,6 +1923,8 @@ function recomputeWatched(){
   }).map(p=>p[0]);
 }
 function absorb(d){
+  // 핵심요약 UI 플래그: 응답 최상위 summary_ui가 true일 때만 상세뷰 패널 렌더. 없으면 false.
+  window.__SUMMARY_UI=(d&&d.summary_ui===true);
   STATE.items=d.alerts||[];
   if(!WLSTATE.loaded){   // watchlist API 응답 전이면 피드 stocks로 임시 시드(그래이스풀)
     applyWatchlist({stocks:d.stocks||[],keywords:d.keywords||[],groups:d.groups||[]});
@@ -1813,6 +1937,7 @@ function absorb(d){
   banner.innerHTML=(d.errors&&d.errors.length)?`<div class="banner">${esc(d.errors.join(' / '))}</div>`:'';
   renderFilter();
   renderFeed();
+  if(typeof updateTabBadges==='function')updateTabBadges();   // 오늘 탭 배지=밤사이 신규(is_new)
 }
 
 async function loadFeed(force){
@@ -2209,7 +2334,8 @@ function track(name, data){ try{ if(window.umami && umami.track) umami.track(nam
     if(!document.getElementById('splash'))return;
     const em=document.getElementById('spEmail');
     const typing=em&&(document.activeElement===em||em.value.trim());
-    const loaded=!!document.querySelector('#feed .card')||(Date.now()-t0>6000);
+    /* 완료 판정: 오늘 탭이 기본이라 #feed 가 비활성(관심탭)일 수 있으므로 탭 무관 카드 존재로 판정. */
+    const loaded=!!document.querySelector('.card')||(Date.now()-t0>6000);
     if(loaded&&!typing){setTimeout(hide,Math.max(0,900-(Date.now()-t0)));return;}
     setTimeout(tryAuto,300);
   })();
@@ -2272,5 +2398,7 @@ try{if(PUSH_SUPPORTED)initPush();}catch(e){}
 /* claim(/?claim=<TOKEN>) 채택 시 1회성 안내 토스트 */
 if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목록에 연결했어요.');}catch(e){}},1300);}
 </script>
+<!-- 5탭 셸 라우터: 인라인 스크립트 전역(STATE·renderFeed·loadMezz·cardHTML 등)과 같은 스코프 공유(classic script, 모듈 아님). 인라인 스크립트 뒤에 로드. -->
+<script src="/app/shell.js"></script>
 </body>
 </html>

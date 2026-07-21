@@ -6,3 +6,6 @@ pillow>=10.0
 requests-oauthlib==2.0.0
 pywebpush>=2.0
 finance-datareader>=0.9.90
+# 실LLM 3줄요약 승격용(staged, 기본 off). import는 lazy(llm_summary_client 내부
+# 함수에서만). GONGSI_LLM_ENABLED+ANTHROPIC_API_KEY 있을 때만 실제 사용.
+anthropic>=0.40

@@ -543,6 +543,11 @@ _PREWARM_DONE = False   # 관측용 완료 플래그(/api/health 에 노출, 측
 # GONGSI_PREWARM=0/false 면 프리웜 비활성(콜드빌드 경로 유지 = before 측정용).
 _PREWARM_ENABLED = os.getenv("GONGSI_PREWARM", "1").strip().lower() not in ("0", "false", "no", "")
 
+# 프론트 계약 플래그: /api/alerts 응답 최상위 summary_ui. 프론트가 이 값으로 3줄
+# 요약 패널 노출을 결정한다. 기본 false → 값만 추가될 뿐 기존 필드 불변(G3 opt-in
+# 승인 후 GONGSI_SUMMARY_UI=1 로만 켠다). 요약 승격(LLM)과 독립된 UI 게이트.
+_SUMMARY_UI = os.getenv("GONGSI_SUMMARY_UI", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def _prewarm():
     """백그라운드 데몬: _get_feed(force=True) 로 피드캐시를 미리 채운다.
@@ -565,11 +570,30 @@ def _prewarm():
         print(f"[prewarm] mezz cache 채움 in {(time.time() - t1) * 1000:.0f}ms")
     except Exception as e:
         print(f"[prewarm] mezz 실패(무시): {e}")
+    # 랭킹 급등락도 미리 워밍(TOSS candles 콜드 ~11s → 첫 사용자 요청경로 라이브콜 0).
+    # mezz prewarm 과 동형: startup 데몬에서만 발생, 요청경로엔 절대 안 들어간다.
+    try:
+        t2 = time.time()
+        base = _ranking_base(pool_n=40)               # base 풀 캐시 채움(DART 0콜)
+        codes = [it.get("stock_code") for it in (base.get("pool") or [])[:30]]
+        warmed = _warm_prices(codes)                  # TOSS candles 배치(이 데몬에서만)
+        print(f"[prewarm] ranking price 워밍 {warmed}종목 in {(time.time() - t2) * 1000:.0f}ms")
+    except Exception as e:
+        print(f"[prewarm] ranking price 실패(무시): {e}")
 
 
 @api.on_event("startup")
 def _startup_prewarm():
     """uvicorn 기동 직후 호출. 프리웜 스레드만 띄우고 즉시 반환(기동 무지연)."""
+    # 실LLM 3줄요약(staged, 기본 off). GONGSI_LLM_ENABLED+ANTHROPIC_API_KEY 있을
+    # 때만 훅 설치+워커기동. 기본 off 라 배선 후에도 현행 동작과 바이트 동일(훅
+    # 미설치→규칙기반 스텁). 어떤 실패에도 앱 기동 무영향(try/except swallow).
+    try:
+        import llm_summary_client
+        llm_summary_client.install_if_enabled()
+    except Exception as e:
+        print(f"[llm_summary] install 스킵(무시, 기동 유지): {type(e).__name__}")
+
     if not _PREWARM_ENABLED:
         print("[prewarm] 비활성(GONGSI_PREWARM=0) — 콜드빌드 경로 유지")
         return
@@ -621,7 +645,11 @@ def health():
 
 @api.get("/api/alerts")
 def get_alerts():
-    return JSONResponse(_get_feed(force=False))
+    feed = _get_feed(force=False)
+    # 프론트 계약: summary_ui 로 3줄요약 패널 노출 여부 판단(기본 false → 값만 추가,
+    # 기존 필드 불변). feed 는 캐시 복사본이므로 여기서 주입해도 캐시 오염 없음.
+    feed["summary_ui"] = _SUMMARY_UI
+    return JSONResponse(feed)
 
 
 # ---- /api/poll 스로틀(공유 DART 키 소진·DoS 방어) ----
@@ -1285,6 +1313,293 @@ def join_waitlist(body: WaitlistJoin, request: Request):
                                 detail="등록 처리 중 오류가 발생했습니다.")
     _notify_waitlist_tg(rec)
     return {"ok": True, "status": "ok", "message": "대기자 명단에 등록되었습니다."}
+
+
+# ---------------- ①오늘 / ③랭킹 탭 피드 (탭 스켈레톤, 정적마운트보다 먼저) ----------------
+# features/today_feed 격리 빌더를 지연 import(부재/실패해도 앱 전체 무영향).
+# 데이터 소스: 오늘·랭킹 **모두 이미 캐시된 /api/alerts live 피드(_get_feed)** 재사용.
+# (①오늘은 bench_cache/morning_brief 를 은퇴 — 배포 빈값·stale 결함 해소. 데이터시점 ①==③.)
+# 두 경로 모두 신규 DART 폴링 0. _MEZZ_CACHE 와 동일한 dict+lock+TTL 캐시 패턴.
+_TODAY_CACHE = {"data": None, "ts": 0.0, "lock": threading.Lock()}
+_TODAY_TTL_SEC = 300
+_RANKING_CACHE = {"data": None, "ts": 0.0, "lock": threading.Lock()}
+_RANKING_TTL_SEC = 120
+# 큐레이션 폴백 캐시(seam 이 매 응답 재계산하지 않게; TTL 내 1회 build). LLM 훅이
+# 켜져도 요청당 재요약 폭주 없음. secretary 계약 확정 시 이 캐시는 자연 무의미해진다.
+_CURATION_CACHE = {"data": None, "ts": 0.0, "lock": threading.Lock()}
+_CURATION_TTL_SEC = 300
+
+# ---------------- ③랭킹 급등락(가격) 신호 캐시 + 백그라운드 워머 ----------------
+# ★지연/패리티 가드(CTO): data-lead TOSS movers_for 는 20종목 ~17.7s → 절대 요청경로에
+# 동기로 넣지 않는다. 요청경로는 이 stock_code TTL 캐시만 읽고(라이브콜 0), 미스면
+# price_signal=null 로 즉시 반환한 뒤 백그라운드 워머가 top-N 후보만 채운다(수렴).
+# TOSS 실패/타임아웃은 삼켜 price_signal=null(500 금지). _MEZZ_CACHE/_warm_worker 패턴 재사용.
+_PRICE_CACHE: dict = {}                 # code -> {"chg_pct": float|None, "source","as_of","ts"}
+_PRICE_TTL_SEC = 90.0                   # 급등락 캐시 신선도(요청경로 read-only)
+_PRICE_LOCK = threading.Lock()
+_PRICE_WARM_QUEUE: list = []            # 워밍 대기 종목코드
+_PRICE_WARM_SEEN: set = set()           # 큐/처리중 dedup
+_PRICE_WARM_THREAD = None
+_PRICE_WARM_DAY = None
+_PRICE_WARM_COUNT = 0
+_PRICE_WARM_DAILY_CAP = 5000            # 일일 TOSS candles 호출 상한(남용 방지)
+_PRICE_WARM_BATCH = 30                  # 워커 1회 처리 상한(top-N 후보)
+
+
+_PRICE_ADAPTER_MOD = None
+
+
+def _price_adapter():
+    """features/ranking/price_adapter.py 를 importlib 고립로드(형제 features 모듈명
+    충돌 회피 원칙 — collect 충돌 회피와 동일). 부재/실패해도 랭킹 무붕괴."""
+    global _PRICE_ADAPTER_MOD
+    if _PRICE_ADAPTER_MOD is not None:
+        return _PRICE_ADAPTER_MOD
+    import importlib.util as _ilu
+    import sys as _sys
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "features", "ranking", "price_adapter.py")
+    spec = _ilu.spec_from_file_location("_ranking_price_adapter", path)
+    mod = _ilu.module_from_spec(spec)
+    _sys.modules["_ranking_price_adapter"] = mod   # 고유 키(sys.modules 무오염)
+    spec.loader.exec_module(mod)
+    _PRICE_ADAPTER_MOD = mod
+    return mod
+
+
+def _price_lookup(code: str):
+    """요청경로 read-only: 신선한 급등락 시그널이 캐시에 있으면 dict, 없으면 None.
+    라이브 TOSS 호출을 절대 하지 않는다(미스는 워머가 백그라운드로 채운다)."""
+    code = (code or "").strip()
+    if not code:
+        return None
+    now = time.time()
+    with _PRICE_LOCK:
+        ent = _PRICE_CACHE.get(code)
+        if ent and (now - ent.get("ts", 0.0)) < _PRICE_TTL_SEC:
+            return {"change_pct": ent.get("change_pct"),
+                    "price": ent.get("price"),
+                    "prev_close": ent.get("prev_close"),
+                    "volume": ent.get("volume"),
+                    "source": ent.get("source") or "toss",
+                    "as_of": ent.get("as_of")}
+    return None
+
+
+def _warm_prices(codes):
+    """동기 워밍: price_adapter.movers_for 로 candles 조회→캐시 채움(TOSS 라이브콜).
+
+    prewarm(백그라운드 데몬)·워커에서만 호출된다(요청경로 금지). 실패 전방위 격리:
+    어떤 예외에도 캐시를 부분 갱신하고 조용히 반환(500 유발 안 함)."""
+    codes = [c for c in ((x or "").strip() for x in (codes or [])) if c]
+    if not codes:
+        return 0
+    try:
+        pa = _price_adapter()
+        results, _stats = pa.movers_for(codes[:_PRICE_WARM_BATCH])
+        print(f"[price] warm resolved={_stats.get('resolved')} "
+              f"toss_calls={_stats.get('toss_calls')} degraded={_stats.get('degraded')}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] warm 실패(무시, null 폴백): {type(e).__name__}")
+        return 0
+    now = time.time()
+    asof = time.strftime("%Y-%m-%dT%H:%M:%S")
+    n = 0
+    with _PRICE_LOCK:
+        for code, r in (results or {}).items():
+            _PRICE_CACHE[code] = {
+                "change_pct": r.get("change_pct"),
+                "price": r.get("price"),
+                "prev_close": r.get("prev_close"),
+                "volume": r.get("volume"),
+                "source": "toss",
+                "as_of": asof,
+                "ts": now,
+            }
+            n += 1
+        # 캐시 과대성장 방지(오래된 항목 정리)
+        if len(_PRICE_CACHE) > 5000:
+            stale = [k for k, v in _PRICE_CACHE.items()
+                     if now - v.get("ts", 0.0) > _PRICE_TTL_SEC][:2000]
+            for k in stale:
+                _PRICE_CACHE.pop(k, None)
+    return n
+
+
+def _price_warm_worker():
+    """큐를 배치로 비우며 _warm_prices 로 캐시를 채운다(fire-and-forget, 요청 무지연)."""
+    global _PRICE_WARM_COUNT, _PRICE_WARM_DAY, _PRICE_WARM_THREAD
+    while True:
+        with _PRICE_LOCK:
+            today = datetime.now().strftime("%Y%m%d")
+            if _PRICE_WARM_DAY != today:
+                _PRICE_WARM_DAY = today
+                _PRICE_WARM_COUNT = 0
+            if _PRICE_WARM_COUNT >= _PRICE_WARM_DAILY_CAP or not _PRICE_WARM_QUEUE:
+                _PRICE_WARM_THREAD = None
+                return
+            batch = _PRICE_WARM_QUEUE[:_PRICE_WARM_BATCH]
+            del _PRICE_WARM_QUEUE[:len(batch)]
+        n = _warm_prices(batch)
+        with _PRICE_LOCK:
+            _PRICE_WARM_COUNT += n
+            for c in batch:
+                _PRICE_WARM_SEEN.discard(c)
+        time.sleep(0.1)
+
+
+def _price_enqueue(codes):
+    """top-N 후보 종목코드를 급등락 워머 큐에 넣고 워커를 깨운다(fire-and-forget).
+    이미 신선 캐시가 있는 코드는 건너뛴다(불필요한 TOSS 호출 회피)."""
+    global _PRICE_WARM_THREAD
+    now = time.time()
+    with _PRICE_LOCK:
+        for c in ((x or "").strip() for x in (codes or [])):
+            if not c or c in _PRICE_WARM_SEEN:
+                continue
+            ent = _PRICE_CACHE.get(c)
+            if ent and (now - ent.get("ts", 0.0)) < _PRICE_TTL_SEC:
+                continue  # 이미 신선
+            _PRICE_WARM_SEEN.add(c)
+            _PRICE_WARM_QUEUE.append(c)
+        need = (_PRICE_WARM_THREAD is None) or (not _PRICE_WARM_THREAD.is_alive())
+        if _PRICE_WARM_QUEUE and need:
+            _PRICE_WARM_THREAD = threading.Thread(
+                target=_price_warm_worker, name="price-warmer", daemon=True)
+            _PRICE_WARM_THREAD.start()
+
+
+def _today_feed_builder():
+    """features/today_feed/build.py 지연 import(mezzanine 와 동일한 sys.path 방식)."""
+    import sys as _sys
+    _tdir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "features", "today_feed")
+    if _tdir not in _sys.path:
+        _sys.path.insert(0, _tdir)
+    import build as _tb  # noqa: E402
+    return _tb
+
+
+def _today_curation(alerts=None) -> dict:
+    """SEAM(단일 계약점): '오늘 공시 TOP 큐레이션' → CurationItem[] (중요도순).
+
+    소스는 ③랭킹과 **동일한 live _get_feed 알럿**(alerts 인자). daily_curation 의
+    _score/TYPE_WEIGHT 만 단방향 import 해 적용한다(build_ranking_base 와 동일 랭킹함수,
+    DART 0콜). ★daily_curation.build_curation 호출 금지(라이브 DART 폴링)·daily_curation.py
+    수정 금지. secretary 계약 확정 시 이 함수의 build_curation_fallback 호출만 교체하면
+    되고 스키마·호출부·프론트는 불변. impact.windows 는 알럿 impact 그대로 → /api/alerts
+    완전 동형.
+
+    콜드(알럿 없음)로 빈 items 면 캐시하지 않는다 → 피드 워밍 후 다음 요청에서 즉시
+    오늘자 큐레이션이 채워진다(stale-empty 방지)."""
+    alerts = alerts or []
+    now = time.time()
+    with _CURATION_CACHE["lock"]:
+        if _CURATION_CACHE["data"] is not None and now - _CURATION_CACHE["ts"] < _CURATION_TTL_SEC:
+            return _CURATION_CACHE["data"]
+    try:
+        data = _today_feed_builder().build_curation_fallback(alerts)
+    except Exception as e:  # noqa: BLE001
+        print(f"[today] curation 폴백 실패(무시, 빈 items): {e}")
+        if _CURATION_CACHE["data"] is not None:
+            return _CURATION_CACHE["data"]
+        try:
+            return _today_feed_builder().empty_curation()
+        except Exception:
+            return {"status": "unavailable", "items": []}
+    if data.get("items"):                     # 비어있지 않을 때만 캐시(콜드-빈 캐싱 방지)
+        with _CURATION_CACHE["lock"]:
+            _CURATION_CACHE["data"] = data
+            _CURATION_CACHE["ts"] = now
+    return data
+
+
+@api.get("/api/today")
+def get_today():
+    """①오늘 탭: ③과 **동일한 live _get_feed 알럿 소스**(오늘자). bench_cache 미사용.
+
+    큐레이션은 중요도순 _today_curation(alerts) seam 이 매 응답마다 주입한다(캐시엔
+    미포함 → 계약 교체 즉시 반영). _get_feed 캐시히트라 DART 0콜. 알럿 없으면(콜드)
+    200 빈-정형 shape 이며 캐시하지 않는다(워밍 후 즉시 오늘자 반영)."""
+    now = time.time()
+    try:
+        alerts = _get_feed(force=False).get("alerts") or []   # 캐시히트 시 DART 0콜
+    except Exception as e:  # noqa: BLE001
+        print(f"[today] feed 조회 실패(무시): {e}")
+        alerts = []
+    with _TODAY_CACHE["lock"]:
+        if _TODAY_CACHE["data"] is not None and now - _TODAY_CACHE["ts"] < _TODAY_TTL_SEC:
+            data = dict(_TODAY_CACHE["data"])
+            data["curation"] = _today_curation(alerts)
+            return JSONResponse(data)
+    try:
+        data = _today_feed_builder().build_today_payload(alerts)
+    except Exception as e:  # noqa: BLE001
+        print(f"[today] build 실패(무시, 빈 shape): {e}")
+        if _TODAY_CACHE["data"] is not None:
+            out = dict(_TODAY_CACHE["data"])
+            out["curation"] = _today_curation(alerts)
+            return JSONResponse(out)
+        try:
+            out = _today_feed_builder().empty_today_payload()
+        except Exception:
+            out = {"overnight": {"items": [], "count": 0},
+                   "type_distribution": {}, "market_scope": "코스피·코스닥"}
+        out["curation"] = _today_curation(alerts)
+        return JSONResponse(out)
+    if (data.get("overnight") or {}).get("count"):   # 콜드-빈 캐싱 방지
+        with _TODAY_CACHE["lock"]:
+            _TODAY_CACHE["data"] = data
+            _TODAY_CACHE["ts"] = now
+    out = dict(data)
+    out["curation"] = _today_curation(alerts)
+    return JSONResponse(out)
+
+
+def _ranking_base(pool_n: int = 40) -> dict:
+    """공시중요도 base 풀(TTL 캐시). _get_feed 캐시 재사용 → 신규 DART 폴링 0.
+    급등락은 여기 넣지 않는다(응답 시점에 price 캐시로 병합·재정렬)."""
+    now = time.time()
+    with _RANKING_CACHE["lock"]:
+        if _RANKING_CACHE["data"] is not None and now - _RANKING_CACHE["ts"] < _RANKING_TTL_SEC:
+            return _RANKING_CACHE["data"]
+    tb = _today_feed_builder()
+    feed = _get_feed(force=False)              # 캐시 히트 시 DART 0콜(신규 폴링 없음)
+    base = tb.build_ranking_base(feed.get("alerts") or [], pool_n=pool_n)
+    with _RANKING_CACHE["lock"]:
+        _RANKING_CACHE["data"] = base
+        _RANKING_CACHE["ts"] = now
+    return base
+
+
+@api.get("/api/ranking")
+def get_ranking(top_n: int = 30):
+    """③랭킹 탭: 공시중요도(활성) + 급등락(활성, additive·graceful).
+
+    - 공시중요도: daily_curation._score/TYPE_WEIGHT (alert tags/impact/report_nm, DART 0콜).
+    - 급등락: _price_lookup 로 stock_code TTL 캐시만 read(요청경로 라이브 TOSS콜 0).
+      미스면 price_signal=null 로 즉시 반환(순위 성립) + 백그라운드 워머가 top-N 후보를
+      채운다(다음 요청부터 수렴). TOSS 실패/타임아웃 삼킴(500 금지).
+    - buzz/조회급증은 defer(프론트 disabled 세그). 캐시 비어도 200 빈-정형 shape."""
+    top_n = max(1, min(int(top_n), 50))
+    try:
+        tb = _today_feed_builder()
+        base = _ranking_base(pool_n=max(40, top_n + 10))
+        # 응답 시점 급등락 병합(캐시 read-only, 라이브콜 0) + 재정렬
+        data = tb.apply_price_signal(base, price_lookup=_price_lookup, top_n=top_n)
+        # top-N 후보 급등락 백그라운드 워밍(fire-and-forget, 응답 무지연)
+        try:
+            _price_enqueue([it.get("stock_code") for it in (base.get("pool") or [])[:top_n]])
+        except Exception as e:
+            print(f"[ranking] price enqueue skip: {e}")
+        return JSONResponse(data)
+    except Exception as e:  # noqa: BLE001
+        print(f"[ranking] build 실패(무시, 빈 shape): {e}")
+        try:
+            data = _today_feed_builder().empty_ranking_payload()
+        except Exception:
+            data = {"count": 0, "items": [], "market_scope": "코스피·코스닥"}
+        return JSONResponse(data)
 
 
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
