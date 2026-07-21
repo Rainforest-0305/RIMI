@@ -7,7 +7,8 @@
       "namespace": "android_app",
       "package_name": "kr.miri.gongsi",
       "sha256_cert_fingerprints": [
-        "BA:4C:1D:AF:29:4B:F8:67:8F:AE:FE:3E:D0:84:58:75:21:28:09:4F:DD:A9:E6:F8:B2:3A:D0:06:D0:FB:A5:5B"
+        "BA:4C:1D:AF:29:4B:F8:67:8F:AE:FE:3E:D0:84:58:75:21:28:09:4F:DD:A9:E6:F8:B2:3A:D0:06:D0:FB:A5:5B",
+        "C7:1E:0A:DE:85:8F:11:AF:88:22:44:A1:A1:7F:0D:B1:75:59:C5:AB:4E:6D:8E:F9:71:29:C9:DF:0E:73:BA:66"
       ]
     }
   }
