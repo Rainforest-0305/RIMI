@@ -16,6 +16,7 @@
 list.json 단일 호출로 폴링한다. 유저는 아무 코스피 종목이나 관심등록 가능하며,
 관심종목은 피드에서 강조/필터된다.
 """
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -44,6 +45,31 @@ api = FastAPI(title="미리(MIRI) 공시앱 API", version="2.0")
 # 응답 압축: /api/alerts(~460KB JSON)·index.html이 모바일 회선 병목 → gzip으로 5~8배 축소.
 from fastapi.middleware.gzip import GZipMiddleware
 api.add_middleware(GZipMiddleware, minimum_size=1500)
+
+# ---------------- [42] 읽기 API 캐시(CDN/프록시 + ETag/304) ----------------
+# 가드레일: s-maxage 는 폴링주기(85s)보다 신선해야 함 → 30s(+SWR 60s). 개인화
+# /api/watchlist 는 공유캐시 금지(private, no-store). 응답 본문/스키마 불변(헤더만).
+_READ_CACHE_CC = "public, s-maxage=30, stale-while-revalidate=60"
+
+
+def _json_cached(request: Request, payload, cache_control: str = _READ_CACHE_CC):
+    """읽기 API 응답에 Cache-Control + 약한 ETag 부착 + If-None-Match 304 처리.
+
+    - 본문 바이트를 그대로 해시(콘텐츠 해시) → 변화 없으면 304(본문 0바이트 전송).
+    - 약한 ETag(W/): gzip 등 콘텐츠 인코딩과 무관하게 조건부 비교 안전(RFC 권고).
+    - 본문은 JSONResponse 와 동일 직렬화(ensure_ascii=False, 최소 구분자)로 생성해
+      ETag 와 전송 바이트가 정확히 일치. 스키마/값 불변.
+    """
+    body = json.dumps(payload, ensure_ascii=False, allow_nan=False,
+                      separators=(",", ":")).encode("utf-8")
+    etag = 'W/"' + hashlib.md5(body).hexdigest() + '"'
+    headers = {"Cache-Control": cache_control, "ETag": etag}
+    inm = request.headers.get("if-none-match", "")
+    if inm:
+        tokens = [t.strip() for t in inm.split(",")]
+        if etag in tokens or "*" in tokens:
+            return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 # ---------------- 피드 캐시(노트북/DART 유량 배려) ----------------
 _FEED_CACHE = {"ts": 0.0, "data": None}
@@ -668,12 +694,12 @@ def health():
 
 
 @api.get("/api/alerts")
-def get_alerts():
+def get_alerts(request: Request):
     feed = _get_feed(force=False)
     # 프론트 계약: summary_ui 로 3줄요약 패널 노출 여부 판단(기본 false → 값만 추가,
     # 기존 필드 불변). feed 는 캐시 복사본이므로 여기서 주입해도 캐시 오염 없음.
     feed["summary_ui"] = _SUMMARY_UI
-    return JSONResponse(feed)
+    return _json_cached(request, feed)
 
 
 # ---- /api/poll 스로틀(공유 DART 키 소진·DoS 방어) ----
@@ -852,25 +878,25 @@ def _build_mezzanine_payload(top_n: int = 5, upcoming_only: bool = True) -> dict
 
 
 @api.get("/api/mezzanine")
-def get_mezzanine(top_n: int = 5, upcoming_only: bool = True):
+def get_mezzanine(request: Request, top_n: int = 5, upcoming_only: bool = True):
     """온디맨드 메자닌 전환 캘린더 + moneyness/시총희석(참고 통계). 실패해도 500 대신
     마지막 캐시/503. TTL 15분(라이브 시세 비용 흡수)."""
     top_n = max(1, min(int(top_n), 20))
     now = time.time()
     with _MEZZ_CACHE["lock"]:
         if _MEZZ_CACHE["data"] is not None and now - _MEZZ_CACHE["ts"] < _MEZZ_TTL_SEC:
-            return JSONResponse(_MEZZ_CACHE["data"])
+            return _json_cached(request, _MEZZ_CACHE["data"])
     try:
         data = _build_mezzanine_payload(top_n=top_n, upcoming_only=upcoming_only)
     except Exception as e:  # noqa: BLE001
         if _MEZZ_CACHE["data"] is not None:
-            return JSONResponse(_MEZZ_CACHE["data"])
+            return _json_cached(request, _MEZZ_CACHE["data"])
         return JSONResponse({"error": "mezzanine_build_failed", "detail": str(e)[:200]},
                             status_code=503)
     with _MEZZ_CACHE["lock"]:
         _MEZZ_CACHE["data"] = data
         _MEZZ_CACHE["ts"] = now
-    return JSONResponse(data)
+    return _json_cached(request, data)
 
 
 # [36] /api/watchlist 지연 단축: load_watch_state 는 Supabase 3개 테이블
@@ -911,8 +937,11 @@ def _watch_save(state: dict, device_id: str) -> dict:
 @api.get("/api/watchlist")
 def get_watchlist(request: Request):
     state = _watch_load_cached(_device_id(request))
-    return {"stocks": state["stocks"], "keywords": state["keywords"],
-            "groups": state["groups"]}
+    # [42] 개인화(X-Device-Id) → 공유캐시(CDN/프록시) 금지. 서버측 device 캐시(36)는 유지.
+    return JSONResponse(
+        {"stocks": state["stocks"], "keywords": state["keywords"],
+         "groups": state["groups"]},
+        headers={"Cache-Control": "private, no-store"})
 
 
 class WatchAdd(BaseModel):
@@ -1684,7 +1713,7 @@ def _today_curation(alerts=None) -> dict:
 
 
 @api.get("/api/today")
-def get_today():
+def get_today(request: Request):
     """①오늘 탭: ③과 **동일한 live _get_feed 알럿 소스**(오늘자). bench_cache 미사용.
 
     큐레이션은 중요도순 _today_curation(alerts) seam 이 매 응답마다 주입한다(캐시엔
@@ -1700,7 +1729,7 @@ def get_today():
         if _TODAY_CACHE["data"] is not None and now - _TODAY_CACHE["ts"] < _TODAY_TTL_SEC:
             data = dict(_TODAY_CACHE["data"])
             data["curation"] = _today_curation(alerts)
-            return JSONResponse(data)
+            return _json_cached(request, data)
     try:
         data = _today_feed_builder().build_today_payload(alerts)
         # [19] overnight 밴드 impact.status/scale_eligible 동형 복원(캐시 전 1회).
@@ -1711,21 +1740,21 @@ def get_today():
         if _TODAY_CACHE["data"] is not None:
             out = dict(_TODAY_CACHE["data"])
             out["curation"] = _today_curation(alerts)
-            return JSONResponse(out)
+            return _json_cached(request, out)
         try:
             out = _today_feed_builder().empty_today_payload()
         except Exception:
             out = {"overnight": {"items": [], "count": 0},
                    "type_distribution": {}, "market_scope": "코스피·코스닥"}
         out["curation"] = _today_curation(alerts)
-        return JSONResponse(out)
+        return _json_cached(request, out)
     if (data.get("overnight") or {}).get("count"):   # 콜드-빈 캐싱 방지
         with _TODAY_CACHE["lock"]:
             _TODAY_CACHE["data"] = data
             _TODAY_CACHE["ts"] = now
     out = dict(data)
     out["curation"] = _today_curation(alerts)
-    return JSONResponse(out)
+    return _json_cached(request, out)
 
 
 def _ranking_base(pool_n: int = 40) -> dict:
@@ -1745,7 +1774,7 @@ def _ranking_base(pool_n: int = 40) -> dict:
 
 
 @api.get("/api/ranking")
-def get_ranking(top_n: int = 30):
+def get_ranking(request: Request, top_n: int = 30):
     """③랭킹 탭: 공시중요도(활성) + 급등락(활성, additive·graceful).
 
     - 공시중요도: daily_curation._score/TYPE_WEIGHT (alert tags/impact/report_nm, DART 0콜).
@@ -1764,14 +1793,14 @@ def get_ranking(top_n: int = 30):
             _price_enqueue([it.get("stock_code") for it in (base.get("pool") or [])[:top_n]])
         except Exception as e:
             print(f"[ranking] price enqueue skip: {e}")
-        return JSONResponse(data)
+        return _json_cached(request, data)
     except Exception as e:  # noqa: BLE001
         print(f"[ranking] build 실패(무시, 빈 shape): {e}")
         try:
             data = _today_feed_builder().empty_ranking_payload()
         except Exception:
             data = {"count": 0, "items": [], "market_scope": "코스피·코스닥"}
-        return JSONResponse(data)
+        return _json_cached(request, data)
 
 
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
@@ -1793,6 +1822,36 @@ def assetlinks():
     if not _ASSETLINKS_FILE.is_file():
         raise HTTPException(status_code=404, detail="assetlinks.json not found")
     return FileResponse(str(_ASSETLINKS_FILE), media_type="application/json")
+
+
+# ---------------- [42] 정적자산 Cache-Control(경로기반) ----------------
+# StaticFiles 는 ETag/Last-Modified 를 주지만 Cache-Control 은 안 준다. 경로별로:
+#   - 불변 자산(이미지/아이콘/폰트/splash) = 1년 immutable(재검증 0).
+#   - HTML/JS/manifest/sw.js = no-cache(항상 재검증 → StaticFiles ETag 로 대개 304).
+#     ※ JS/sw 는 콘텐츠 해시 파일명이 아니고 SW precache+bump(모바일 소유)가 신선도를
+#       담당하므로, HTTP 는 안전하게 no-cache(재검증)로 둬 stale JS 배포사고를 차단.
+# /api/* 와 /.well-known 은 각 라우트가 헤더를 직접 관리하므로 건드리지 않는다.
+_IMMUTABLE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico",
+                  ".woff", ".woff2", ".ttf", ".otf")
+_NOCACHE_EXACT = ("/manifest.json",)
+
+
+@api.middleware("http")
+async def _static_cache_headers(request: Request, call_next):
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api") or path.startswith("/.well-known"):
+        return resp
+    if "cache-control" in (k.lower() for k in resp.headers.keys()):
+        return resp  # 라우트가 이미 설정(중복/충돌 방지)
+    lower = path.lower()
+    if lower.endswith(_IMMUTABLE_EXT) or lower.startswith("/splash/") \
+            or lower.startswith("/icons/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path == "/" or lower.endswith(".html") or lower.endswith(".js") \
+            or path in _NOCACHE_EXACT or lower.endswith("/sw.js"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 api.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")
