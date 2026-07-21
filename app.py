@@ -1524,6 +1524,62 @@ def _curation_windows_valid(windows) -> bool:
     return False
 
 
+def _restore_item_signals(items, alerts=None):
+    """소스 알럿(rcept_no 매칭)으로 표시아이템의 impact/scale_eligible 을 동형 복원.
+
+    curation(항목13/16-a)과 overnight(항목19)이 공유하는 순수 정규화(제자리 변형,
+    DART 0콜). build.py/daily_curation.py 무수정 — app.py 격리 seam.
+
+    [impact 주입/정합] 아이템에 impact 가 없으면(overnight 은 _alert_item_dict 가 아예
+      드롭) 소스 알럿의 impact(windows 포함)를 복사 주입. 이미 있으면(curation) 유지하되
+      windows 유효 시 status='ok' 를 부착(프론트 게이트 imp.status!=='ok' → 집계중 해소).
+      진짜 부재(알럿 미매칭 or windows 무효)는 손대지 않음 → '집계 중' 정직 유지.
+    [scale_eligible] 소스 알럿의 플래그(피드 _build_feed 산출)를 복원. 매칭 실패/부재는
+      기존값 or False(프론트 hasScale 게이트 안전)."""
+    if not isinstance(items, list):
+        return
+    by_rno = {}
+    for a in (alerts or []):
+        if isinstance(a, dict):
+            rno = str(a.get("rcept_no") or "")
+            if rno:
+                by_rno[rno] = a
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        rno = str(it.get("rcept_no") or "")
+        a = by_rno.get(rno)
+        imp = it.get("impact")
+        # impact 주입(overnight): 아이템에 impact 없고 알럿엔 있으면 복사.
+        if not isinstance(imp, dict) and a is not None and isinstance(a.get("impact"), dict):
+            imp = dict(a["impact"])           # 얕은 복사(알럿 원본 불변 보호)
+            it["impact"] = imp
+        # windows 유효 → status='ok' 복원(알럿과 동형). 무효/부재는 그대로.
+        if isinstance(imp, dict) and imp.get("status") != "ok" \
+                and _curation_windows_valid(imp.get("windows")):
+            imp["status"] = "ok"
+        # scale_eligible 동형 복원(소스 알럿 우선, 매칭 실패 시 기존값/False).
+        if a is not None:
+            it["scale_eligible"] = bool(a.get("scale_eligible"))
+        else:
+            it["scale_eligible"] = bool(it.get("scale_eligible"))
+
+
+def _normalize_overnight_items(data: dict, alerts=None) -> dict:
+    """[19] 오늘탭 밤사이(overnight) 밴드 정규화 — curation 과 동일 신호복원 재사용.
+
+    overnight items(_alert_item_dict 산출)는 impact/scale_eligible 이 드롭돼 카드가
+    전부 '집계 중'+규모버튼 없음. 소스 알럿 rcept_no 매칭으로 impact.status='ok'
+    (windows 유효시)+scale_eligible 복원. ★curation 과 달리 정정정렬/rank 재부여는
+    적용하지 않는다(밤사이 최신순·무 rank 유지). 스키마: 필드 추가만(하위호환)."""
+    if not isinstance(data, dict):
+        return data
+    ov = data.get("overnight")
+    if isinstance(ov, dict):
+        _restore_item_signals(ov.get("items"), alerts)
+    return data
+
+
 def _normalize_curation_items(data: dict, alerts=None) -> dict:
     """SEAM 후처리(app.py 격리 정규화 — build.py/daily_curation.py 무수정).
 
@@ -1544,24 +1600,8 @@ def _normalize_curation_items(data: dict, alerts=None) -> dict:
     items = data.get("items")
     if not isinstance(items, list) or not items:
         return data
-    # [16-a] 소스 알럿 rcept_no -> scale_eligible 맵(알럿엔 이미 산출됨: app.py _build_feed).
-    scale_by_rno = {}
-    for a in (alerts or []):
-        if isinstance(a, dict):
-            rno = str(a.get("rcept_no") or "")
-            if rno:
-                scale_by_rno[rno] = bool(a.get("scale_eligible"))
-    # [13-a] windows 유효 → status='ok' 복원(알럿과 동형). 무효/부재는 그대로.
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        imp = it.get("impact")
-        if isinstance(imp, dict) and imp.get("status") != "ok" \
-                and _curation_windows_valid(imp.get("windows")):
-            imp["status"] = "ok"
-        # [16-a] scale_eligible 동형 복원(소스 알럿 우선, 매칭 실패 시 False).
-        rno = str(it.get("rcept_no") or "")
-        it["scale_eligible"] = scale_by_rno.get(rno, bool(it.get("scale_eligible")))
+    # [13-a/16-a] impact.status + scale_eligible 동형 복원(overnight 과 공용 헬퍼).
+    _restore_item_signals(items, alerts)
     # [13-b] 기재정정 후순위(안정정렬: 비정정 상대순서 보존, 정정만 뒤로).
     def _is_correction(it):
         return 1 if ("정정" in str((it or {}).get("report_nm") or "")) else 0
@@ -1628,6 +1668,9 @@ def get_today():
             return JSONResponse(data)
     try:
         data = _today_feed_builder().build_today_payload(alerts)
+        # [19] overnight 밴드 impact.status/scale_eligible 동형 복원(캐시 전 1회).
+        # 캐시히트 경로는 이미 정규화된 data 반환 → 재계산 불요, DART 0콜.
+        _normalize_overnight_items(data, alerts)
     except Exception as e:  # noqa: BLE001
         print(f"[today] build 실패(무시, 빈 shape): {e}")
         if _TODAY_CACHE["data"] is not None:

@@ -81,8 +81,11 @@
     jget(API+'/today').then(function(d){ renderToday(host,d); })
       .catch(function(){ renderToday(host,null); });
   }
+  /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
+     최종 화면순서 = #todayBrief(밴드) → 정적 대표값세그 → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful. */
   function renderToday(host,d){
-    var html='';
+    var brief='';   // → #todayBrief
+    var body='';    // → #todayBody(host)
     if(d&&(d.overnight||d.curation)){
       var ov=(d.overnight&&d.overnight.items)||[];
       var ovCnt=(d.overnight&&typeof d.overnight.count==='number')?d.overnight.count:ov.length;
@@ -91,30 +94,36 @@
       var dist=d.type_distribution||{};
       var distTop=Object.keys(dist).sort(function(a,b){return dist[b]-dist[a];}).slice(0,3)
         .map(function(k){return esc(k)+' '+dist[k];}).join(' · ');
-      html+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 '+ovCnt+'건</b>'+(distTop?(' — '+distTop):'')+'</div>'+
+      brief+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 '+ovCnt+'건</b>'+(distTop?(' — '+distTop):'')+'</div>'+
             '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(d.dataset_as_of||d.generated_at||'')+'</div></div>';
-      html+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
+      body+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
       if(cur.length&&curStatus!=='pending_contract'){
-        html+=markWatched(cur).map(function(a){return cardHTML(a,'');}).join('');
+        body+=markWatched(cur).map(function(a){return cardHTML(a,'');}).join('');
       }else{
-        html+='<div class="empty" style="padding:22px 10px">큐레이션 준비중 — 곧 오늘의 핵심 공시를 선별해 보여드립니다.</div>';
+        body+='<div class="empty" style="padding:22px 10px">큐레이션 준비중 — 곧 오늘의 핵심 공시를 선별해 보여드립니다.</div>';
       }
-      html+='<div class="sec-h"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
-      html+= ov.length ? markWatched(ov).map(function(a){return cardHTML(a,'');}).join('')
+      body+='<div class="sec-h"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
+      body+= ov.length ? markWatched(ov).map(function(a){return cardHTML(a,'');}).join('')
                        : '<div class="empty" style="padding:18px 10px">밤사이 신규 공시가 없습니다.</div>';
-      if(d.disclaimer)html+='<p class="disc">'+esc(d.disclaimer)+'</p>';
+      if(d.disclaimer)body+='<p class="disc">'+esc(d.disclaimer)+'</p>';
       _todayLoaded=true;
     }else{
-      // 폴백: /api/today 미가동 → 최근 공시(STATE.items)로 브리핑 대체(빈화면 방지)
+      // 폴백: /api/today 미가동 → 최근 공시(STATE.items)로 브리핑 대체(빈화면 방지). 밴드성 요약→brief, 카드목록→body
       var recent=(typeof STATE!=='undefined'?(STATE.items||[]):[]).slice(0,12);
-      html+='<div class="brief hero-am"><div class="bl"><b>오늘 브리핑 준비중</b> — 최근 공시로 대체 표시 중</div></div>';
-      html+='<div class="sec-h"><span class="st">최근 공시</span><span class="ss">'+recent.length+'건</span></div>';
-      html+= recent.length ? recent.map(function(a){return cardHTML(a,'');}).join('')
+      brief+='<div class="brief hero-am"><div class="bl"><b>오늘 브리핑 준비중</b> — 최근 공시로 대체 표시 중</div></div>';
+      body+='<div class="sec-h"><span class="st">최근 공시</span><span class="ss">'+recent.length+'건</span></div>';
+      body+= recent.length ? recent.map(function(a){return cardHTML(a,'');}).join('')
                            : '<div class="empty" style="padding:30px 10px">표시할 공시가 없습니다. 잠시 후 다시 시도해 주세요.</div>';
       // _todayLoaded 유지 false → 엔드포인트 가동 시 다음 진입/폴에서 수렴
     }
-    host.innerHTML=html;
-    if(typeof attachSegToggle==='function')attachSegToggle(host);
+    var briefHost=document.getElementById('todayBrief');
+    if(briefHost){
+      briefHost.innerHTML=brief; host.innerHTML=body;
+      if(typeof attachSegToggle==='function'){ attachSegToggle(briefHost); attachSegToggle(host); } // 두 컨테이너 모두 후처리
+    }else{
+      host.innerHTML=brief+body;   // 구캐시 graceful: #todayBrief 없으면 #todayBody 한 곳에 합쳐 주입(기존 순서)
+      if(typeof attachSegToggle==='function')attachSegToggle(host);
+    }
   }
 
   /* ---------- ② 관심 서브뷰 세그(관심피드 / 알림함) — 단일 #feed 공유 ---------- */
@@ -165,15 +174,20 @@
   function renderRanking(){
     var host=document.getElementById('rankBody'); if(!host)return;
     var items=RANK_DATA.slice();
+    var moveBanner='';
     if(RANK_SEG==='move'){ // 급등락: price_signal 있는 항목 우선 정렬(null-graceful), 값 없으면 원순서
       items.sort(function(a,b){ var av=rankValue(a), bv=rankValue(b);
         if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1; return Math.abs(bv)-Math.abs(av); });
+      // 항목23: price_signal 데이터가 하나도 없으면(전부 null=TOSS 미연동) 정렬 불가 → '안 눌림' 오해 제거 배너.
+      // 데이터 있으면 배너 없이 정상 재정렬(회귀). disc 세그엔 영향 없음.
+      var hasSig=items.some(function(it){return rankValue(it)!=null;});
+      if(!hasSig)moveBanner='<div class="empty" style="padding:12px 10px">급등락 데이터 준비 중 · 시세 연동 후 제공 <small>(현재는 정렬 불가, 아래는 공시 순서)</small></div>';
     }
     if(!items.length){
       host.innerHTML='<div class="empty" style="padding:30px 10px">랭킹 집계 준비중 — 공시 반응 랭킹이 곧 제공됩니다.</div>';
       return;
     }
-    host.innerHTML='<div class="rank">'+items.map(rankRowHTML).join('')+'</div>';
+    host.innerHTML=moveBanner+'<div class="rank">'+items.map(rankRowHTML).join('')+'</div>';
   }
 
   /* ---------- ④ 캘린더 (메자닌 lazy-load, #mezzBody 승격) ---------- */

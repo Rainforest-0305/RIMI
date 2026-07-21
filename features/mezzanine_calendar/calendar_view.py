@@ -48,8 +48,43 @@ def build_calendar(records: List["MezzRecord"], upcoming_only: bool = False,
             "maturity_date": r.maturity_date.isoformat() if r.maturity_date else None,
             "event": "전환/행사 개시",
         })
+    items = _dedup_events(items)
     items.sort(key=lambda x: (x["date"], x["corp_name"]))
     return items, skipped
+
+
+def _dedup_events(items):
+    """[22] 동일 전환/행사 이벤트 중복 제거(재공시·정정으로 rcept_no 만 다른 케이스).
+
+    원인: 같은 CB/BW/EB 발행건이 최초공시+정정 등 rcept_no 가 다른 2건으로 로컬 캐시에
+    들어와 캘린더 같은 날짜에 중복 노출(예: 하이퍼코퍼레이션 7-25 CB 2건). rcept_no 단독
+    키로는 못 잡으므로 경제이벤트 동일성 키로 정규화한다.
+
+    dedup 키(경제이벤트 동일성): (corp_code, sec_type, date=개시일, conv_price).
+    동일 키 그룹에서 rcept_no 가 가장 큰(=최신 접수=정정 반영) 1건만 남긴다.
+    conv_price 가 None 이면 rcept_no 를 키에 포함해 서로 다른 미상 건이 뭉치지 않게 보호.
+
+    입력 순서 보존(안정적). monthly_outlook 은 이 dedup 결과를 그대로 집계(중복 미포함).
+    """
+    best = {}      # key -> item(대표: 최신 rcept_no)
+    order = []     # key 최초 등장 순서 보존
+    for it in items:
+        cp = it.get("conv_price")
+        if cp is None:
+            # 전환가 미상 → 병합 위험 → rcept_no 로 개별 유지(안전측)
+            key = (it.get("corp_code"), it.get("sec_type"), it.get("date"),
+                   None, it.get("rcept_no"))
+        else:
+            key = (it.get("corp_code"), it.get("sec_type"), it.get("date"), cp)
+        prev = best.get(key)
+        if prev is None:
+            best[key] = it
+            order.append(key)
+        else:
+            # 최신 접수번호(사전식=시간순) 우선 = 정정/재공시 반영본 채택
+            if str(it.get("rcept_no") or "") > str(prev.get("rcept_no") or ""):
+                best[key] = it
+    return [best[k] for k in order]
 
 
 def build_holdings(records: List["MezzRecord"], ref_date: date = None):

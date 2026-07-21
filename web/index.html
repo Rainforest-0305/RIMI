@@ -193,8 +193,10 @@
   @keyframes rs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
   .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600}
-  .star{background:none;border:none;padding:0 3px 0 0;cursor:pointer;font-family:inherit;
+  .star{position:relative;background:none;border:none;padding:0 3px 0 0;cursor:pointer;font-family:inherit;
     font-size:15px;line-height:1;color:#b6bfca;transition:color .12s,transform .12s}
+  /* 항목20: 히트영역 ≥24px 확장(시각 불변) — 폭 26px(우측 .tk 침범 없이 gap 내), 높이 40px(카드 상단 패딩 내) */
+  .star::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:40px}
   .star.on{color:#f5a524}
   .star:active{transform:scale(1.25)}
   .star:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
@@ -262,11 +264,13 @@
 
   .foot{display:flex;align-items:center;margin-top:8px;padding-top:7px;border-top:1px solid var(--line-2)}
   .rc{font-family:var(--mono);font-size:10.5px;color:var(--code)}
-  .src{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--blue);text-decoration:none} .src:hover{text-decoration:underline}
-  .cardshare{margin-left:auto;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
+  .src{position:relative;margin-left:auto;font-size:12.5px;font-weight:700;color:var(--blue);text-decoration:none} .src:hover{text-decoration:underline}
+  .cardshare{position:relative;margin-left:auto;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--blue);
     background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px}
   .cardshare:hover{text-decoration:underline}
   .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  /* 항목20: 공유·DART 히트영역 세로 ≥24px 확장(가로는 자체 폭>24px, 이웃 침범 없음) */
+  .src::before,.cardshare::before{content:"";position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:28px}
 
   .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 max(2px, calc(env(safe-area-inset-bottom,0px) - 12px));background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
@@ -571,10 +575,9 @@
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="오늘">
-    <div class="today-ctl">
-      <button class="newpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
-      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침">↻</button>
-    </div>
+    <!-- (1) 신규데이터 CTA(최상단) → (2) 밤사이 요약 밴드(mobile 주입) → (3) 대표값 세그+↻ → (4) 큐레이션+밤사이(mobile 주입) -->
+    <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
+    <div id="todayBrief"></div>
     <div class="valwrap">
       <span class="vlab">대표값</span>
       <div class="valmode" id="valmodeToday" role="tablist" aria-label="대표값 선택">
@@ -582,6 +585,7 @@
         <button role="tab" data-v="med" aria-selected="false">중앙값</button>
         <button role="tab" data-v="car" aria-selected="true">보정값</button>
       </div>
+      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침">↻</button>
     </div>
     <div id="todayBody" class="today-body">
       <div class="empty" id="todayLoading">오늘의 브리핑을 불러오는 중…</div>
@@ -881,7 +885,7 @@
   .rk-seg button:disabled{opacity:.45;cursor:default}
   /* 랭킹 리스트 카드(급등락 뱃지 additive) */
   .rank{background:var(--card);border-radius:var(--radius);padding:6px 4px;box-shadow:0 0 0 1px var(--line) inset}
-  .rk-row{display:flex;align-items:center;gap:11px;padding:11px 12px;border-top:1px solid var(--line-2);cursor:pointer;width:100%;text-align:left;background:none;border-left:none;border-right:none;border-bottom:none;font-family:inherit}
+  .rk-row{display:flex;align-items:center;gap:11px;padding:11px 12px;border-top:1px solid var(--line-2);cursor:pointer;width:100%;min-width:0;overflow:hidden;text-align:left;background:none;border-left:none;border-right:none;border-bottom:none;font-family:inherit}
   .rk-row:first-child{border-top:none}
   .rk-no{font-size:15px;font-weight:800;color:var(--t3);width:20px;text-align:center;font-variant-numeric:tabular-nums;flex:none}
   .rk-no.top{color:var(--blue)}
@@ -1002,18 +1006,20 @@
 
   /* ===== 오늘 탭 상단 컨트롤(소형 새로고침 + 신규 필) — 구 거대버튼 대체 ===== */
   .today-ctl{display:flex;align-items:center;gap:8px;padding:0 2px}
-  .newpill{flex:none;font-family:inherit;font-size:12.5px;font-weight:800;color:#fff;background:var(--blue);border:none;
+  /* .newfeedpill: 카드 .newpill(NEW 뱃지)과 클래스 충돌 회피용 별도 클래스. #p-today 직속 → column stretch 방지 위해 align-self:flex-start */
+  .newfeedpill{align-self:flex-start;flex:none;font-family:inherit;font-size:12.5px;font-weight:800;color:#fff;background:var(--blue);border:none;
     border-radius:999px;padding:7px 14px;cursor:pointer;box-shadow:0 3px 12px rgba(0,97,255,.28);display:inline-flex;
     align-items:center;gap:5px;transition:transform .08s ease}
-  .newpill[hidden]{display:none}
-  .newpill b{font-variant-numeric:tabular-nums}
-  .newpill:active{transform:scale(.96)}
+  #todayBrief:empty{display:none}   /* 밴드 미주입(초기)엔 flex gap 여백 방지 */
+  .newfeedpill[hidden]{display:none}
+  .newfeedpill b{font-variant-numeric:tabular-nums}
+  .newfeedpill:active{transform:scale(.96)}
   .miniref{margin-left:auto;flex:none;width:34px;height:34px;border-radius:10px;border:none;cursor:pointer;
     background:var(--card);color:var(--t2);font-size:16px;line-height:1;box-shadow:0 0 0 1px var(--line) inset;
     font-family:inherit;transition:transform .08s ease}
   .miniref:active{transform:scale(.94)}
   .miniref:disabled{opacity:.5;cursor:default}
-  .miniref:focus-visible,.newpill:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .miniref:focus-visible,.newfeedpill:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
   /* ===== 데스크톱 창모드(PC설치 PWA) — 460 컬럼 중앙정렬·헤더 풀블리드 억제 ===== */
   @media (min-width:600px){
