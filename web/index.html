@@ -26,6 +26,7 @@
 <meta name="theme-color" content="#0b0e1a">
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="미리 MIRI">
 <style>
@@ -97,9 +98,10 @@
   .hrow{display:flex;align-items:center;gap:8px;padding:0 4px 8px}
   .hi{width:23px;height:23px;border-radius:7px;background:var(--blue);display:grid;place-items:center;flex:none}
   .hi svg{width:14px;height:14px}
-  .hnm{font-weight:800;font-size:15px;letter-spacing:-.03em}
-  .htag{font-size:11px;color:var(--t3);font-weight:600;letter-spacing:-.01em;margin-left:2px;white-space:nowrap}
-  .live{margin-left:auto;font-size:11px;font-weight:700;color:var(--up);display:inline-flex;align-items:center;gap:5px}
+  .hnm{flex:none;font-weight:800;font-size:15px;letter-spacing:-.03em}
+  /* 항목33 픽스: 태그라인만 축약(ellipsis) 허용 → .hrow가 헤더폭 초과 못하게(lg zoom 가로스크롤 방지). 로고·MIRI·실시간은 flex:none */
+  .htag{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--t3);font-weight:600;letter-spacing:-.01em;margin-left:2px;white-space:nowrap}
+  .live{flex:none;margin-left:auto;font-size:11px;font-weight:700;color:var(--up);display:inline-flex;align-items:center;gap:5px}
   /* 점멸 금지: iOS 스티키 헤더 안 opacity 애니메이션이 플리커 유발(President 리포트) */
   .live .d{width:6px;height:6px;border-radius:50%;background:var(--up)}
   .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}
@@ -225,7 +227,7 @@
   .conf.mid{color:var(--blue-ink)} .conf.mid .dots i:nth-child(-n+2){background:var(--blue)}
   .conf.ref{color:var(--t3)} .conf.ref .dots i:nth-child(1){background:var(--t3)}
   .seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;margin-bottom:8px}
-  .seg button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:5px 0;border-radius:8px;cursor:pointer;transition:.14s}
+  .seg button{flex:1;min-height:30px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:5px 0;border-radius:8px;cursor:pointer;transition:.14s}
   .seg button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .avg{display:flex;align-items:baseline;gap:9px;margin-bottom:7px}
   .pct{font-size:27px;font-weight:800;letter-spacing:-.04em;line-height:.9}
@@ -369,8 +371,10 @@
   .detail-add.done,.detail-watched{background:var(--slate-soft);color:var(--t3);font-weight:700;font-size:12.5px;
     padding:8px 13px;border-radius:10px;display:inline-block}
   .detail-add:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-  .detail-x{flex:none;width:34px;height:34px;border-radius:10px;border:none;background:var(--card);
+  .detail-x{position:relative;flex:none;width:34px;height:34px;border-radius:10px;border:none;background:var(--card);
     color:var(--t2);font-size:14px;cursor:pointer;box-shadow:0 0 0 1px var(--line) inset}
+  /* 항목29: 닫기 히트영역 44px 근접(시각 34px 유지, 좌측 제목 gap 9px 내 안전) */
+  .detail-x::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px}
   .detail-x:active{transform:translateY(1px)}
   .detail-x:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .detail-body{overflow-y:auto;display:flex;flex-direction:column;gap:11px;padding:12px 0 4px}
@@ -392,10 +396,10 @@
 
   /* ---------- 관심종목 그룹/칩 (토스식) ---------- */
   .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;align-items:center}
-  .wl-ghide{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
+  .wl-ghide{margin-left:auto;flex:none;display:inline-flex;align-items:center;min-height:34px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
     background:none;border:none;cursor:pointer;padding:4px 2px 4px 8px;white-space:nowrap}
-  .wl-gshow{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
-    background:none;border:none;cursor:pointer;padding:2px 2px;white-space:nowrap}
+  .wl-gshow{margin-left:auto;flex:none;display:inline-flex;align-items:center;min-height:34px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
+    background:none;border:none;cursor:pointer;padding:2px 6px;white-space:nowrap}
   .wl-grouprow::-webkit-scrollbar{display:none}
   .wl-gtab{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;
     font-size:13.5px;font-weight:700;padding:8px 14px;border-radius:999px;border:none;cursor:pointer;
@@ -454,8 +458,9 @@
     padding:6px 2px 12px;z-index:1}
   .sheet-tt{margin:0;font-size:16px;font-weight:800;letter-spacing:-.03em;color:var(--t1);flex:1;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sheet-x{flex:none;width:34px;height:34px;border-radius:10px;border:none;background:var(--card);
+  .sheet-x{position:relative;flex:none;width:34px;height:34px;border-radius:10px;border:none;background:var(--card);
     color:var(--t2);font-size:14px;cursor:pointer;box-shadow:0 0 0 1px var(--line) inset}
+  .sheet-x::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px}   /* 항목29: 히트 44px */
   .sheet-x:focus-visible,.sheet-alt:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .sheet-target{font-size:12px;font-weight:700;color:var(--blue);padding:0 4px 8px}
   .sheet-target:empty{display:none}
@@ -575,7 +580,8 @@
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="오늘">
-    <!-- (1) 신규데이터 CTA(최상단) → (2) 밤사이 요약 밴드(mobile 주입) → (3) 대표값 세그+↻ → (4) 큐레이션+밤사이(mobile 주입) -->
+    <!-- (0) 검색바(항목24) → (1) 신규 CTA → (2) 밤사이 밴드(mobile) → (3) 대표값+↻ → (4) 큐레이션(mobile) -->
+    <div class="search-mount"></div>
     <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
     <div id="todayBrief"></div>
     <div class="valwrap">
@@ -620,11 +626,14 @@
 
   <!-- ============ ② 관심종목 (기존 header 그룹/칩/필터/피드 이설) ============ -->
   <section class="tabpanel" id="p-watch" role="tabpanel" aria-label="관심종목">
-    <div class="searchwrap">
-      <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-      <input id="searchInput" type="search" placeholder="종목명·코드 검색" autocomplete="off" aria-label="종목 검색">
-      <div class="formmsg" id="searchmsg"></div>
-      <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+    <!-- 항목24: 단일 검색 컴포넌트(#searchWrap). mountSearch가 활성 탭(오늘/관심/캘린더)의 .search-mount로 이동 -->
+    <div class="search-mount">
+      <div class="searchwrap" id="searchWrap">
+        <svg class="sicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+        <input id="searchInput" type="search" placeholder="종목명·코드 검색" autocomplete="off" aria-label="종목 검색">
+        <div class="formmsg" id="searchmsg"></div>
+        <div class="searchres" id="searchResults" role="listbox" aria-label="종목 검색 결과"></div>
+      </div>
     </div>
     <div class="wl-grouprow" id="wlGroups" role="tablist" aria-label="관심종목 그룹"></div>
     <div class="chips" id="chips" role="group" aria-label="관심종목"></div>
@@ -670,7 +679,8 @@
 
   <!-- ============ ④ 캘린더 (메자닌 월그리드 + 이벤트 리스트) ============ -->
   <section class="tabpanel" id="p-calendar" role="tabpanel" aria-label="캘린더">
-    <div class="cal-count"><span class="lb">이번 달 예상 공시</span><b class="num" id="calCount">–</b><span class="u">건</span></div>
+    <div class="search-mount"></div>
+    <div class="cal-count"><span class="lb" id="calCountLb">이번 달 예상 공시</span><b class="num" id="calCount">–</b><span class="u">건</span></div>
     <div class="cal-tabs" id="calTabs" role="tablist" aria-label="캘린더 종류">
       <button role="tab" data-cseg="mezz" class="on" aria-selected="true">메자닌 전환</button>
       <button role="tab" data-cseg="earn" aria-selected="false" disabled>실적·주총<span class="soon">준비중</span></button>
@@ -890,9 +900,10 @@
   .rk-no{font-size:15px;font-weight:800;color:var(--t3);width:20px;text-align:center;font-variant-numeric:tabular-nums;flex:none}
   .rk-no.top{color:var(--blue)}
   .rk-info{min-width:0;flex:1}
-  .rk-nm{font-size:14.5px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 항목30: 이름줄/서브줄 display:block 로 2줄 고정 → 짧은 행에서 코드(cd)와 리포트명 붙던 버그 해소 */
+  .rk-nm{display:block;font-size:14.5px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rk-nm .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;margin-left:5px}
-  .rk-sub{font-size:11.5px;color:var(--t3);font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rk-sub{display:block;font-size:11.5px;color:var(--t3);font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rk-val{font-size:14px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums;flex:none}
   .rk-val.up{color:var(--up)} .rk-val.down{color:var(--down)} .rk-val.flat{color:var(--t3)}
   /* 캘린더 세그 (준비중 pill) */
@@ -915,10 +926,11 @@
     background:var(--card);color:var(--t2);box-shadow:0 0 0 1px var(--line) inset}
   .cal-nav button:active{transform:scale(.95)}
   /* 그리드 (일요일 시작) */
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 2px 4px}
-  .cal-wd{text-align:center;font-size:11px;font-weight:700;color:var(--t3);padding:5px 0 3px}
+  /* 항목33 픽스: 1fr 기본 min-width는 min-content라 zoom에서 셀이 안 줄어 가로 오버플로 → minmax(0,1fr)+셀 min-width:0 */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:0 2px 4px}
+  .cal-wd{min-width:0;text-align:center;font-size:11px;font-weight:700;color:var(--t3);padding:5px 0 3px}
   .cal-wd.sun{color:var(--up)} .cal-wd.sat{color:var(--down)}
-  .cal-cell{aspect-ratio:1/1;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  .cal-cell{aspect-ratio:1/1;min-width:0;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:3px;border:none;background:none;cursor:pointer;font-family:inherit;border-radius:12px;position:relative;padding:0}
   .cal-cell .dnum{font-size:13.5px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums}
   .cal-cell.oth .dnum{color:var(--t4);opacity:.55}
@@ -939,9 +951,9 @@
     box-shadow:0 0 0 1px var(--line) inset;cursor:pointer;width:100%;text-align:left;border:none;font-family:inherit}
   .cal-ev:active{transform:scale(.99)}
   .cal-ev .ev-main{min-width:0;flex:1}
-  .cal-ev .ev-nm{font-size:14px;font-weight:800;color:var(--t1)}
+  .cal-ev .ev-nm{display:block;font-size:14px;font-weight:800;color:var(--t1)}
   .cal-ev .ev-nm .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600;margin-left:5px}
-  .cal-ev .ev-sub{font-size:11.5px;color:var(--t3);font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-ev .ev-sub{display:block;font-size:11.5px;color:var(--t3);font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cal-ev .ev-type{flex:none;font-size:10px;font-weight:800;padding:3px 7px;border-radius:6px}
   .cal-ev .ev-type.cb{background:var(--blue-soft);color:var(--blue)}
   .cal-ev .ev-type.bw{background:var(--warn-soft);color:var(--warn-ink)}
@@ -995,7 +1007,12 @@
 
   /* ===== 글자크기 zoom(콘텐츠 래퍼 .app 에만 · 고정 tabbar 불변) + 표시밀도 ===== */
   .app{zoom:var(--fs,1)}
-  html[data-fs="sm"]{--fs:.94} html[data-fs="md"]{--fs:1} html[data-fs="lg"]{--fs:1.08}
+  /* 항목33: 차등폭 확대. zoom은 폭도 스케일 → lg는 거터를 넓혀 가로스크롤(항목21 회귀) 방지 */
+  html[data-fs="sm"]{--fs:.90} html[data-fs="md"]{--fs:1} html[data-fs="lg"]{--fs:1.12}
+  html[data-fs="lg"] body{padding-left:24px;padding-right:24px}
+  /* 항목33 픽스: lg zoom에서 헤더 풀블리드 margin-inline:calc(50%-50vw)가 미스계산돼 전 탭 가로 오버플로.
+     lg에선 풀블리드 중화(거터=동색 --bg라 이음새 없음). sm/md는 기존 풀블리드 유지. */
+  html[data-fs="lg"] header{margin-inline:0;padding-left:2px;padding-right:2px}
   html[data-density="compact"] .card{padding:12px 14px 10px}
   html[data-density="compact"] .feed{gap:6px}
   html[data-density="roomy"] .card{padding:20px 18px 16px}
@@ -1003,6 +1020,7 @@
 
   /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
   .tabpanel>*:first-child{margin-top:0}
+  .search-mount:empty{display:none}   /* 항목24: 검색 컴포넌트 미탑재 탭에선 빈 마운트 gap 제거 */
 
   /* ===== 오늘 탭 상단 컨트롤(소형 새로고침 + 신규 필) — 구 거대버튼 대체 ===== */
   .today-ctl{display:flex;align-items:center;gap:8px;padding:0 2px}
@@ -1018,6 +1036,8 @@
     background:var(--card);color:var(--t2);font-size:16px;line-height:1;box-shadow:0 0 0 1px var(--line) inset;
     font-family:inherit;transition:transform .08s ease}
   .miniref:active{transform:scale(.94)}
+  .miniref.busy{animation:miriSpin .8s linear infinite;opacity:1}   /* 항목27: 새로고침 중 회전 */
+  @keyframes miriSpin{to{transform:rotate(360deg)}}
   .miniref:disabled{opacity:.5;cursor:default}
   .miniref:focus-visible,.newfeedpill:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
@@ -1067,6 +1087,13 @@ function valPick(w){ // 창 객체 -> {val, up} (선택 대표값 + 해당 상�
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,
   c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function cssId(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,'');}
+/* 항목26: 날짜 표시 하이픈 통일. YYYYMMDD(raw 8자리)→YYYY-MM-DD, 이미 하이픈/기타는 원형 유지 */
+function fmtYmd(s){
+  if(s==null)return '';
+  s=String(s).trim();
+  const m=s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  return m?(m[1]+'-'+m[2]+'-'+m[3]):s;
+}
 /* 모션 최소화 선호 감지(애니메이션·전환 스킵 게이트) */
 function prefersReduce(){try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}}
 /* 스켈레톤 카드 마크업(피드 로딩 구간 공용) — 실 카드 shape 미러, .card 아님(스플래시 오검출 방지) */
@@ -1197,6 +1224,7 @@ function applyWatchlist(d){
   // 기기별 관심상태 반영: 피드 카드의 ★/강조/상단정렬을 이 기기 기준으로 갱신.
   // (서버 전역 피드는 is_watched 를 담지 않으므로 프론트가 계산 — 캐시 오염 없음)
   if(STATE.items&&STATE.items.length){recomputeWatched();renderFilter();renderFeed();}
+  if(window.updateTabBadges)window.updateTabBadges();   // 항목28: 담기/삭제/로드 후 탭 배지 즉시 갱신
 }
 async function loadWatchlist(){
   try{const d=await jget(API+'/watchlist');applyWatchlist(d);}
@@ -1909,7 +1937,7 @@ function cardHTML(a,pfx){
   return `<article class="card${a.is_watched?' watched':''}">
     <div class="top">
       ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}
-      <span class="tm">${newpill} ${esc(a.date||a.rcept_dt)}</span>
+      <span class="tm">${newpill} ${esc(fmtYmd(a.date||a.rcept_dt))}</span>
     </div>
     ${ttl}${summaryPanel}
     ${facts?`<ul class="facts">${facts}</ul>`:''}
@@ -2084,6 +2112,10 @@ function renderCal(){
   if(!CAL_YM)return;
   const yp=CAL_YM.split('-').map(Number),y=yp[0],m=yp[1];
   const mlab=document.getElementById('calMonth');if(mlab)mlab.textContent=y+'.'+m;
+  // 항목31: 표시월이 이번 달이면 "이번 달", 아니면 "N월"
+  const now=new Date(),curYM=now.getFullYear()+'-'+_pad2(now.getMonth()+1);
+  const lb=document.getElementById('calCountLb');
+  if(lb)lb.textContent=(CAL_YM===curYM?'이번 달':(m+'월'))+' 예상 공시';
   let cnt=_monthItems(CAL_YM).length;
   if(CAL_OUTLOOK&&CAL_OUTLOOK.month===CAL_YM&&CAL_OUTLOOK.count!=null)cnt=CAL_OUTLOOK.count;
   const cc=document.getElementById('calCount');if(cc)cc.textContent=cnt;
@@ -2132,7 +2164,7 @@ function openCalEv(idx){
   const body=document.getElementById('calEvBody');
   if(body)body.innerHTML=
     `<div class="srow"><span class="slab">종목</span><span class="sval">${esc(it.corp_name||'')} <small>${esc(it.stock_code||'')}</small> <span class="mezz-bdg ${bcls}">${esc(type||'')}</span></span></div>`+
-    `<div class="srow"><span class="slab">${esc(it.event||'전환 개시')}</span><span class="sval num">${esc(it.date||'—')}</span></div>`+
+    `<div class="srow"><span class="slab">${esc(it.event||'전환 개시')}</span><span class="sval num">${esc(fmtYmd(it.date)||'—')}</span></div>`+
     `<div class="srow"><span class="slab">전환가</span><span class="sval num">${cp}원</span></div>`+
     `<div class="srow"><span class="slab">현재가 대비</span><span class="sval num ${vcls}">${vtxt}</span></div>`+
     `<div class="srow"><span class="slab">예정 물량</span><span class="sval num">${sh}주</span></div>`+
@@ -2300,7 +2332,7 @@ function absorb(d){
 async function loadFeed(force){
   const scan=document.getElementById('scan');
   const btn=document.getElementById('btnRefresh');
-  btn.disabled=true;
+  if(btn){btn.disabled=true;if(force){btn.classList.add('busy');btn.setAttribute('aria-busy','true');}}   // 항목27: ↻ 회전 표시
   if(force){const fe=document.getElementById('feed');fe.setAttribute('aria-busy','true');fe.innerHTML=SKELETON_HTML;
     window.scrollTo({top:0,behavior:prefersReduce()?'auto':'smooth'});}
   else if(scan)scan.classList.add('on');
@@ -2310,7 +2342,7 @@ async function loadFeed(force){
     // 서버 스로틀(잦은 새로고침): 캐시로 채워졌음을 부드럽게 안내(에러 아님)
     if(force&&d&&d.throttled&&typeof showToast==='function')showToast('잠시 후 다시 새로고침해 주세요');
   }catch(e){document.getElementById('feed').innerHTML='<div class="empty">불러오기 실패: '+esc(e.message)+'</div>';}
-  finally{btn.disabled=false;}
+  finally{if(btn){btn.disabled=false;btn.classList.remove('busy');btn.removeAttribute('aria-busy');}}
 }
 function refresh(){loadFeed(true);}
 /* 신규 공시 필(오늘 탭 상단) — 탭하면 관심 피드로 이동 + 상단 정렬 */
@@ -2423,6 +2455,24 @@ async function registerStock(code,btn){
 (function(){
   const el=document.getElementById('searchInput');
   if(el)el.addEventListener('input',debounce(function(e){doSearch(e.target.value);},250));
+})();
+/* 항목24: 단일 #searchWrap 을 활성 탭(오늘/관심/캘린더)의 .search-mount 로 이동(랭킹·설정 제외).
+   id 중복 없이 doSearch/registerStock 재사용. 노드 이동은 이벤트리스너 보존됨. */
+(function(){
+  function mountSearch(){
+    const active=document.querySelector('.tabpanel.on');
+    const sw=document.getElementById('searchWrap');
+    if(!active||!sw)return;
+    const mount=active.querySelector('.search-mount');
+    if(mount&&sw.parentElement!==mount)mount.appendChild(sw);
+  }
+  window.__miriMountSearch=mountSearch;
+  try{
+    const mo=new MutationObserver(function(){mountSearch();});
+    document.querySelectorAll('.tabpanel').forEach(function(p){mo.observe(p,{attributes:true,attributeFilter:['class']});});
+  }catch(e){}
+  window.addEventListener('load',mountSearch);
+  mountSearch();
 })();
 
 /* ---------- 웹푸시(관심종목 신규 공시 알림) ----------

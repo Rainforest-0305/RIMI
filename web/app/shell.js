@@ -81,6 +81,13 @@
     jget(API+'/today').then(function(d){ renderToday(host,d); })
       .catch(function(){ renderToday(host,null); });
   }
+  /* 항목26 후속: 날짜 하이픈 통일(frontend fmtYmd 동형). ISO(2026-07-22T..)면 날짜부만, 8자리(YYYYMMDD)→YYYY-MM-DD, 이미 하이픈이면 그대로. */
+  function _fmtYmd(s){
+    s=String(s==null?'':s).trim(); if(!s)return '';
+    if(s.indexOf('T')>0)s=s.split('T')[0];                 // ISO → 날짜부만
+    if(typeof fmtYmd==='function')return fmtYmd(s);         // 전역(index.html) 재사용
+    var m=s.match(/^(\d{4})(\d{2})(\d{2})$/); return m?(m[1]+'-'+m[2]+'-'+m[3]):s;
+  }
   /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
      최종 화면순서 = #todayBrief(밴드) → 정적 대표값세그 → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful. */
   function renderToday(host,d){
@@ -95,7 +102,7 @@
       var distTop=Object.keys(dist).sort(function(a,b){return dist[b]-dist[a];}).slice(0,3)
         .map(function(k){return esc(k)+' '+dist[k];}).join(' · ');
       brief+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 '+ovCnt+'건</b>'+(distTop?(' — '+distTop):'')+'</div>'+
-            '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(d.dataset_as_of||d.generated_at||'')+'</div></div>';
+            '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(_fmtYmd(d.dataset_as_of||d.generated_at||''))+'</div></div>';
       body+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
       if(cur.length&&curStatus!=='pending_contract'){
         body+=markWatched(cur).map(function(a){return cardHTML(a,'');}).join('');
@@ -200,8 +207,12 @@
   function loadSettings(){ /* no-op: 정적 패널, 바인딩은 frontend(index.html) 소유 */ }
 
   /* ---------- 탭 전환 ---------- */
+  var _scrollY={};   // 항목34: 탭별 마지막 스크롤 위치(복귀 복원용)
   function activateTab(name){
     if(!TAB_SET[name])name='today';
+    var _prevTab=window.CUR_TAB;
+    // 항목34: 탭을 '떠날 때' 현재 스크롤 저장(탭이 실제로 바뀔 때만). 같은 탭 재클릭은 저장 안 함(top 유도).
+    if(_prevTab&&_prevTab!==name)_scrollY[_prevTab]=(window.pageYOffset||window.scrollY||0);
     // 공존 규칙: 탭 전환 시 열린 상세 모달/시트 먼저 닫기(body 스크롤락·history 꼬임 방지)
     var dv=document.getElementById('detail');
     if(dv&&!dv.hidden&&typeof closeDetail==='function')closeDetail(true);
@@ -216,7 +227,10 @@
       var on=b.dataset.tab===name; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
     updateTopbar(name);
-    window.scrollTo(0,0);
+    // 항목34: 탭전환 복귀=저장 위치 복원(패널 내용은 토글이라 대개 잔존 → 동기 복원 가능). 같은탭 재클릭/최초 진입=top.
+    var _ry=(_prevTab!==name&&typeof _scrollY[name]==='number')?_scrollY[name]:0;
+    window.scrollTo(0,_ry);
+    if(_ry)try{requestAnimationFrame(function(){window.scrollTo(0,_ry);});}catch(e){} // 레이아웃 확정 후 한번 더(async 렌더 보정)
     if(name==='today')loadToday(false);
     else if(name==='watch')applyWatchSeg();
     else if(name==='ranking')loadRanking();
@@ -225,10 +239,20 @@
   }
   window.__miriActivateTab=activateTab;
 
+  var _coldLaunch=true;   // 항목32: 첫 applyRoute(=콜드런치) 판정용
+  function _isStandalone(){
+    try{ return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)
+      ||(window.navigator&&window.navigator.standalone)||false; }catch(e){ return false; }
+  }
   function applyRoute(){
     var raw=(location.hash||'').replace(/^#/,'');
-    if(raw){ activateTab(TAB_SET[raw]?raw:'today'); return; }  // 명시 해시(딥링크) 우선
-    // 빈 해시 = 앱 시작 → 설정 시작탭(miri-starttab, frontend가 저장) 존중. 유효 TAB만, 아니면 today.
+    // 항목32: TWA/PWA 콜드런치 첫 진입에서 해시가 없거나 기본값(today)이면 저장 시작탭 우선 적용.
+    //   (잔여 #today 로 시작탭이 밀리던 문제). 명시적 비루트 딥링크(#watch 등)는 아래 raw 분기가 존중.
+    //   standalone 게이트 → 브라우저에서 #today 북마크 직접연 경우는 today 그대로.
+    var coldDefault=_coldLaunch&&_isStandalone()&&(!raw||raw==='today');
+    _coldLaunch=false;
+    if(raw&&!coldDefault){ activateTab(TAB_SET[raw]?raw:'today'); return; }  // 명시 해시(딥링크) 우선
+    // 빈 해시 or 콜드런치 기본해시 → 설정 시작탭(miri-starttab, frontend가 저장) 존중. 유효 TAB만, 아니면 today.
     var start=''; try{start=localStorage.getItem('miri-starttab')||'';}catch(e){}
     activateTab(TAB_SET[start]?start:'today');
   }

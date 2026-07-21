@@ -873,9 +873,44 @@ def get_mezzanine(top_n: int = 5, upcoming_only: bool = True):
     return JSONResponse(data)
 
 
+# [36] /api/watchlist 지연 단축: load_watch_state 는 Supabase 3개 테이블
+# (groups/stocks/keywords)을 순차 GET(3 왕복)해 626~772ms. GET 은 압도적 다수
+# 읽기라 device_id 별 짧은 TTL 캐시로 반복 왕복을 제거한다. 정합성: 쓰기(담기/삭제/
+# 그룹변경) 시 그 device 캐시를 방금 저장한 정규화 상태로 즉시 재적재(_watch_save)
+# → stale 없음. TTL 은 외부변경 방어용 상한(쓰기 없이도 자연 만료).
+_WATCH_CACHE = {"lock": threading.Lock(), "map": {}}   # device_id -> {"data":state,"ts":float}
+_WATCH_TTL_SEC = 30
+
+
+def _watch_load_cached(device_id: str) -> dict:
+    """device_id 상태 조회(캐시 우선). 빈 device_id 는 캐시하지 않는다(임시 세션)."""
+    dev = (device_id or "").strip()
+    if not dev:
+        return watch_store.load_watch_state(dev)
+    now = time.time()
+    with _WATCH_CACHE["lock"]:
+        ent = _WATCH_CACHE["map"].get(dev)
+        if ent is not None and now - ent["ts"] < _WATCH_TTL_SEC:
+            return ent["data"]
+    state = watch_store.load_watch_state(dev)   # 캐시미스 → 백엔드 1회
+    with _WATCH_CACHE["lock"]:
+        _WATCH_CACHE["map"][dev] = {"data": state, "ts": time.time()}
+    return state
+
+
+def _watch_save(state: dict, device_id: str) -> dict:
+    """쓰기 경로 저장 + 그 device 캐시를 저장결과로 즉시 재적재(담기/삭제 즉시반영)."""
+    saved = watch_store.save_watch_state(state, device_id)
+    dev = (device_id or "").strip()
+    if dev:
+        with _WATCH_CACHE["lock"]:
+            _WATCH_CACHE["map"][dev] = {"data": saved, "ts": time.time()}
+    return saved
+
+
 @api.get("/api/watchlist")
 def get_watchlist(request: Request):
-    state = watch_store.load_watch_state(_device_id(request))
+    state = _watch_load_cached(_device_id(request))
     return {"stocks": state["stocks"], "keywords": state["keywords"],
             "groups": state["groups"]}
 
@@ -941,7 +976,7 @@ def add_watchlist(body: WatchAdd, request: Request):
                 default=-1) + 1
     stocks.append({"name": name or code, "stock_code": code,
                    "group": group, "order": order})
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     # 피드는 이제 기기 관심상태와 무관(is_watched 프론트 계산) → 캐시 무효화 불요.
     return _snapshot(state)
 
@@ -955,7 +990,7 @@ def delete_watchlist(code: str, request: Request):
         # 멱등 삭제: 이미 빠진 종목에 해제 요청이 와도 404 대신 현 상태 반환.
         return _snapshot(state)
     state["stocks"] = new_stocks
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
@@ -983,7 +1018,7 @@ def patch_watchlist(code: str, body: StockPatch, request: Request):
     if body.order is not None:
         target["order"] = body.order
 
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
@@ -1010,7 +1045,7 @@ def reorder_watchlist(body: OrderPut, request: Request):
     for s in state["stocks"]:
         if s["group"] == group:
             s["order"] = rank.get(s["stock_code"], base + s["order"])
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
@@ -1046,7 +1081,7 @@ def create_group(body: GroupCreate, request: Request):
     order = max([g["order"] for g in state["groups"]], default=-1) + 1
     state["groups"].append({"id": _new_group_id(state),
                             "name": name, "order": order})
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
@@ -1070,7 +1105,7 @@ def patch_group(gid: str, body: GroupPatch, request: Request):
     if body.order is not None:
         target["order"] = body.order
 
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
@@ -1087,7 +1122,7 @@ def delete_group(gid: str, request: Request):
     for s in state["stocks"]:
         if s["group"] == gid:
             s["group"] = watch_store.DEFAULT_GROUP_ID
-    state = watch_store.save_watch_state(state, device_id)
+    state = _watch_save(state, device_id)
     return _snapshot(state)
 
 
