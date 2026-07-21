@@ -156,10 +156,37 @@ def classify_moneyness(conv_price, current_price):
 
 
 def dilution_vs_mktcap(shares, current_price, market_cap):
-    """전환주식수 × 현재가 ÷ 시가총액 × 100. 결측 시 None."""
+    """전환주식수 × 현재가 ÷ 시가총액 × 100. 결측 시 None.
+
+    검산(항목54): market_cap = 상장주식수 × 현재가 이므로 이 식은 수학적으로
+    (전환주식수 / 상장주식수) × 100 과 동치(현재가가 분자·분모에서 상쇄)이며 =
+    '순수 주식수 희석률'이다. 따라서 값이 1982% 같은 극단이면 계산 버그가 아니라
+    실제로 잠재 전환주식수가 상장주식수의 약 20배(초소형·부실주 대규모 CB 오버행,
+    리픽싱 바닥 전환가)라는 뜻이다. 단, 초소형/외국주(pykrx·FDR 시총 커버리지 낮음)
+    는 분모(시총) 신뢰도가 떨어져 값이 과대·불안정할 수 있어 표기 캡으로 오해를 막는다.
+    """
     if not shares or not current_price or not market_cap or market_cap <= 0:
         return None
     return round(shares * current_price / market_cap * 100, 3)
+
+
+# [54] 희석률 표시 상한. 이 값을 넘으면 '> N%' 라벨로 표기해 비현실적 정밀수치
+# 오해(계산오류로 오인)를 막는다. 원값(dilution_vs_mktcap_pct)은 별도 보존(하위호환).
+_DILUTION_DISPLAY_CAP = 500.0
+
+
+def dilution_display(pct):
+    """희석% → (표시문자열, 극단여부 bool). 원값은 호출측이 별도 유지.
+
+    - None            -> (None, False)
+    - 0 <= pct <= CAP -> (f"{pct}%", False)   정상 표기(정상 종목 무영향)
+    - pct > CAP       -> (f"> {CAP}%", True)   극단(초소형주 대규모 전환) 라벨
+    """
+    if pct is None:
+        return None, False
+    if pct > _DILUTION_DISPLAY_CAP:
+        return "> {}%".format(int(_DILUTION_DISPLAY_CAP)), True
+    return "{}%".format(pct), False
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +331,10 @@ def enrich_top_holdings(holdings, top_n: int = 5):
         rec["gross_dilution_vs_mktcap_pct"] = d_gross
         rec["dilution_vs_mktcap_pct"] = d_eff
         rec["active_dilution_vs_mktcap_pct"] = d_active
+        # [54] 표시용 캡 라벨(원값 유지, 프론트가 오해방지 표기 소비). 극단 플래그도 부여.
+        disp, extreme = dilution_display(d_eff)
+        rec["dilution_display"] = disp
+        rec["dilution_extreme"] = extreme
         if d_eff is not None:
             dilution_values.append(d_eff)
         if d_gross is not None:
@@ -315,6 +346,7 @@ def enrich_top_holdings(holdings, top_n: int = 5):
             td = dilution_vs_mktcap(t.get("shares"), price, marcap)
             if tm in result["tranche_moneyness_dist"]:
                 result["tranche_moneyness_dist"][tm] += 1
+            t_disp, t_extreme = dilution_display(td)
             rec["tranches"].append({
                 "sec_type": t.get("sec_type"),
                 "conv_price": t.get("conv_price"),
@@ -322,6 +354,8 @@ def enrich_top_holdings(holdings, top_n: int = 5):
                 "moneyness": tm,
                 "premium_pct": tprem,
                 "dilution_vs_mktcap_pct": td,
+                "dilution_display": t_disp,
+                "dilution_extreme": t_extreme,
             })
 
         result["results"].append(rec)

@@ -75,7 +75,7 @@
   :root[data-theme="dark"]{--code:#565f6b}
 
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html{background:var(--bg);touch-action:manipulation;overscroll-behavior-y:none}
+  html{background:var(--bg);touch-action:manipulation;overscroll-behavior-y:none;overflow-x:hidden}   /* 항목51: 헤더 풀블리드 50vw가 데스크톱 스크롤바폭 미계산해 +8px 가로스크롤 → 잔여 가로 오버플로 클립(내부 overflow-x 영역 무영향) */
   /* 인터랙티브 요소만 롱프레스 콜아웃 차단 — 본문 텍스트 선택은 유지 */
   button,a,.chip,.f,.star,.wl-gtab,.movg,.soc-btn,.tk[data-detail],.ttl[data-detail]{-webkit-touch-callout:none}
   body{margin:0;background:var(--bg);color:var(--t1);font-family:var(--kr);
@@ -83,8 +83,9 @@
     overscroll-behavior-y:none;
     min-height:100dvh;display:flex;justify-content:center;
     /* 상단 safe-area는 sticky 헤더가 담당(중복 방지). 좌우·하단만 body.
-       하단 = 고정 5탭 네비(56px) + 여유 22px + safe-area 만큼 확보(콘텐츠 가림 방지). */
-    padding:0 15px calc(56px + 22px + env(safe-area-inset-bottom, 0px))}
+       하단 = 고정 5탭 네비(56px) + 여유 66px + safe-area. 항목56: 66px는 '맨위로' FAB(bottom74~118px)
+       위로 최하단 disc가 안착하게 확보(FAB이 면책문 가림 방지). */
+    padding:0 15px calc(56px + 66px + env(safe-area-inset-bottom, 0px))}
   .num{font-variant-numeric:tabular-nums}
   .app{width:100%;max-width:460px;display:flex;flex-direction:column;gap:11px}
 
@@ -121,16 +122,10 @@
     background:var(--card);color:var(--t2);cursor:pointer;transition:.15s;box-shadow:0 0 0 1px var(--line) inset;white-space:nowrap}
   .chip .code{color:var(--code);font-weight:500;font-size:11px;margin-left:6px}
   .chip.add{color:var(--blue);background:var(--blue-soft);box-shadow:none;font-weight:700}
-  .addrow{display:none;gap:8px;padding:6px 4px 2px}
-  .addrow.show{display:flex}
-  .addrow input{flex:1;min-width:0;padding:11px 13px;border-radius:12px;border:none;
-    box-shadow:0 0 0 1px var(--line) inset;background:var(--card);color:var(--t1);font-size:15px;font-family:inherit}
-  .addrow input:focus{outline:none;box-shadow:0 0 0 2px var(--blue) inset}
-  .addrow .btn{flex:none;font-family:inherit;font-weight:700;font-size:14px;padding:0 16px;border-radius:12px;
-    border:none;background:var(--blue);color:#fff;cursor:pointer}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
   .pushrow{display:flex;align-items:center;gap:8px;padding:2px 4px 4px;flex-wrap:wrap}
+  .pushrow[hidden]{display:none}   /* 항목55(hidden스캔): renderPushToggle이 row.hidden 토글(미지원/무키) — 빈 행 공간 제거 */
   .pushbtn{flex:none;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid var(--bd);
     background:var(--card);color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
   .pushbtn:hover{border-color:var(--acc)}
@@ -155,6 +150,7 @@
   .sres-nm{font-weight:700;font-size:14px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .sres-cd{font-size:11px;color:var(--code);font-weight:600;flex:none}
   .sres-mk{font-size:10px;color:var(--t3);font-weight:600;background:var(--slate-soft);border-radius:6px;padding:2px 6px;flex:none}
+  .sres-mk.delisted{background:var(--up-soft);color:var(--up)}   /* 항목52: 상장폐지 플래그 */
   .sres-add{flex:none;font-family:inherit;font-weight:700;font-size:12.5px;padding:7px 12px;border-radius:9px;
     border:none;background:var(--blue-soft);color:var(--blue);cursor:pointer;transition:.14s}
   .sres-add:active{transform:translateY(1px)}
@@ -188,6 +184,7 @@
   #banner:empty{display:none}
 
   .valwrap{display:flex;align-items:center;gap:9px;padding:2px 4px}
+  .valwrap[hidden]{display:none}   /* 항목55: display:flex가 UA hidden 무효화 → 알림함서 대표값 세그 숨김 복원 */
   .valwrap .vlab{font-size:11.5px;font-weight:700;color:var(--t3);flex:none}
   .valmode{display:flex;flex:1;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px}
   .valmode button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:8px 0;border-radius:8px;cursor:pointer;transition:.14s}
@@ -200,8 +197,17 @@
   .scan i{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
   @keyframes sp{to{transform:rotate(360deg)}}
   .empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:40px 10px}
+  /* 항목44: 로드 실패 배너(빈 상태와 구분) — 카드 톤 재사용 + 재시도 버튼 */
+  .feed-err{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;
+    background:var(--card);border-radius:var(--radius);box-shadow:0 0 0 1px var(--line) inset;padding:26px 18px;margin:2px 0}
+  .feed-err .fe-t{font-size:14.5px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
+  .feed-err .fe-s{font-size:11.5px;font-weight:600;color:var(--t3);word-break:keep-all}
+  .feed-err .fe-retry{margin-top:4px;font-family:inherit;font-size:13.5px;font-weight:700;color:#fff;
+    background:var(--blue);border:none;border-radius:12px;padding:10px 20px;cursor:pointer;min-height:44px}
+  .feed-err .fe-retry:active{transform:translateY(1px)}
+  .feed-err .fe-retry:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .34s cubic-bezier(.22,1,.36,1) both}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .34s cubic-bezier(.22,1,.36,1) both;word-break:keep-all}   /* 항목50: 한글 어절·숫자+단위 mid-word 줄바꿈 방지(유상증/자·30/건) */
   .card.watched{box-shadow:0 0 0 1.5px var(--blue)}
   @keyframes rs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
@@ -209,7 +215,7 @@
   .star{position:relative;background:none;border:none;padding:0 3px 0 0;cursor:pointer;font-family:inherit;
     font-size:15px;line-height:1;color:#b6bfca;transition:color .12s,transform .12s}
   /* 항목20: 히트영역 ≥24px 확장(시각 불변) — 폭 26px(우측 .tk 침범 없이 gap 내), 높이 40px(카드 상단 패딩 내) */
-  .star::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:40px}
+  .star::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:44px}   /* 항목48: 44px(폭26=우측 .tk 비침범, 상하 카드패딩 내) */
   .star.on{color:#f5a524}
   .star:active{transform:scale(1.25)}
   .star:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
@@ -283,7 +289,7 @@
   .cardshare:hover{text-decoration:underline}
   .cardshare:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   /* 항목20: 공유·DART 히트영역 세로 ≥24px 확장(가로는 자체 폭>24px, 이웃 침범 없음) */
-  .src::before,.cardshare::before{content:"";position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:28px}
+  .src::before,.cardshare::before{content:"";position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:44px}   /* 항목48: 44px(가로=자체폭>24 이웃비침범, 상단 7px<margin8 impact 미침범) */
 
   .bar-btns{position:sticky;bottom:0;display:flex;gap:9px;padding:13px 0 max(2px, calc(env(safe-area-inset-bottom,0px) - 12px));background:linear-gradient(0deg,var(--bg) 68%,transparent)}
   .btn2{flex:1;font-family:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:14px;cursor:pointer;border:none;transition:.12s}
@@ -769,26 +775,7 @@
 </nav>
 
 <!-- ============ 관심종목 바텀시트(토스식) ============ -->
-<!-- 검색해서 담기 -->
-<div class="sheet" id="sheetSearch" hidden role="dialog" aria-modal="true" aria-label="종목 검색해서 담기">
-  <div class="sheet-back" data-sheet-close="sheetSearch"></div>
-  <div class="sheet-panel">
-    <span class="sheet-grip" aria-hidden="true"></span>
-    <div class="sheet-head">
-      <h3 class="sheet-tt">종목 코드로 담기</h3>
-      <button class="sheet-x" type="button" data-sheet-close="sheetSearch" aria-label="닫기">✕</button>
-    </div>
-    <div class="sheet-target" id="sheetSearchTarget"></div>
-    <div class="sheet-body">
-      <p class="sheet-hint">6자리 코드로 바로 담기</p>
-      <div class="addrow show" id="addrow">
-        <input id="addInput" placeholder="6자리 종목코드 (예: 005930)" inputmode="numeric"
-               autocomplete="off" onkeydown="if(event.key==='Enter')addStock()">
-        <button class="btn" onclick="addStock()">추가</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- 항목49: '코드로 담기' 데드 시트(#sheetSearch) 제거 — 검색 담기(searchInput→registerStock)가 주경로 -->
 
 <!-- 그룹 편집 -->
 <div class="sheet" id="sheetGroups" hidden role="dialog" aria-modal="true" aria-label="관심종목 그룹 편집">
@@ -885,6 +872,7 @@
   .mezz-r{font-size:12.5px;color:var(--t2);font-weight:600;margin-top:3px}
   .mezz-r .num{font-variant-numeric:tabular-nums}
   .mezz-r small{color:var(--t3);font-weight:500}
+  .mezz-r.mezz-ex{font-size:11px;color:var(--t4);font-weight:600;margin-top:4px}   /* 항목54: 극단 희석 소자 주석 */
   #mezzBody{padding:2px 0 4px}
 </style>
 
@@ -898,11 +886,12 @@
   .today-body{display:flex;flex-direction:column;gap:11px}
   /* 섹션 헤더 */
   .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:0}
+  .sec-h[hidden]{display:none}   /* 항목55(hidden스캔): mezzHoldHead(head.hidden 토글) — 종목현황 헤더 고아노출 방지 */
   .sec-h .st{font-size:14px;font-weight:800;color:var(--t1);letter-spacing:-.02em}
   .sec-h .ss{font-size:11px;font-weight:700;color:var(--t3)}
   .sec-h .more{margin-left:auto;font-size:12px;font-weight:700;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:4px 2px}
   /* 브리핑 패널(오늘 탭) */
-  .brief{background:var(--card);border-radius:var(--radius);padding:14px 15px;box-shadow:0 0 0 1px var(--line) inset}
+  .brief{background:var(--card);border-radius:var(--radius);padding:14px 15px;box-shadow:0 0 0 1px var(--line) inset;word-break:keep-all}   /* 항목50 */
   .brief .bl{display:flex;gap:9px;font-size:13.5px;color:var(--t2);padding:5px 0;align-items:baseline}
   .brief .bl::before{content:"";flex:none;width:3px;height:3px;border-radius:50%;background:var(--t4);transform:translateY(-3px)}
   .brief .bl b{color:var(--t1);font-weight:700}
@@ -1326,11 +1315,6 @@ function renderChips(){
   }).join('');
   el.innerHTML=chips+chipAddBtns();
 }
-function toggleAdd(){
-  const r=document.getElementById('addrow');if(!r)return;
-  r.classList.toggle('show');
-  if(r.classList.contains('show')){const i=document.getElementById('addInput');if(i)i.focus();}
-}
 function flashForm(t,cls){const m=document.getElementById('formmsg');if(m){m.textContent=t||'';m.className='formmsg'+(cls?' '+cls:'');}}
 
 /* 그룹 내 재정렬(이동버튼) → PUT /api/watchlist/order */
@@ -1370,13 +1354,7 @@ function openSearchSheet(){
   searchFlash('');
   track('watchlist_search_open',{group:WLSTATE.activeGroup});
 }
-/* 코드로 직접 담기(부가 경로) 시트. */
-function openCodeSheet(){
-  openSheet('sheetSearch');
-  const tgt=document.getElementById('sheetSearchTarget');
-  if(tgt){const g=WLSTATE.groups.find(x=>x.id===String(WLSTATE.activeGroup));
-    tgt.textContent='담는 그룹 · '+grpName(g);}
-}
+/* 항목49: openCodeSheet(#sheetSearch 진입) 제거 — 데드 UI */
 (function(){
   document.addEventListener('click',e=>{
     const c=e.target.closest('[data-sheet-close]');
@@ -2018,9 +1996,23 @@ function renderFeed(){
   FEED_FILTERED=STATE.items.filter(a=>passFilter(a,STATE.filter));
   FEED_SHOWN=0;
   if(!FEED_FILTERED.length){
-    el.innerHTML='<div class="empty">'+
-      (STATE.filter==='watch'?'관심종목의 최근 공시가 없습니다. 종목을 추가해 보세요.'
-        :'최근 공시가 없습니다. 새로고침해 보세요.')+'</div>';
+    // 항목44(순서 픽스): 완전 실패(로드실패+데이터 전무)면 필터 무관 오류배너 최우선(502 시 관심탭서도 노출).
+    //   부분성공/캐시(STATE.items 존재)는 아래 정상 빈상태 카피 유지.
+    if(FEED_LOAD_FAILED && !(STATE.items && STATE.items.length)){
+      el.innerHTML=feedErrHTML('');return;
+    }
+    // 항목45: 3케이스 …없어요체(분기소스=WLSTATE.stocks)
+    var msg;
+    if(STATE.filter==='watch'){
+      var hasW=(typeof WLSTATE!=='undefined'&&WLSTATE.stocks&&WLSTATE.stocks.length)?true:false;
+      msg=hasW ? '담은 종목에 아직 최근 공시가 없어요.<br>새 공시가 뜨면 여기에 모아 둘게요.'
+               : '아직 담은 종목이 없어요.<br>관심종목을 담으면 공시를 모아서 보여드려요.';
+    }else if(STATE.filter==='inbox'){
+      msg='아직 새 알림이 없어요.<br>관심종목에 신규 공시가 뜨면 여기에 모여요.';
+    }else{
+      msg='최근 공시가 없어요.<br>잠시 후 새로고침해 주세요.';
+    }
+    el.innerHTML='<div class="empty">'+msg+'</div>';
     return;
   }
   el.innerHTML='<div id="feedSentinel" aria-hidden="true" style="height:1px"></div>';
@@ -2211,7 +2203,10 @@ function mezzCard(h){
   const bcls=st==='in'?'bi':st==='at'?'ba':st==='out'?'bo':'bn';
   const mkt=h.market==='KOSPI'?'코스피':h.market==='KOSDAQ'?'코스닥':(h.market||'');
   const prem=(h.premium_pct!=null)?(h.premium_pct>0?'+':'')+h.premium_pct.toFixed(1)+'%':'—';
-  const dil=(h.dilution_vs_mktcap_pct!=null)?h.dilution_vs_mktcap_pct.toFixed(0)+'%':'—';
+  // 항목54: 표시 캡 필드(dilution_display, 예 ">500%") 우선, 없으면 원값 폴백. dilution_extreme면 소자 주석.
+  const dil=(h.dilution_display!=null&&h.dilution_display!=='')?esc(h.dilution_display)
+    :(h.dilution_vs_mktcap_pct!=null?h.dilution_vs_mktcap_pct.toFixed(0)+'%':'—');
+  const extremeNote=(h.dilution_extreme===true)?`<div class="mezz-r mezz-ex">초소형주 대규모 전환 예정</div>`:'';
   const cur=(h.current_price!=null)?h.current_price.toLocaleString():'—';
   const cv=(h.min_conv_price!=null)?h.min_conv_price.toLocaleString():'—';
   const basisLabel=(h.basis==='net')?'순잔량 기준':'누적발행 기준';
@@ -2219,7 +2214,8 @@ function mezzCard(h){
     `<div class="mezz-ch"><b>${esc(h.corp_name||'')}</b><span class="cd">${esc(h.stock_code||'')}</span><small>${mkt}</small>`+
     `<span class="mezz-bdg ${bcls}">${bdg}</span></div>`+
     `<div class="mezz-r">현재가 <span class="num">${cur}</span>원 · 전환가 <span class="num">${cv}</span>원 <small>괴리 ${prem}</small></div>`+
-    `<div class="mezz-r">시총 대비 희석 <span class="num">${dil}</span> <small>${basisLabel}</small></div></div>`;
+    `<div class="mezz-r">시총 대비 희석 <span class="num">${dil}</span> <small>${basisLabel}</small></div>`+
+    extremeNote+`</div>`;
 }
 async function loadMezz(){
   bindCal();
@@ -2350,6 +2346,12 @@ function absorb(d){
   if(typeof updateTabBadges==='function')updateTabBadges();   // 오늘 탭 배지=밤사이 신규(is_new)
 }
 
+let FEED_LOAD_FAILED=false;   // 항목44: 로드 실패(5xx/네트워크)를 '빈 상태'와 구분
+function feedErrHTML(msg){
+  return '<div class="feed-err" role="alert"><span class="fe-t">공시를 불러오지 못했어요</span>'+
+    (msg?'<span class="fe-s">'+esc(msg)+'</span>':'')+
+    '<button class="fe-retry" type="button" onclick="refresh()">다시 시도</button></div>';
+}
 async function loadFeed(force){
   const scan=document.getElementById('scan');
   const btn=document.getElementById('btnRefresh');
@@ -2359,10 +2361,16 @@ async function loadFeed(force){
   else if(scan)scan.classList.add('on');
   try{
     const d=await (force?jsend('POST',API+'/poll'):jget(API+'/alerts'));
+    FEED_LOAD_FAILED=false;
     absorb(d);
     // 서버 스로틀(잦은 새로고침): 캐시로 채워졌음을 부드럽게 안내(에러 아님)
     if(force&&d&&d.throttled&&typeof showToast==='function')showToast('잠시 후 다시 새로고침해 주세요');
-  }catch(e){document.getElementById('feed').innerHTML='<div class="empty">불러오기 실패: '+esc(e.message)+'</div>';}
+  }catch(e){
+    // 항목44: 실패를 빈 상태와 구분(오류 배너+재시도). 기존 STATE.items·배지는 유지(소멸 금지).
+    FEED_LOAD_FAILED=true;
+    const fe=document.getElementById('feed');fe.removeAttribute('aria-busy');
+    if(fe)fe.innerHTML=feedErrHTML(e&&e.message);
+  }
   finally{if(btn){btn.disabled=false;btn.classList.remove('busy');btn.removeAttribute('aria-busy');}}
 }
 function refresh(){loadFeed(true);}
@@ -2373,22 +2381,7 @@ function onNewPill(){
   window.scrollTo({top:0,behavior:prefersReduce()?'auto':'smooth'});
 }
 
-async function addStock(){
-  const inp=document.getElementById('addInput');
-  const msg=document.getElementById('searchmsg');
-  const setMsg=(t,cls)=>{if(msg){msg.textContent=t||'';msg.className='formmsg'+(cls?' '+cls:'');}};
-  const v=inp.value.trim();
-  if(!v){setMsg('종목코드를 입력하세요.','err');return;}
-  setMsg('담는 중…');
-  try{
-    const d=await jsend('POST',API+'/watchlist',{stock_code:v,group:WLSTATE.activeGroup});
-    WLSTATE.expanded=String(WLSTATE.activeGroup);   // 담은 그룹 펼쳐 새 칩 노출
-    applyWatchlist(d);inp.value='';
-    setMsg('✔ 담기 완료. 피드에 반영했습니다.','ok');
-    track('watchlist_add', {code: v, via:'input', group:WLSTATE.activeGroup});
-    recomputeWatched();renderFilter();renderFeed();   // 담기=데이터 무변경, 로컬 재렌더만
-  }catch(e){setMsg(e.message,'err');}
-}
+/* 항목49: addStock(#addInput 코드직접담기) 제거 — #sheetSearch 데드 UI와 함께 폐기(주경로=registerStock) */
 async function delStock(code){
   try{const d=await jsend('DELETE',API+'/watchlist/'+encodeURIComponent(code));
     applyWatchlist(d);
@@ -2401,8 +2394,11 @@ async function delStock(code){
 /* ---------- 종목 검색 (GET /api/search → POST /api/watchlist 등록) ---------- */
 function debounce(fn,ms){let t;return function(){const a=arguments,c=this;
   clearTimeout(t);t=setTimeout(()=>fn.apply(c,a),ms);};}
+let _searchFlashT=null;
 function searchFlash(text,cls){const m=document.getElementById('searchmsg');
-  if(!m)return;m.textContent=text||'';m.className='formmsg'+(cls?' '+cls:'');}
+  if(!m)return;m.textContent=text||'';m.className='formmsg'+(cls?' '+cls:'');
+  if(_searchFlashT){clearTimeout(_searchFlashT);_searchFlashT=null;}   // 항목47: 플래시 3.5초 자동 소멸(무기한 잔류 방지)
+  if(text){_searchFlashT=setTimeout(function(){const mm=document.getElementById('searchmsg');if(mm){mm.textContent='';mm.className='formmsg';}},3500);}}
 
 let SEARCHSEQ=0; // 응답 경쟁(stale) 방지
 async function doSearch(q){
@@ -2432,7 +2428,7 @@ function renderSearchResults(list){
   const have=new Set((STATE.stocks||[]).map(s=>String(s.stock_code)));
   box.innerHTML=list.map(r=>{
     const code=String(r.code||'');
-    const mk=(r.market&&r.market!=='-')?`<span class="sres-mk">${esc(r.market)}</span>`:'';
+    const mk=(r.market&&r.market!=='-')?`<span class="sres-mk">${esc(r.market)}</span>`:`<span class="sres-mk delisted">상장폐지</span>`;   // 항목52: 시장 없으면 상장폐지 폴백
     const reg=have.has(code);
     const btn=reg
       ? `<button class="sres-add done" disabled>담김</button>`
@@ -2463,7 +2459,7 @@ async function registerStock(code,btn){
     // 담기 후 검색창 초기화(입력값·결과 목록 비움). 완료 문구는 잠시 남겼다 지움.
     const si=document.getElementById('searchInput');if(si)si.value='';
     const sr=document.getElementById('searchResults');if(sr)sr.innerHTML='';
-    setTimeout(()=>{const m=document.getElementById('searchmsg');if(m)m.textContent='';},2500);
+    // 항목47: 성공 문구 소멸은 searchFlash 내장 3.5s 타이머가 처리(중복 타이머 제거)
     /* 담기는 피드 데이터 무변경 — 강제 재조회(loadFeed(true)=서버 DART 재폴링,
        피드 5~10초 스켈레톤 공백) 대신 로컬 재계산·재렌더만(실측 버그 수정). */
     recomputeWatched();renderFilter();renderFeed();

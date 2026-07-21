@@ -55,13 +55,18 @@
     if(changed)_seenSave(set);
     return changed;
   }
-  /* 오늘 배지=밤사이 신규(is_new) · 관심 배지=관심(WLSTATE 직접파생) 신규 중 '미확인'만(!seen). 신규 API 불요. */
+  /* 항목46: 오늘 배지 = 밤사이 신규 수(overnight.count)와 정합. renderToday 로드 시 _overnightCnt 확정,
+     로드 전 폴백=오늘자 is_new 수. 99+ 상시포화 제거 + 브리핑 "밤사이 N건"과 숫자 일치. */
+  var _overnightCnt=null;
+  function _todayYmd(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function _isTodayItem(a){ if(!a)return false; var raw=a.date||a.rcept_dt||''; return !!raw&&_fmtYmd(raw)===_todayYmd(); }
+  /* 오늘 배지=밤사이 신규 수(_overnightCnt|오늘자 is_new) · 관심 배지=관심(WLSTATE 직접파생) 신규 중 '미확인'만(!seen). */
   function updateTabBadges(){
     var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
     var seen=_seenSet(), ws=_watchedSet();
-    var newCnt=items.filter(function(a){return a.is_new;}).length;
+    var todayCnt=(_overnightCnt!=null)?_overnightCnt:items.filter(function(a){return a.is_new&&_isTodayItem(a);}).length;
     var inboxCnt=items.filter(function(a){return a.is_new&&a.stock_code&&ws[String(a.stock_code)]&&!_seenHas(seen,a.rcept_no);}).length;
-    setBadge('badgeToday',newCnt);
+    setBadge('badgeToday',todayCnt);
     setBadge('badgeWatch',inboxCnt);
     // 오늘 탭이 활성인데 /api/today 미확정이면 폴백 브리핑을 최신 STATE.items 로 재구성
     if(window.CUR_TAB==='today'&&!_todayLoaded)loadToday(true);
@@ -88,6 +93,15 @@
     if(typeof fmtYmd==='function')return fmtYmd(s);         // 전역(index.html) 재사용
     var m=s.match(/^(\d{4})(\d{2})(\d{2})$/); return m?(m[1]+'-'+m[2]+'-'+m[3]):s;
   }
+  /* 항목53: 밤사이 공시 '더보기' 청크 — 초기 OV_CHUNK 건만 DOM 렌더, 버튼 클릭 시 추가(122건 전량 렌더 방지). */
+  var OV_CHUNK=24, _ovItems=[], _ovShown=0;
+  function _renderOvChunk(){
+    if(!_ovItems.length)return '<div class="empty" style="padding:18px 10px">밤사이 신규 공시가 없습니다.</div>';
+    var html=_ovItems.slice(0,_ovShown).map(function(a){return cardHTML(a,'');}).join('');
+    var rem=_ovItems.length-_ovShown;
+    if(rem>0)html+='<button type="button" class="morebtn" id="ovMore" data-ovmore="1" aria-label="밤사이 공시 더보기">더보기 <span class="num">'+rem+'</span>건</button>';
+    return html;
+  }
   /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
      최종 화면순서 = #todayBrief(밴드) → 정적 대표값세그 → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful. */
   function renderToday(host,d){
@@ -96,12 +110,13 @@
     if(d&&(d.overnight||d.curation)){
       var ov=(d.overnight&&d.overnight.items)||[];
       var ovCnt=(d.overnight&&typeof d.overnight.count==='number')?d.overnight.count:ov.length;
+      _overnightCnt=ovCnt; setBadge('badgeToday',ovCnt);   // 항목46: 오늘 배지=밤사이 수 정합(⚠️ direct setBadge만; updateTabBadges 호출 시 폴백분기 재귀)
       var cur=(d.curation&&d.curation.items)||[];
       var curStatus=(d.curation&&d.curation.status)||'';
       var dist=d.type_distribution||{};
       var distTop=Object.keys(dist).sort(function(a,b){return dist[b]-dist[a];}).slice(0,3)
         .map(function(k){return esc(k)+' '+dist[k];}).join(' · ');
-      brief+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 '+ovCnt+'건</b>'+(distTop?(' — '+distTop):'')+'</div>'+
+      brief+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 <span class="nowrap" style="white-space:nowrap">'+ovCnt+'건</span></b>'+(distTop?(' — '+distTop):'')+'</div>'+
             '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(_fmtYmd(d.dataset_as_of||d.generated_at||''))+'</div></div>';
       body+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
       if(cur.length&&curStatus!=='pending_contract'){
@@ -110,8 +125,9 @@
         body+='<div class="empty" style="padding:22px 10px">큐레이션 준비중 — 곧 오늘의 핵심 공시를 선별해 보여드립니다.</div>';
       }
       body+='<div class="sec-h"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
-      body+= ov.length ? markWatched(ov).map(function(a){return cardHTML(a,'');}).join('')
-                       : '<div class="empty" style="padding:18px 10px">밤사이 신규 공시가 없습니다.</div>';
+      // 항목53: 밤사이 공시는 청크 렌더(초기 OV_CHUNK, 나머지는 더보기). ovWrap 컨테이너만 재렌더로 확장.
+      _ovItems=markWatched(ov); _ovShown=Math.min(OV_CHUNK,_ovItems.length);
+      body+='<div id="ovWrap">'+_renderOvChunk()+'</div>';
       if(d.disclaimer)body+='<p class="disc">'+esc(d.disclaimer)+'</p>';
       _todayLoaded=true;
     }else{
@@ -140,6 +156,10 @@
       var on=b.dataset.seg===WATCH_SEG; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
     STATE.filter=(WATCH_SEG==='inbox')?'inbox':'watch';
+    // 항목55: 대표값 세그(관심탭 #valmode)는 관심피드에서만 노출. 알림함(inbox)에선 숨김(대표값 무관 뷰).
+    var _vm=document.getElementById('valmode');
+    var _vw=(_vm&&_vm.closest)?_vm.closest('.valwrap'):null;
+    if(_vw)_vw.hidden=(WATCH_SEG==='inbox');
     // 알림함 진입 = 신규 이슈 확인 → seen 처리 후 관심 빨간점 갱신(소멸)
     if(WATCH_SEG==='inbox'&&markSeenWatchedNew())updateTabBadges();
     if(typeof renderFilter==='function')renderFilter();
@@ -148,7 +168,7 @@
       if(WATCH_SEG==='inbox'){
         var cnt=(STATE.items||[]).filter(function(a){return passFilter(a,'inbox');}).length;
         if(!cnt){ var fe=document.getElementById('feed');
-          if(fe)fe.innerHTML='<div class="empty">새 알림이 없어요 · 관심종목에 신규 공시가 뜨면 여기 모입니다.</div>'; }
+          if(fe)fe.innerHTML='<div class="empty">아직 새 알림이 없어요.<br>관심종목에 신규 공시가 뜨면 여기에 모여요.</div>'; }  // 45c: frontend renderFeed 문구 통일
       }
     }
     if(STATE.items&&STATE.items.length&&typeof feedSwap==='function')feedSwap(doRender);
@@ -290,6 +310,13 @@
     var t=e.target.closest('[data-detail]'); if(!t)return;
     if(markSeenWatchedNew(t.dataset.detail))updateTabBadges();
   },true);
+  // 항목53: 밤사이 공시 '더보기' → 다음 청크만큼 확장, ovWrap 컨테이너만 재렌더(재fetch 없음).
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('[data-ovmore]'))return;
+    _ovShown=Math.min(_ovShown+OV_CHUNK,_ovItems.length);
+    var w=document.getElementById('ovWrap');
+    if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
+  });
 
   /* ── 시트 뒤로가기 트랩(항목7·CTO정정3): openSheet(index.html)는 history를 안 쌓아
         back이 밑의 탭 엔트리를 소비(탭이동 유발)한다. 시트가 '열릴 때' 동일-해시 가드
