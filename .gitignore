@@ -47,6 +47,7 @@ data/*
 !data/corp_index.json
 !data/corp_map.json
 !data/impact_benchmark.json
+!data/earnings_calendar.json
 
 # === 실험/폐기된 스크래치 산출물 (배포 불필요) ===
 impact_benchmark.biased_kospi200.json

@@ -191,7 +191,7 @@
   .valmode button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .valmode button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .feed{display:flex;flex-direction:column;gap:9px}
+  .feed{display:flex;flex-direction:column;gap:12px}   /* 항목6: 카드 간 간격 통일(9→12, 스크롤 시 카드 붙어보임 해소) */
   .scan{display:none;align-items:center;gap:8px;justify-content:center;color:var(--t3);font-size:13px;font-weight:600;padding:12px}
   .scan.on{display:flex}
   .scan i{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
@@ -221,6 +221,9 @@
   .star:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
   .mk{font-size:11px;color:var(--t3);font-weight:600} .tm{margin-left:auto;font-size:12px;color:var(--t4);font-weight:500}
   .newpill{font-size:10px;font-weight:800;color:#fff;background:var(--up);border-radius:6px;padding:1px 6px}
+  /* 항목7: 시총 Top100 종목 순위 배지(탭→컨센서스 그래프). 토스식 저채도 파랑 칩 */
+  .capbadge{font-size:10.5px;font-weight:800;color:var(--blue);background:var(--blue-soft);border:none;border-radius:6px;padding:2px 7px;cursor:pointer;font-family:inherit;line-height:1.35;letter-spacing:-.01em;white-space:nowrap}
+  .capbadge:active{opacity:.7}
   .ttl{font-weight:700;font-size:16px;line-height:1.4;margin:0 0 10px;text-wrap:balance}
   .facts{list-style:none;margin:0 0 11px;padding:0;display:flex;flex-direction:column;gap:6px}
   .facts li{display:flex;gap:9px;font-size:13.5px;color:var(--t2);align-items:baseline}
@@ -679,6 +682,8 @@
         <button role="tab" data-v="car" aria-selected="true">보정값</button>
       </div>
     </div>
+    <!-- 항목8: 관심종목 상시 행(최근 공시 없어도 표시). 탭 → 컨센서스 그래프(shell.js renderWatchRows) -->
+    <div id="watchRows" hidden></div>
     <div id="banner"></div>
     <div class="feedmeta" id="feedmeta"></div>
     <div class="feed" id="feed" role="feed" aria-busy="true">
@@ -709,7 +714,7 @@
     <div class="cal-count"><span class="lb" id="calCountLb">이번 달 예상 공시</span><b class="num" id="calCount">–</b><span class="u">건</span></div>
     <div class="cal-tabs" id="calTabs" role="tablist" aria-label="캘린더 종류">
       <button role="tab" data-cseg="mezz" class="on" aria-selected="true">메자닌 전환</button>
-      <button role="tab" data-cseg="earn" aria-selected="false" disabled>실적·주총<span class="soon">준비중</span></button>
+      <button role="tab" data-cseg="earn" aria-selected="false">실적발표</button>
       <button role="tab" data-cseg="div" aria-selected="false" disabled>배당·상장<span class="soon">준비중</span></button>
     </div>
     <div class="cal-nav"><button id="calPrev" aria-label="이전 달">‹</button><b id="calMonth" class="num">–</b><button id="calNext" aria-label="다음 달">›</button></div>
@@ -855,10 +860,11 @@
   .an-metrics{display:flex;gap:9px;margin-bottom:14px}
   .an-metric{flex:1;background:var(--card);border-radius:14px;padding:12px 13px;box-shadow:0 0 0 1px var(--line) inset}
   .an-metric .k{font-size:11.5px;color:var(--t3);margin-bottom:5px}
-  .an-metric .v{font-size:17px;font-weight:800;font-family:var(--mono);color:var(--t1)}
+  .an-metric .v{font-size:17px;font-weight:800;font-family:var(--mono);color:var(--t1);white-space:nowrap}   /* 항목4: 숫자+단위(원) 줄바꿈 금지. 초과 시 _anFitMetrics 가 폰트 자동 축소 */
   .an-metric .v.up{color:var(--up)} .an-metric .v.down{color:var(--down)}
   .an-chips{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-  .an-chip{padding:8px 14px;border-radius:999px;background:var(--card);box-shadow:0 0 0 1px var(--line) inset;color:var(--t2);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  /* 항목2: 미선택 칩=외곽선만·저채도(눌린 것처럼 안 보이게), 선택 칩=파랑 채움 강조(토스 칩 문법) */
+  .an-chip{padding:8px 14px;border-radius:999px;background:transparent;box-shadow:0 0 0 1px var(--line) inset;color:var(--t3);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .12s,color .12s,box-shadow .12s}
   .an-chip.on{background:var(--blue-soft);box-shadow:0 0 0 1px var(--blue) inset;color:var(--blue)}
   .an-chip:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .an-card{background:var(--card);border-radius:16px;padding:15px 13px 10px;margin-bottom:14px;box-shadow:0 0 0 1px var(--line) inset}
@@ -927,12 +933,12 @@
 
 <style>
   /* ===== 5탭 셸 (venture-frontend: 하단 네비 승격 · 기존 토큰 재사용) ===== */
-  .tabpanel{display:none;flex-direction:column;gap:11px}
+  .tabpanel{display:none;flex-direction:column;gap:12px}   /* 항목6: 섹션 여백 통일 */
   .tabpanel.on{display:flex}
   /* .filter{display:flex}가 UA [hidden]를 이기므로 id 특이성으로 강제 숨김(관심 탭은 세그가 필터 대체) */
   #filter[hidden]{display:none}
   .htitle{font-weight:800;font-size:17px;letter-spacing:-.03em}
-  .today-body{display:flex;flex-direction:column;gap:11px}
+  .today-body{display:flex;flex-direction:column;gap:12px}   /* 항목6: 메인 카드 간격 피드와 통일 */
   /* 섹션 헤더 */
   .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:0}
   .sec-h[hidden]{display:none}   /* 항목55(hidden스캔): mezzHoldHead(head.hidden 토글) — 종목현황 헤더 고아노출 방지 */
@@ -966,6 +972,7 @@
   .rk-sub{display:block;font-size:11.5px;color:var(--t3);font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rk-val{font-size:14px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums;flex:none}
   .rk-val.up{color:var(--up)} .rk-val.down{color:var(--down)} .rk-val.flat{color:var(--t3)}
+  .rk-go{font-size:18px;line-height:1;color:var(--t4);font-weight:700;flex:none}   /* 항목8: 관심종목 행 진입 화살표 */
   /* 캘린더 세그 (준비중 pill) */
   .cal-tabs{display:flex;gap:6px;padding:2px 2px 6px}
   .cal-tabs button{flex:1;position:relative;font-family:inherit;font-size:13px;font-weight:700;padding:9px 0;border-radius:11px;
@@ -1026,6 +1033,16 @@
   #calEvBody .slab{font-size:13px;color:var(--t3);font-weight:600}
   #calEvBody .sval{font-size:13.5px;color:var(--t1);font-weight:700;text-align:right;display:flex;align-items:center;gap:6px;justify-content:flex-end}
   #calEvBody .sval.up{color:var(--up)} #calEvBody .sval.down{color:var(--down)} #calEvBody .sval.flat{color:var(--t3)}
+  /* 항목10-①: 세부정보 bullet point 목록(라벨:값 → 불릿 리스트) */
+  .cal-bl{list-style:none;margin:2px 0 0;padding:0}
+  .cal-bl li{position:relative;padding:9px 2px 9px 16px;border-top:1px solid var(--line-2);font-size:13.5px;color:var(--t1);font-weight:600;line-height:1.5}
+  .cal-bl li:first-child{border-top:none}
+  .cal-bl li::before{content:"";position:absolute;left:3px;top:16px;width:5px;height:5px;border-radius:50%;background:var(--blue)}
+  .cal-bl li b{font-weight:700;color:var(--t3);font-size:12.5px;margin-right:7px}
+  .cal-bl li small{color:var(--code);font-family:var(--mono);font-size:11px}
+  .cal-bl li .num.up{color:var(--up)} .cal-bl li .num.down{color:var(--down)} .cal-bl li .num.flat{color:var(--t3)}
+  .ev-type.earn{background:var(--blue-soft);color:var(--blue)}
+  .cal-ev .ev-conf{flex:none;font-size:11px;font-weight:800;color:var(--t3);font-variant-numeric:tabular-nums}
   #calEvBody .sval small{color:var(--t3);font-weight:600;font-size:11px}
   /* ===== 하단 5탭 네비 ===== */
   .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:flex;justify-content:center;
@@ -1283,6 +1300,7 @@ function applyWatchlist(d){
   if(WLSTATE.expanded!=null&&!WLSTATE.groups.some(g=>g.id===String(WLSTATE.expanded)))WLSTATE.expanded=null;
   STATE.stocks=WLSTATE.stocks;      // is_watched 판정 호환(검색/상세)
   renderGroups();renderChips();
+  if(window.renderWatchRows)renderWatchRows();   // 항목8: 관심종목 상시 행 동기화
   // 기기별 관심상태 반영: 피드 카드의 ★/강조/상단정렬을 이 기기 기준으로 갱신.
   // (서버 전역 피드는 is_watched 를 담지 않으므로 프론트가 계산 — 캐시 오염 없음)
   if(STATE.items&&STATE.items.length){recomputeWatched();renderFilter();renderFeed();}
@@ -1963,6 +1981,9 @@ function cardHTML(a,pfx){
       `aria-label="관심종목 토글" title="${a.is_watched?'관심종목 해제':'관심종목 담기'}">★</button>`
     : (a.is_watched?'<span class="star on" title="관심종목" style="cursor:default">★</span>':'');
   const mkt=a.market?`<span class="mk">· ${esc(a.market)}</span>`:'';
+  // 항목7: 시총 Top100 종목이면 순위 배지 노출 → 탭하면 컨센서스(애널) 그래프 진입(data-analyst → shell.js 핸들러)
+  const capRank=(typeof window!=='undefined'&&window.__TOP100_RANK&&a.stock_code)?window.__TOP100_RANK[String(a.stock_code)]:0;
+  const capbadge=capRank?`<button class="capbadge" type="button" data-analyst="${esc(a.stock_code)}" data-nm="${esc(a.corp_name||'')}" aria-label="시가총액 ${capRank}위 · 컨센서스 그래프 보기">시총 ${capRank}위</button>`:'';
   const newpill=a.is_new?'<span class="newpill">NEW</span>':'';
   const facts=(a.bullets||[]).map(l=>`<li><span>${boldNums(esc(l))}</span></li>`).join('');
   const ok=a.impact&&a.impact.status==='ok';
@@ -1987,7 +2008,7 @@ function cardHTML(a,pfx){
     : '';
   return `<article class="card${a.is_watched?' watched':''}">
     <div class="top">
-      ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}
+      ${star}${tk}<span class="cd num">${esc(a.stock_code)}</span>${mkt}${capbadge}
       <span class="tm">${newpill} ${esc(fmtYmd(a.date||a.rcept_dt))}</span>
     </div>
     ${ttl}${summaryPanel}
@@ -2114,6 +2135,28 @@ function openDetail(code,name){
   if(!_detailHistPushed){try{history.pushState({miriModal:'detail'},'');_detailHistPushed=true;}catch(e){}}
   track('detail_open',{code:code,n:items.length});
 }
+/* 항목5: 임의 공시목록(예: 밤사이 공시)을 종목상세와 '동일한' 오버레이/시트에 담아 표시.
+   검색결과 클릭→openDetail 과 같은 #detail 오버레이·히스토리 트랩 재사용(별도 모달 신설 없음). */
+function openDetailList(title,items){
+  DETAIL_CODE=null;
+  document.getElementById('detailNm').textContent=title||'공시';
+  document.getElementById('detailCd').textContent=(items&&items.length)?(items.length+'건'):'';
+  document.getElementById('detailActions').innerHTML='';   // 목록 뷰엔 담기/관심 액션 없음
+  const body=document.getElementById('detailBody');
+  if(!items||!items.length){
+    body.innerHTML=`<div class="detail-empty">표시할 공시가 없습니다.</div>`;
+  }else{
+    body.innerHTML=items.map(a=>cardHTML(a,'')).join('');   // 피드와 동일한 풀카드(별 토글·규모보기 유지)
+    attachSegToggle(body);
+  }
+  body.scrollTop=0;
+  const ov=document.getElementById('detail');
+  ov.hidden=false;document.body.style.overflow='hidden';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>ov.classList.add('open')));
+  if(!_detailHistPushed){try{history.pushState({miriModal:'detail'},'');_detailHistPushed=true;}catch(e){}}
+  if(typeof track==='function')track('overnight_list_open',{n:items?items.length:0});
+}
+window.openDetailList=openDetailList;
 let _detailHistPushed=false;
 function closeDetail(fromPop){
   const ov=document.getElementById('detail');if(!ov||ov.hidden)return;
@@ -2146,6 +2189,8 @@ window.addEventListener('popstate',function(){
 /* ---------- 메자닌 전환 캘린더 (월그리드 + 이벤트 리스트 · /api/mezzanine 지연 로딩) ---------- */
 let _mezzLoaded=false,_mezzHistPushed=false;
 let CAL_YM=null,CAL_SEL=null,CAL_ITEMS=[],_mezzData=null,_calBound=false,CAL_OUTLOOK=null;
+// 항목10-②: 캘린더 다중 소스(메자닌 전환 / 실적발표). CAL_ITEMS 는 활성 소스를 가리킨다.
+let CAL_SRC='mezz',MEZZ_ITEMS=[],EARN_ITEMS=[],_earnLoaded=false;
 const CAL_WD=['일','월','화','수','목','금','토'];
 function _pad2(n){return('0'+n).slice(-2);}
 function _ymdLocal(dt){return dt.getFullYear()+'-'+_pad2(dt.getMonth()+1)+'-'+_pad2(dt.getDate());}
@@ -2153,6 +2198,16 @@ function _itemsOn(ds){return CAL_ITEMS.filter(it=>it.date===ds);}
 function _monthItems(ym){return CAL_ITEMS.filter(it=>(it.date||'').slice(0,7)===ym);}
 function _evTypeCls(t){t=(t||'').toLowerCase();return(t==='cb'||t==='bw'||t==='eb')?t:'eb';}
 function calEvCard(it){
+  if((it.kind||'')==='earn'){   // 항목10-②: 실적발표(정기보고서 예상일) 카드
+    const mk=it.market==='KOSPI'?'코스피':it.market==='KOSDAQ'?'코스닥':(it.market||'');
+    const conf={high:'높음',medium:'보통',low:'낮음'}[it.confidence]||'';
+    const sub=`${esc(it.report_nm||'정기보고서')}${it.target_period?(' · '+esc(it.target_period)):''}${mk?(' · '+mk):''}`;
+    return `<button class="cal-ev" data-calidx="${it._idx}">`+
+      `<span class="ev-main"><span class="ev-nm">${esc(it.corp_name||'')}<span class="cd">${esc(it.stock_code||'')}</span></span>`+
+      `<span class="ev-sub">${sub}</span></span>`+
+      `<span class="ev-type earn">실적</span>`+
+      (conf?`<span class="ev-conf">${conf}</span>`:'')+`</button>`;
+  }
   const type=(it.sec_type||'').toUpperCase();
   const vs=it.vs_pct;
   const vcls=vs>0?'up':vs<0?'down':'flat';
@@ -2165,13 +2220,18 @@ function calEvCard(it){
     `<span class="ev-type ${_evTypeCls(type)}">${esc(type||'CB')}</span>`+
     `<span class="ev-vs ${vcls}">${vtxt}</span></button>`;
 }
+const CAL_LIST_CAP=60;   // 항목10-②: 실적발표는 특정일(반기 마감 등)에 수백 종목 집중 → 렌더 상한(성능)
 function renderCalList(){
   const list=document.getElementById('calList'),label=document.getElementById('calDayLabel');
-  if(!CAL_SEL){if(label)label.textContent='';if(list)list.innerHTML='<div class="mezz-empty">이번 달 예정 공시 없음</div>';return;}
+  if(!CAL_SEL){if(label)label.textContent='';if(list)list.innerHTML='<div class="mezz-empty">이번 달 예정 일정 없음</div>';return;}
   const p=CAL_SEL.split('-').map(Number),wd=CAL_WD[new Date(p[0],p[1]-1,p[2]).getDay()];
   if(label)label.textContent=p[1]+'월 '+p[2]+'일 ('+wd+')';
   const evs=_itemsOn(CAL_SEL);
-  if(list)list.innerHTML=evs.length?evs.map(calEvCard).join(''):'<div class="mezz-empty">이 날 예정 공시 없음</div>';
+  if(!list)return;
+  if(!evs.length){list.innerHTML='<div class="mezz-empty">이 날 예정 일정 없음</div>';return;}
+  let html=evs.slice(0,CAL_LIST_CAP).map(calEvCard).join('');
+  if(evs.length>CAL_LIST_CAP)html+=`<div class="mezz-empty" style="padding:12px 10px">그 외 ${evs.length-CAL_LIST_CAP}개 더 예정</div>`;
+  list.innerHTML=html;
 }
 function renderCal(){
   if(!CAL_YM)return;
@@ -2180,7 +2240,8 @@ function renderCal(){
   // 항목31: 표시월이 이번 달이면 "이번 달", 아니면 "N월"
   const now=new Date(),curYM=now.getFullYear()+'-'+_pad2(now.getMonth()+1);
   const lb=document.getElementById('calCountLb');
-  if(lb)lb.textContent=(CAL_YM===curYM?'이번 달':(m+'월'))+' 예상 공시';
+  const _suffix=(CAL_SRC==='earn')?' 예상 실적발표':' 예상 공시';   // 항목10-②: 소스별 라벨
+  if(lb)lb.textContent=(CAL_YM===curYM?'이번 달':(m+'월'))+_suffix;
   let cnt=_monthItems(CAL_YM).length;
   if(CAL_OUTLOOK&&CAL_OUTLOOK.month===CAL_YM&&CAL_OUTLOOK.count!=null)cnt=CAL_OUTLOOK.count;
   const cc=document.getElementById('calCount');if(cc)cc.textContent=cnt;
@@ -2226,13 +2287,30 @@ function openCalEv(idx){
   const cp=(it.conv_price!=null)?Number(it.conv_price).toLocaleString():'—';
   const sh=(it.shares!=null)?Number(it.shares).toLocaleString():'—';
   const body=document.getElementById('calEvBody');
-  if(body)body.innerHTML=
-    `<div class="srow"><span class="slab">종목</span><span class="sval">${esc(it.corp_name||'')} <small>${esc(it.stock_code||'')}</small> <span class="ev-type ${_evTypeCls(type)}">${esc(type||'')}</span></span></div>`+
-    `<div class="srow"><span class="slab">${esc(it.event||'전환 개시')}</span><span class="sval num">${esc(fmtYmd(it.date)||'—')}</span></div>`+
-    `<div class="srow"><span class="slab">전환가</span><span class="sval num">${cp}원</span></div>`+
-    `<div class="srow"><span class="slab">현재가 대비</span><span class="sval num ${vcls}">${vtxt}</span></div>`+
-    `<div class="srow"><span class="slab">예정 물량</span><span class="sval num">${sh}주</span></div>`+
-    `<p class="cal-ev-note">전환가에 닿으면 신주가 시장에 나올 수 있어요.</p>`;
+  // 항목10-①: 세부정보를 bullet point 목록으로 표기(라벨:값 → 불릿). 유형별(메자닌/실적 등) 공용.
+  if(body){
+    if((it.kind||'')==='earn'){
+      const conf={high:'높음',medium:'보통',low:'낮음'}[it.confidence]||'';
+      body.innerHTML=
+        `<ul class="cal-bl">`+
+        `<li><b>종목</b> ${esc(it.corp_name||'')} <small>${esc(it.stock_code||'')}</small> <span class="ev-type earn">실적</span></li>`+
+        `<li><b>예상 발표일</b> <span class="num">${esc(fmtYmd(it.date)||'—')}</span></li>`+
+        (it.report_nm?`<li><b>보고서</b> ${esc(it.report_nm)}${it.target_period?` <small>(${esc(it.target_period)})</small>`:''}</li>`:'')+
+        (conf?`<li><b>추정 신뢰도</b> ${conf}</li>`:'')+
+        `</ul>`+
+        `<p class="cal-ev-note">과거 정기보고서 접수 계절성으로 추정한 예상일이에요(실제일과 다를 수 있음).</p>`;
+    }else{
+      body.innerHTML=
+        `<ul class="cal-bl">`+
+        `<li><b>종목</b> ${esc(it.corp_name||'')} <small>${esc(it.stock_code||'')}</small> <span class="ev-type ${_evTypeCls(type)}">${esc(type||'')}</span></li>`+
+        `<li><b>${esc(it.event||'전환 개시')}</b> <span class="num">${esc(fmtYmd(it.date)||'—')}</span></li>`+
+        `<li><b>전환가</b> <span class="num">${cp}원</span></li>`+
+        `<li><b>현재가 대비</b> <span class="num ${vcls}">${vtxt}</span></li>`+
+        `<li><b>예정 물량</b> <span class="num">${sh}주</span></li>`+
+        `</ul>`+
+        `<p class="cal-ev-note">전환가에 닿으면 신주가 시장에 나올 수 있어요.</p>`;
+    }
+  }
   openSheet('sheetCalEv');
   if(typeof track==='function')track('cal_event_open',{code:it.stock_code||'',type:type});
 }
@@ -2245,6 +2323,21 @@ function bindCal(){
   if(grid)grid.addEventListener('click',e=>{const b=e.target.closest('[data-caldayselect]');if(b)calSelect(b.getAttribute('data-caldayselect'));});
   const list=document.getElementById('calList');
   if(list)list.addEventListener('click',e=>{const b=e.target.closest('[data-calidx]');if(b)openCalEv(Number(b.getAttribute('data-calidx')));});
+  // 항목10-②: 캘린더 유형 탭(메자닌 전환 / 실적발표). 배당·상장은 disabled(준비중).
+  const tabs=document.getElementById('calTabs');
+  if(tabs)tabs.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-cseg]');
+    if(!b||b.disabled||b.getAttribute('aria-disabled')==='true')return;
+    const seg=b.dataset.cseg;
+    if(seg===CAL_SRC)return;   // 같은 소스 재탭 무시
+    tabs.querySelectorAll('button').forEach(x=>{const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-selected',String(on));});
+    if(seg==='earn')loadEarn();
+    else if(seg==='mezz'){
+      const disc=document.getElementById('calDisc');
+      if(disc&&_mezzData)disc.textContent=(_mezzData.disclaimer||'')+(_mezzData.note?' '+_mezzData.note:'');
+      if(_mezzLoaded)_applyCalSource('mezz'); else loadMezz();
+    }
+  });
 }
 function mezzCard(h){
   const st=h.moneyness; // 'in'|'at'|'out'|null
@@ -2277,6 +2370,7 @@ async function loadMezz(){
     _mezzData=d;
     CAL_OUTLOOK=d.monthly_outlook||null;
     CAL_ITEMS=(((d.calendar&&d.calendar.items)||[]).map((it,i)=>{it._idx=i;return it;}));
+    MEZZ_ITEMS=CAL_ITEMS; CAL_SRC='mezz';   // 항목10-②: 메자닌 소스 캐시
     // 메자닌 종목 현황(항목1 병존)
     const m=d.moneyness_summary||{},di=d.dilution_summary||{};
     const sum=`<div class="mezz-sum"><span>전환가 위 ${m.in||0}</span>`+
@@ -2294,6 +2388,34 @@ async function loadMezz(){
     else{const fut=_monthItems(CAL_YM).filter(it=>it.date>=todayStr).sort((a,b)=>a.date<b.date?-1:1);CAL_SEL=fut.length?fut[0].date:null;}
     renderCal();
     _mezzLoaded=true;
+  }catch(e){ if(list)list.innerHTML='<div class="mezz-empty">불러오지 못했어요</div>'; }
+}
+/* 항목10-②: 활성 캘린더 소스 전환(메자닌↔실적). CAL_ITEMS 포인터 교체 + 기본 선택일 재계산 + 렌더. */
+function _applyCalSource(src){
+  CAL_SRC=src;
+  CAL_ITEMS=(src==='earn')?EARN_ITEMS:MEZZ_ITEMS;
+  const head=document.getElementById('mezzHoldHead'),hold=document.getElementById('mezzHoldings');
+  if(src==='earn'){ CAL_OUTLOOK=null; if(head)head.hidden=true; if(hold)hold.style.display='none'; }
+  else { if(hold)hold.style.display=''; if(head)head.hidden=!(hold&&hold.innerHTML.trim()); }
+  const todayStr=_ymdLocal(new Date());
+  if(!CAL_YM)CAL_YM=todayStr.slice(0,7);
+  if(_itemsOn(todayStr).length&&todayStr.slice(0,7)===CAL_YM){CAL_SEL=todayStr;}
+  else{const mi=_monthItems(CAL_YM).slice().sort((a,b)=>a.date<b.date?-1:1);
+    const fut=mi.filter(it=>it.date>=todayStr);CAL_SEL=fut.length?fut[0].date:(mi.length?mi[0].date:null);}
+  renderCal();
+}
+/* 항목10-②: 실적발표 소스 지연 로드(GET /api/earnings-calendar, 읽기전용·미래 예측만). */
+async function loadEarn(){
+  bindCal();
+  if(_earnLoaded){_applyCalSource('earn');return;}
+  const list=document.getElementById('calList');
+  if(list)list.innerHTML='<div class="mezz-empty">불러오는 중</div>';
+  try{
+    const d=await jget(API+'/earnings-calendar');
+    EARN_ITEMS=((d&&d.items)||[]).map((it,i)=>{it._idx=i;return it;});
+    _earnLoaded=true;
+    const disc=document.getElementById('calDisc');if(disc)disc.textContent=(d&&d.disclaimer)||'';
+    _applyCalSource('earn');
   }catch(e){ if(list)list.innerHTML='<div class="mezz-empty">불러오지 못했어요</div>'; }
 }
 function openMezz(){
@@ -2348,6 +2470,7 @@ async function toggleWatch(btn){
         group:String(s.group||'default'),order:(typeof s.order==='number'?s.order:0)}));
       STATE.stocks=WLSTATE.stocks;
       renderGroups();renderChips();
+      if(window.renderWatchRows)renderWatchRows();   // 항목8: 별 토글 시 관심 행 갱신
     }
     const ws=new Set((WLSTATE.stocks||[]).map(s=>String(s.stock_code)));
     const now=ws.has(String(code));
@@ -2724,6 +2847,8 @@ if('serviceWorker' in navigator&&navigator.serviceWorker){
     if(document.visibilityState!=='visible')return;   // 백그라운드/화면꺼짐이면 정지
     if(overlayOpen())return;                           // 상세·시트 열림 중 방해 금지
     try{reloadAlertsQuiet();}catch(e){}                // 시그니처 가드 경유(무변경=무렌더·무토스트)
+    // 항목11: 랭킹 탭이 활성이면 공시순·급등락 랭킹도 같은 폴링 주기로 자동 갱신(시총 Top100은 정적이라 제외).
+    try{ if(window.CUR_TAB==='ranking'&&typeof window.__miriRankRefresh==='function')window.__miriRankRefresh(); }catch(e){}
   }
   function start(){ if(timer===null)timer=setInterval(tick,POLL_MS); }
   function stop(){ if(timer!==null){clearInterval(timer);timer=null;} }

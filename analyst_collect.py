@@ -221,6 +221,15 @@ def target_codes(limit=None, extra=None):
             seen.add(c)
             codes.append(c)
 
+    # 관심종목(watchlist.json) 우선 — 최근 공시가 없어 top100/ranking 에 안 잡히는 종목도
+    # 컨센서스/종가 그래프가 뜨도록 항상 수집 대상에 포함(항목8). Supabase 백엔드면 로컬
+    # 스냅샷 best-effort(없으면 skip). limit 앞에 두어 잘려나가지 않게 최우선 배치.
+    try:
+        wl = mc.load_json(config.WATCHLIST_FILE, default={}) or {}
+        for s in (wl.get("stocks") or []):
+            add((s.get("stock_code") or "") if isinstance(s, dict) else "")
+    except Exception:
+        pass
     snap = mc.load_json(config.DATA / "top100.json", default={}) or {}
     for it in (snap.get("items") or []):
         add(it.get("code"))

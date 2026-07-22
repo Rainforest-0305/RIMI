@@ -63,13 +63,32 @@
   var _overnightCnt=null;
   function _todayYmd(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
   function _isTodayItem(a){ if(!a)return false; var raw=a.date||a.rcept_dt||''; return !!raw&&_fmtYmd(raw)===_todayYmd(); }
-  /* 오늘 배지=밤사이 신규 수(_overnightCnt|오늘자 is_new) · 관심 배지=관심(WLSTATE 직접파생) 신규 중 '미확인'만(!seen). */
+  /* 항목9(배지 미소멸 버그): 오늘 배지 = '미확인 밤사이 신규'. 메인 탭 진입+피드 노출 시 확인처리(당일 서명 저장)
+     → 배지 소멸. 이후 같은 날 새 공시가 더 들어오면(현재수 > 확인시점 수) 그 델타만큼 재점등. 날짜 바뀌면 서명 무효. */
+  var OVSEEN_KEY='miri-today-seen';
+  function _rawTodayCnt(){
+    var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
+    return (_overnightCnt!=null)?_overnightCnt:items.filter(function(a){return a.is_new&&_isTodayItem(a);}).length;
+  }
+  function _ovSeenGet(){ try{return JSON.parse(localStorage.getItem(OVSEEN_KEY)||'null')||null;}catch(e){return null;} }
+  function markTodaySeen(){   // 메인 탭 확인 = 배지 소멸 + 당일 확인시점 수 저장
+    try{localStorage.setItem(OVSEEN_KEY,JSON.stringify({ymd:_todayYmd(),count:_rawTodayCnt()}));}catch(e){}
+    setBadge('badgeToday',0);
+  }
+  function _todayBadgeCnt(){   // 미확인 밤사이 = 현재수 - 당일 확인시점 수(다른날/미확인=0 기준)
+    var raw=_rawTodayCnt(), s=_ovSeenGet();
+    var seenCnt=(s&&s.ymd===_todayYmd())?(s.count||0):0;
+    return Math.max(0, raw-seenCnt);
+  }
+  window.markTodaySeen=markTodaySeen;
+  /* 오늘 배지=미확인 밤사이 신규(항목9) · 관심 배지=관심(WLSTATE 직접파생) 신규 중 '미확인'만(!seen). */
   function updateTabBadges(){
     var items=(typeof STATE!=='undefined'&&STATE.items)?STATE.items:[];
     var seen=_seenSet(), ws=_watchedSet();
-    var todayCnt=(_overnightCnt!=null)?_overnightCnt:items.filter(function(a){return a.is_new&&_isTodayItem(a);}).length;
     var inboxCnt=items.filter(function(a){return a.is_new&&a.stock_code&&ws[String(a.stock_code)]&&!_seenHas(seen,a.rcept_no);}).length;
-    setBadge('badgeToday',todayCnt);
+    // 메인 탭을 보고 있고 오늘 데이터 확정이면 = 확인상태(배지 0 + 서명). 아니면 미확인 델타 표시.
+    if(window.CUR_TAB==='today'&&_todayLoaded)markTodaySeen();
+    else setBadge('badgeToday',_todayBadgeCnt());
     setBadge('badgeWatch',inboxCnt);
     // 오늘 탭이 활성인데 /api/today 미확정이면 폴백 브리핑을 최신 STATE.items 로 재구성
     if(window.CUR_TAB==='today'&&!_todayLoaded)loadToday(true);
@@ -113,7 +132,8 @@
     if(d&&(d.overnight||d.curation)){
       var ov=(d.overnight&&d.overnight.items)||[];
       var ovCnt=(d.overnight&&typeof d.overnight.count==='number')?d.overnight.count:ov.length;
-      _overnightCnt=ovCnt; setBadge('badgeToday',ovCnt);   // 항목46: 오늘 배지=밤사이 수 정합(⚠️ direct setBadge만; updateTabBadges 호출 시 폴백분기 재귀)
+      _overnightCnt=ovCnt;   // 항목46/9: 밤사이 수 확정. 메인 탭 노출 중이면 확인처리(배지 소멸), 아니면 미확인 델타.
+      if(window.CUR_TAB==='today')markTodaySeen(); else setBadge('badgeToday',_todayBadgeCnt());
       var cur=(d.curation&&d.curation.items)||[];
       var curStatus=(d.curation&&d.curation.status)||'';
       var dist=d.type_distribution||{};
@@ -134,6 +154,7 @@
       body+='<div class="sec-h" id="ovSecH"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
       // 항목53: 밤사이 공시는 청크 렌더(초기 OV_CHUNK, 나머지는 더보기). ovWrap 컨테이너만 재렌더로 확장.
       _ovItems=markWatched(ov); _ovShown=Math.min(OV_CHUNK,_ovItems.length);
+      window.__OV_ITEMS=_ovItems;   // 항목5: 밴드 탭 시 상세 오버레이에 담을 밤사이 공시 전량
       body+='<div id="ovWrap">'+_renderOvChunk()+'</div>';
       if(d.disclaimer)body+='<p class="disc">'+esc(d.disclaimer)+'</p>';
       _todayLoaded=true;
@@ -163,6 +184,7 @@
       var on=b.dataset.seg===WATCH_SEG; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
     STATE.filter=(WATCH_SEG==='inbox')?'inbox':'watch';
+    renderWatchRows();   // 항목8: 관심종목 상시 행(관심피드에서만 노출)
     // 항목55: 대표값 세그(관심탭 #valmode)는 관심피드에서만 노출. 알림함(inbox)에선 숨김(대표값 무관 뷰).
     var _vm=document.getElementById('valmode');
     var _vw=(_vm&&_vm.closest)?_vm.closest('.valwrap'):null;
@@ -182,12 +204,35 @@
     else doRender();
   }
 
+  /* ---------- 항목8: 관심종목 상시 행(최근 공시 유무 무관). 탭 → openAnalyst(컨센서스/종가 그래프) ---------- */
+  function renderWatchRows(){
+    var host=document.getElementById('watchRows'); if(!host)return;
+    var stocks=(typeof WLSTATE!=='undefined'&&WLSTATE.stocks)?WLSTATE.stocks:[];
+    if(WATCH_SEG!=='feed'||!stocks.length){ host.hidden=true; host.innerHTML=''; return; }
+    host.hidden=false;
+    var rows=stocks.map(function(s){
+      var code=String(s.stock_code||''), nm=esc(s.name||code);
+      var rank=(window.__TOP100_RANK&&window.__TOP100_RANK[code])?window.__TOP100_RANK[code]:0;
+      var right=rank?('<span class="rk-val flat num">시총 '+rank+'위</span>')
+                    :('<span class="rk-go" aria-hidden="true">›</span>');
+      return '<button class="rk-row" type="button" data-analyst="'+esc(code)+'" data-nm="'+esc(s.name||'')+'">'+
+        '<span class="rk-info"><span class="rk-nm">'+nm+'<span class="cd num">'+esc(code)+'</span></span>'+
+        '<span class="rk-sub">컨센서스 그래프</span></span>'+right+'</button>';
+    }).join('');
+    host.innerHTML='<div class="sec-h"><span class="st">관심종목</span><span class="ss">'+stocks.length+'</span></div>'+
+      '<div class="rank">'+rows+'</div>';
+  }
+  window.renderWatchRows=renderWatchRows;
+
   /* ---------- ③ 랭킹 (GET /api/ranking · cardHTML/행 재사용, price_signal null-graceful) ---------- */
   function loadRanking(){
     // 매 진입마다 재조회: price_signal 콜드(null) 후 워밍값이 다음 진입에 수렴하도록(서버측 캐시라 저렴).
     jget(API+'/ranking').then(function(d){ RANK_DATA=(d&&d.items)||[]; renderRanking(); })
       .catch(function(){ if(!RANK_DATA.length)renderRanking(); });
   }
+  // 항목11: 랭킹 실시간 갱신 — 시총 Top100(cap, 정적)만 제외하고 공시순·급등락은 폴링 틱마다 재조회.
+  //  index.html 경량 폴링(85s, 화면활성·오버레이닫힘 가드)이 랭킹 탭일 때 호출. 별도 타이머/폴 주기 신설 없음.
+  window.__miriRankRefresh=function(){ if(RANK_SEG!=='cap')loadRanking(); };
   function rankValue(it){
     var ps=it.price_signal;   // {change_pct, price, prev_close, volume, source, as_of} | null (null-graceful)
     if(ps&&typeof ps.change_pct==='number')return ps.change_pct;
@@ -206,8 +251,20 @@
       '<span class="rk-sub">'+sub+'</span></span>'+valHTML+'</button>';
   }
   /* 트랙2: 시총 Top100 (GET /api/top100). 행 = 순위+종목명+코드+시총(cap_label). 행 탭 → 애널 그래프(openAnalyst). */
+  var _t100Refreshed=false;
+  function _buildTop100Rank(){   // 항목7: code→시총순위 맵(피드 카드 배지 조회용). 전역 노출(index.html cardHTML 참조).
+    var m={}; TOP100_DATA.forEach(function(it,i){ var c=String(it.stock_code||it.code||''); if(c)m[c]=(it.rank||i+1); });
+    window.__TOP100_RANK=m;
+  }
+  function _refreshFeedsForBadge(){   // 맵 확정 후 현재 탭 목록에 배지 1회 반영(스크롤 중이면 방해 않고 다음 자연 렌더에 위임)
+    if((window.pageYOffset||window.scrollY||0)>300)return;
+    if(window.CUR_TAB==='today'&&_todayLoaded&&typeof loadToday==='function'){loadToday(true);return;}
+    if(window.CUR_TAB==='watch'&&typeof renderFeed==='function'){try{renderFeed();}catch(e){}}
+  }
   function loadTop100(){
-    jget(API+'/top100').then(function(d){ TOP100_DATA=(d&&d.items)||[]; _top100Loaded=true; if(RANK_SEG==='cap')renderTop100(document.getElementById('rankBody')); })
+    jget(API+'/top100').then(function(d){ TOP100_DATA=(d&&d.items)||[]; _top100Loaded=true; _buildTop100Rank();
+        if(RANK_SEG==='cap')renderTop100(document.getElementById('rankBody'));
+        if(!_t100Refreshed){_t100Refreshed=true;_refreshFeedsForBadge();} })
       .catch(function(){ _top100Loaded=true; if(RANK_SEG==='cap')renderTop100(document.getElementById('rankBody')); });
   }
   function top100RowHTML(it,i){
@@ -321,25 +378,33 @@
     var nTot=(typeof d.n_total==='number')?d.n_total:(d.reports?d.reports.length:0);
     var up=(d.avg_tp!=null&&d.current)?((d.avg_tp-d.current)/d.current*100):null;
     var showToggle=nTp>=5;   // ③ 토글은 리포트 N>=5일 때만 노출
+    var noRep=(nTp===0);     // 항목8: 목표가 리포트 없음 → 종가 추이만 표시(리포트 없음 상태 명시)
     host.innerHTML=
-      '<div class="an-sub">증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건</div>'+
+      '<div class="an-sub">'+(noRep?'아직 증권사 목표주가 리포트가 없어요 · 종가 추이만 표시'
+                                    :('증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건'))+'</div>'+
       '<div class="an-metrics">'+
         '<div class="an-metric"><div class="k">현재가</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
-        '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+_anFmt(d.avg_tp)+'원</div></div>'+
-        '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'-':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
+        '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+(noRep?'—':(_anFmt(d.avg_tp)+'원'))+'</div></div>'+
+        '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'—':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
       '</div>'+
       (showToggle?('<div class="an-chips">'+
         '<button type="button" class="an-chip" data-an-toggle="reg" aria-pressed="false">회귀 추세선</button>'+
-        '<button type="button" class="an-chip" data-an-toggle="cons" aria-pressed="false">컨센서스 추이</button></div>'):'')+
+        '<button type="button" class="an-chip" data-an-toggle="cons" aria-pressed="false">컨센서스 추세선</button></div>'):'')+
       '<div class="an-card">'+
-        '<div class="an-card-t"><span>목표주가 · 실제주가</span><span class="cnt">리포트 '+nTp+'개 · 최근 5개월</span></div>'+
+        '<div class="an-card-t"><span>'+(noRep?'실제 종가 추이':'목표주가 · 실제주가')+'</span><span class="cnt">'+(noRep?'최근 5개월':('리포트 '+nTp+'개 · 최근 5개월'))+'</span></div>'+
         '<div id="anChart"></div>'+
         '<div class="an-legend" id="anLegend"></div>'+
         '<button type="button" class="an-more" id="anMore" aria-expanded="false">자세히 보기 ›</button>'+
       '</div>'+
       '<div class="an-card an-list" id="anList" hidden></div>'+
       '<div class="an-disc">※ 증권사 전망을 정리한 참고 자료이며<br>투자 권유가 아닙니다. 목표주가는 각 증권사 리포트 기준.</div>';
-    _anDrawChart(); _anDrawList();
+    _anDrawChart(); _anDrawList(); _anFitMetrics();
+  }
+  /* 항목4: 지표카드 값(숫자+원)이 nowrap 상태에서 박스를 넘치면 폰트를 단계 축소해 한 줄 유지(줄넘김/잘림 방지). */
+  function _anFitMetrics(){
+    var vs=document.querySelectorAll('#analystBody .an-metric .v');
+    for(var i=0;i<vs.length;i++){ var el=vs[i]; el.style.fontSize=''; var fs=17;
+      while(el.scrollWidth>el.clientWidth+0.5 && fs>11){ fs-=0.5; el.style.fontSize=fs+'px'; } }
   }
   function _anRegLine(reports){   // ③(a) 직선 회귀선: 목표가 vs 날짜 선형회귀
     var pts=reports.map(function(r){return [_anParseD(r.date).getTime(), r.target_price];}).sort(function(a,b){return a[0]-b[0];});
@@ -390,17 +455,17 @@
     if(st.cons){ var cl=_anConsLine(reports); if(cl.length>1)trend+='<path d="'+cl.map(function(p,ix){return (ix?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join(' ')+'" fill="none" stroke="#4d94ff" stroke-width="2" stroke-dasharray="2 3" opacity="0.9"/>'; }
     var dots='';
     reports.forEach(function(r,ix){ var x=X(_anParseD(r.date).getTime()), y=Y(r.target_price);
-      dots+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.5" fill="#fbbf24" fill-opacity="0.95" stroke="var(--card)" stroke-width="1.5" data-i="'+ix+'" class="an-pt" style="cursor:pointer"/>'; });
+      dots+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="3.6" fill="#fbbf24" fill-opacity="0.95" stroke="var(--card)" stroke-width="1.1" data-i="'+ix+'" class="an-pt" style="cursor:pointer"/>'; });
     var lastx=X(x1), lasty=Y(d.current);
     var curm=(d.current!=null)?('<circle cx="'+lastx.toFixed(1)+'" cy="'+lasty.toFixed(1)+'" r="3.5" fill="var(--t1)"/>'+
       '<text x="'+(lastx-6).toFixed(1)+'" y="'+(lasty+4).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700">현재 '+_anWon(d.current)+'</text>'):'';
     el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'">'+grid+xlab+avg+trend+
       '<path d="'+path+'" fill="none" stroke="var(--t1)" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>'+curm+dots+'</svg>';
-    var leg='<span><i style="width:9px;height:9px;border-radius:50%;background:#fbbf24"></i>증권사 목표가</span>'+
+    var leg=(reports.length?'<span><i style="width:9px;height:9px;border-radius:50%;background:#fbbf24"></i>증권사 목표가</span>':'')+
       '<span><i style="width:16px;height:0;border-top:2px solid var(--t1)"></i>실제 종가</span>'+
-      '<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>평균 목표가</span>';
+      (d.avg_tp!=null?'<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>평균 목표가</span>':'');
     if(st.reg)leg+='<span><i style="width:16px;height:0;border-top:2px solid #2dd48a"></i>회귀 추세선</span>';
-    if(st.cons)leg+='<span><i style="width:16px;height:0;border-top:2px dashed #4d94ff"></i>컨센서스 추이</span>';
+    if(st.cons)leg+='<span><i style="width:16px;height:0;border-top:2px dashed #4d94ff"></i>컨센서스 추세선</span>';
     var lg=document.getElementById('anLegend'); if(lg)lg.innerHTML=leg;
     _anBindDots(reports);
   }
@@ -455,7 +520,7 @@
     var _ry=(_prevTab!==name&&typeof _scrollY[name]==='number')?_scrollY[name]:0;
     window.scrollTo(0,_ry);
     if(_ry)try{requestAnimationFrame(function(){window.scrollTo(0,_ry);});}catch(e){} // 레이아웃 확정 후 한번 더(async 렌더 보정)
-    if(name==='today')loadToday(false);
+    if(name==='today'){ loadToday(false); markTodaySeen(); }   // 항목9: 메인 탭 진입 = 밤사이 확인 → 배지 소멸
     else if(name==='watch')applyWatchSeg();
     else if(name==='ranking')loadRanking();
     else if(name==='calendar')loadCalendar();
@@ -519,9 +584,12 @@
     if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
   });
 
-  // 트랙4: 밤사이 밴드(밴드=버튼 data-ov-jump) → 밤사이 공시 섹션(#ovSecH)으로 부드럽게 스크롤(엘리먼트=버튼이라 키보드 기본지원)
+  // 항목5: 밤사이 밴드(data-ov-jump) 탭 → 검색결과 클릭과 동일한 상세 오버레이/시트에 밤사이 공시만 담아 표시.
+  //  (구: 섹션 스크롤 이동 → 폐기). openDetailList 미로드(구캐시)면 섹션 스크롤로 graceful 폴백.
   document.addEventListener('click',function(e){
     if(!e.target.closest('[data-ov-jump]'))return;
+    var items=(window.__OV_ITEMS||[]);
+    if(typeof openDetailList==='function'){ openDetailList('밤사이 공시', items); return; }
     var sec=document.getElementById('ovSecH'); if(!sec)return;
     try{ sec.scrollIntoView({behavior:(typeof prefersReduce==='function'&&prefersReduce())?'auto':'smooth',block:'start'}); }
     catch(_){ sec.scrollIntoView(); }
@@ -622,4 +690,5 @@
   // 루트(today) 진입 시에만 작업 가드 1개 push(첫 back이 즉시 부트경계로 안 떨어지게 완충). 딥링크 비루트는 미설치.
   if(_rootTab()==='today'){ try{history.pushState({miriRoot:true},'');}catch(_){} }
   updateTabBadges();          // 부팅 시 이미 absorb 됐을 수 있음(멱등)
+  loadTop100();               // 항목7: 시총 배지용 랭크맵을 부트에 선로딩(랭킹 탭 진입 전에도 피드 배지 표시)
 })();

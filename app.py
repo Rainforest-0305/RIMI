@@ -1966,6 +1966,69 @@ def _top100_from_rows(rows):
     return {"updated_at": updated, "count": len(items), "items": items}
 
 
+# ---------------- 실적발표(정기보고서) 예상 캘린더 (읽기 전용, 라이브콜 0) ----------------
+# 소스: features/earnings_calendar 산출물(out/earnings_calendar.json). 과거 DART 정기보고서
+# 접수 '계절성(결산기말→접수지연 median)'으로 추정한 다음 예상 발표일(코스피·코스닥 전시장).
+# 요청경로에서 DART/외부 라이브콜 0(순수 파일 read). 미래(오늘 이후) 예측만 정형 items 반환.
+# 어떤 예외에도 500 금지(200 + 빈-정형). top100/analyst read-only 패턴 미러.
+# 배포 정합성: features/.../out/ 은 .gitignore(out/) 대상이라 배포에 안 실린다. 배포시엔 시드로
+# data/earnings_calendar.json(추적 가능 경로, gitignore 예외 필요)을 우선 조회하고, 로컬/개발에선
+# features 산출물로 폴백한다. 둘 다 없으면 200 빈-정형(500 금지).
+_EARN_FILE_SEED = config.DATA / "earnings_calendar.json"
+_EARN_FILE_DEV = Path(__file__).parent / "features" / "earnings_calendar" / "out" / "earnings_calendar.json"
+_EARN_MEM = {"ts": 0.0, "data": None}
+
+
+def _build_earnings_calendar():
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    snap = miri_cache.load_json(_EARN_FILE_SEED, default=None)
+    if not (isinstance(snap, dict) and snap.get("predictions")):
+        snap = miri_cache.load_json(_EARN_FILE_DEV, default={}) or {}
+    preds = snap.get("predictions") if isinstance(snap, dict) else None
+    items = []
+    for p in (preds or []):
+        if not isinstance(p, dict):
+            continue
+        d = p.get("predicted_date")
+        code = str(p.get("stock_code") or "")
+        if not d or not code or d < today:   # 미래 예측만(과거 추정 제외)
+            continue
+        items.append({
+            "date": d,
+            "stock_code": code,
+            "corp_name": p.get("corp_name"),
+            "market": p.get("market"),
+            "report_nm": p.get("target_type"),
+            "target_period": p.get("target_period"),
+            "confidence": p.get("confidence"),
+            "kind": "earn",
+        })
+    items.sort(key=lambda x: (x["date"], x.get("corp_name") or ""))
+    return {"count": len(items), "items": items,
+            "as_of": (snap.get("as_of") if isinstance(snap, dict) else None),
+            "market_scope": "코스피·코스닥",
+            "disclaimer": "과거 정기보고서 접수 계절성으로 추정한 예상 발표일입니다(실제일과 다를 수 있음)."}
+
+
+@api.get("/api/earnings-calendar")
+def get_earnings_calendar(request: Request):
+    """④캘린더 '실적발표' 유형(캐시/파일 전용). 미래 예상 발표일만. 라이브콜 0, 500 금지."""
+    now = time.time()
+    try:
+        with _MIRI_LOCK:
+            if _EARN_MEM["data"] is not None and (now - _EARN_MEM["ts"]) < _MIRI_TTL_SEC:
+                return _json_cached(request, _EARN_MEM["data"])
+        data = _build_earnings_calendar()
+        with _MIRI_LOCK:
+            _EARN_MEM["data"] = data
+            _EARN_MEM["ts"] = now
+        return _json_cached(request, data)
+    except Exception as e:  # noqa: BLE001
+        print(f"[earnings-cal] 예외 폴백: {type(e).__name__} {e}")
+        return _json_cached(request, {"count": 0, "items": [], "market_scope": "코스피·코스닥"})
+
+
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------
 _WEB_DIR = Path(__file__).parent / "web"
 
