@@ -34,6 +34,7 @@ import config
 import dart_poll
 import watch_store  # 관심종목 영속(Supabase/JSON 폴백) 추상 스토어
 import push_store   # 웹푸시 구독 영속(Supabase/JSON 폴백) — watch_store 패턴
+import miri_cache   # 애널리스트/시총 캐시(Supabase upsert/select + 로컬 JSON 폴백)
 import dedup  # 중복 이벤트(결정/결과·정정/원본) 접기
 import impact
 import scale_extract  # 규모보정 온디맨드 조회(/api/scale)
@@ -1801,6 +1802,168 @@ def get_ranking(request: Request, top_n: int = 30):
         except Exception:
             data = {"count": 0, "items": [], "market_scope": "코스피·코스닥"}
         return _json_cached(request, data)
+
+
+# ---------------- 애널리스트 전망 / 시총 Top100 (캐시 전용 읽기 API) ----------------
+# 두 엔드포인트 모두 **캐시 전용**: Supabase(우리 프로젝트 캐시 테이블) 우선,
+# 실패/미설정 시 로컬 JSON 폴백. 요청경로에서 한경/toss/KRX 라이브콜을 절대 하지
+# 않는다(수집은 analyst_collect.py / top100_collect.py 배치가 담당). corp_index/
+# ranking read-only 패턴 미러. 어떤 예외에도 500 금지(200 + graceful 빈-정형).
+_ANALYST_DISCLAIMER = "증권사 전망을 정리한 참고 자료이며 투자 권유가 아닙니다"
+_TOP100_FILE = config.DATA / "top100.json"
+_ANALYST_CACHE_FILE = config.DATA / "analyst_cache.json"
+
+# 짧은 프로세스-내 TTL 캐시(Supabase/디스크 반복조회 완화). 값 불변, 헤더는 _json_cached.
+_MIRI_TTL_SEC = 120.0
+_TOP100_MEM = {"ts": 0.0, "data": None}
+_ANALYST_MEM = {"ts": 0.0, "data": {}}  # code -> (ts, payload)
+_MIRI_LOCK = threading.Lock()
+
+
+def _corp_name(code):
+    """corp_index 에서 code→종목명(없으면 None). _load_corp_index 캐시 재사용."""
+    code = (code or "").strip()
+    if not code:
+        return None
+    for r in _load_corp_index():
+        if r.get("code") == code:
+            return r.get("name") or None
+    return None
+
+
+def _empty_analyst(code, name=None):
+    return {"code": code, "name": name, "cached": False, "current": None,
+            "avg_tp": None, "n_total": 0, "n_tp": 0, "window_start": None,
+            "updated_at": None, "prices": [], "reports": [],
+            "disclaimer": _ANALYST_DISCLAIMER}
+
+
+@api.get("/api/analyst")
+def get_analyst(request: Request, code: str = ""):
+    """②종목 애널리스트 전망(캐시 전용). Supabase analyst_consensus 우선 → 로컬 폴백.
+
+    미수집/미존재 코드는 200 graceful(cached:false, 빈 reports/prices). 라이브콜 0."""
+    code = (code or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        return _json_cached(request, _empty_analyst(code or "", None))
+    now = time.time()
+    try:
+        with _MIRI_LOCK:
+            ent = _ANALYST_MEM["data"].get(code)
+            if ent and (now - ent[0]) < _MIRI_TTL_SEC:
+                return _json_cached(request, ent[1])
+        payload = None
+        # 1) Supabase 우선
+        try:
+            ok, row = miri_cache.select_one("analyst_consensus", code)
+            if ok and row:
+                payload = _analyst_from_row(row)
+        except Exception as e:  # noqa: BLE001
+            print(f"[analyst] supabase read 폴백: {type(e).__name__}")
+        # 2) 로컬 JSON 폴백
+        if payload is None:
+            cache = miri_cache.load_json(_ANALYST_CACHE_FILE, default={}) or {}
+            row = cache.get(code) if isinstance(cache, dict) else None
+            if row:
+                payload = _analyst_from_row(row)
+        # 3) 미수집 → graceful 빈-정형
+        if payload is None:
+            payload = _empty_analyst(code, _corp_name(code))
+        with _MIRI_LOCK:
+            _ANALYST_MEM["data"][code] = (now, payload)
+        return _json_cached(request, payload)
+    except Exception as e:  # noqa: BLE001
+        print(f"[analyst] 예외 폴백: {type(e).__name__} {e}")
+        return _json_cached(request, _empty_analyst(code, None))
+
+
+def _analyst_from_row(row):
+    """저장행(Supabase/로컬) → 응답 payload(계약 준수). 결측은 안전 기본값."""
+    prices = row.get("prices") or []
+    reports = row.get("reports") or []
+    if not isinstance(prices, list):
+        prices = []
+    if not isinstance(reports, list):
+        reports = []
+    return {
+        "code": str(row.get("code") or ""),
+        "name": row.get("name"),
+        "cached": True,
+        "current": row.get("current"),
+        "avg_tp": row.get("avg_tp"),
+        "n_total": int(row.get("n_total") or 0),
+        "n_tp": int(row.get("n_tp") or 0),
+        "window_start": row.get("window_start"),
+        "updated_at": row.get("updated_at"),
+        "prices": prices,
+        "reports": reports,
+        "disclaimer": _ANALYST_DISCLAIMER,
+    }
+
+
+def _empty_top100():
+    return {"updated_at": None, "count": 0, "items": []}
+
+
+@api.get("/api/top100")
+def get_top100(request: Request):
+    """시총 Top100(캐시 전용). Supabase market_cap_top100 우선 → 로컬 폴백. 라이브콜 0."""
+    now = time.time()
+    try:
+        with _MIRI_LOCK:
+            if _TOP100_MEM["data"] is not None and (now - _TOP100_MEM["ts"]) < _MIRI_TTL_SEC:
+                return _json_cached(request, _TOP100_MEM["data"])
+        data = None
+        # 1) Supabase 우선(rank 오름차순)
+        try:
+            ok, rows = miri_cache.select_all("market_cap_top100", order="rank.asc")
+            if ok and rows:
+                data = _top100_from_rows(rows)
+        except Exception as e:  # noqa: BLE001
+            print(f"[top100] supabase read 폴백: {type(e).__name__}")
+        # 2) 로컬 JSON 폴백
+        if data is None:
+            snap = miri_cache.load_json(_TOP100_FILE, default=None)
+            if isinstance(snap, dict) and snap.get("items"):
+                items = _sanitize_top100_items(snap.get("items") or [])
+                data = {"updated_at": snap.get("updated_at"),
+                        "count": len(items), "items": items}
+        if data is None:
+            data = _empty_top100()
+        with _MIRI_LOCK:
+            _TOP100_MEM["data"] = data
+            _TOP100_MEM["ts"] = now
+        return _json_cached(request, data)
+    except Exception as e:  # noqa: BLE001
+        print(f"[top100] 예외 폴백: {type(e).__name__} {e}")
+        return _json_cached(request, _empty_top100())
+
+
+def _sanitize_top100_items(rows):
+    items = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        items.append({
+            "rank": int(r.get("rank") or 0),
+            "code": str(r.get("code") or ""),
+            "name": r.get("name"),
+            "market": r.get("market"),
+            "market_cap": int(r.get("market_cap") or 0),
+            "cap_label": r.get("cap_label"),
+        })
+    items.sort(key=lambda x: x["rank"])
+    return items
+
+
+def _top100_from_rows(rows):
+    items = _sanitize_top100_items(rows)
+    updated = None
+    for r in rows:
+        if isinstance(r, dict) and r.get("updated_at"):
+            updated = r.get("updated_at")
+            break
+    return {"updated_at": updated, "count": len(items), "items": items}
 
 
 # ---------------- 정적 프론트엔드(web/) 마운트 (마지막에) ----------------

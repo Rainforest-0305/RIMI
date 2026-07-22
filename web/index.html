@@ -600,7 +600,7 @@
   </header>
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
-  <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="오늘">
+  <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="메인">
     <!-- (0) 검색바(항목24) → (1) 신규 CTA → (2) 밤사이 밴드(mobile) → (3) 대표값+↻ → (4) 큐레이션(mobile) -->
     <div class="search-mount"></div>
     <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
@@ -612,7 +612,7 @@
         <button role="tab" data-v="med" aria-selected="false">중앙값</button>
         <button role="tab" data-v="car" aria-selected="true">보정값</button>
       </div>
-      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침">↻</button>
+      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침"><span class="ic" aria-hidden="true">↻</span></button>
     </div>
     <div id="todayBody" class="today-body">
       <!-- 41-b: 오늘탭 로딩 스켈레톤(watch .skfeed shimmer 재사용). renderToday가 덮어씀 -->
@@ -695,7 +695,7 @@
     <div class="sec-h"><span class="st">반응 랭킹</span></div>
     <div class="rk-seg" id="rankSeg" role="tablist" aria-label="랭킹 종류">
       <button role="tab" data-rseg="disc" class="on" aria-selected="true">공시순</button>
-      <button role="tab" data-rseg="move" aria-selected="false">급등락</button>
+      <button role="tab" data-rseg="cap" aria-selected="false">시총 Top100</button>
       <button role="tab" data-rseg="buzz" aria-selected="false" aria-disabled="true" title="준비 중">화제</button>
     </div>
     <p class="rk-cap" id="rankCap"></p>
@@ -739,7 +739,7 @@
       <div class="set-gh">시작</div>
       <div class="set-row"><span class="set-lb">시작 탭</span>
         <div class="set-seg" id="setStart" data-key="start">
-          <button data-v="today">오늘</button><button data-v="watch">관심</button><button data-v="ranking">랭킹</button><button data-v="calendar">캘린더</button></div></div>
+          <button data-v="today">메인</button><button data-v="watch">관심</button><button data-v="ranking">랭킹</button><button data-v="calendar">캘린더</button></div></div>
     </div>
     <div class="set-group">
       <div class="set-gh">알림</div>
@@ -755,7 +755,7 @@
 <nav class="tabbar" role="tablist" aria-label="주요 탭">
   <div class="tabbar-in">
     <button class="tabitem on" role="tab" aria-selected="true" data-tab="today">
-      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/></svg><span class="tl">오늘</span>
+      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/></svg><span class="tl">메인</span>
       <span class="badge" id="badgeToday" hidden></span>
     </button>
     <button class="tabitem" role="tab" aria-selected="false" data-tab="watch">
@@ -837,6 +837,55 @@
     <div class="detail-body" id="detailBody"></div>
   </div>
 </div>
+
+<!-- 트랙1: 애널리스트 전망 풀스크린 오버레이 (#detail 슬라이드/뒤로가기 트랩 미러 · shell.js openAnalyst/closeAnalyst 소유) -->
+<div class="detail" id="analyst" hidden role="dialog" aria-modal="true" aria-label="애널리스트 전망">
+  <div class="detail-back" id="analystBack"></div>
+  <div class="detail-panel">
+    <div class="detail-head">
+      <div class="detail-tt"><span id="anNm"></span><span id="anCd" class="num"></span></div>
+      <button class="detail-x" id="analystX" type="button" aria-label="전망 닫기">✕</button>
+    </div>
+    <div class="detail-body" id="analystBody"></div>
+  </div>
+</div>
+<div class="an-tip" id="anTip" role="status" aria-live="off"></div>
+<style>
+  .an-sub{color:var(--t3);font-size:12.5px;margin:0 2px 14px}
+  .an-metrics{display:flex;gap:9px;margin-bottom:14px}
+  .an-metric{flex:1;background:var(--card);border-radius:14px;padding:12px 13px;box-shadow:0 0 0 1px var(--line) inset}
+  .an-metric .k{font-size:11.5px;color:var(--t3);margin-bottom:5px}
+  .an-metric .v{font-size:17px;font-weight:800;font-family:var(--mono);color:var(--t1)}
+  .an-metric .v.up{color:var(--up)} .an-metric .v.down{color:var(--down)}
+  .an-chips{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .an-chip{padding:8px 14px;border-radius:999px;background:var(--card);box-shadow:0 0 0 1px var(--line) inset;color:var(--t2);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .an-chip.on{background:var(--blue-soft);box-shadow:0 0 0 1px var(--blue) inset;color:var(--blue)}
+  .an-chip:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .an-card{background:var(--card);border-radius:16px;padding:15px 13px 10px;margin-bottom:14px;box-shadow:0 0 0 1px var(--line) inset}
+  .an-card-t{font-size:13.5px;font-weight:700;color:var(--t1);margin:0 2px 10px;display:flex;justify-content:space-between;align-items:center}
+  .an-card-t .cnt{font-size:11.5px;color:var(--t3);font-weight:600}
+  .an-card svg{display:block;width:100%;height:auto;overflow:visible}
+  .an-legend{display:flex;gap:13px;flex-wrap:wrap;padding:8px 4px 2px;font-size:11.5px;color:var(--t2)}
+  .an-legend i{display:inline-block;vertical-align:middle;margin-right:5px}
+  .an-more{margin:8px 2px 2px auto;display:block;font-size:12.5px;font-weight:700;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:6px 2px}
+  .an-list{padding:2px 2px 6px}
+  .an-list .an-row{display:flex;align-items:center;gap:10px;padding:11px 2px;border-top:1px solid var(--line-2)}
+  .an-list .an-row:first-child{border-top:none}
+  .an-list .dt{font-size:11.5px;color:var(--t3);font-family:var(--mono);width:52px;flex:none}
+  .an-list .br{flex:1;font-size:13px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .an-op{font-size:10.5px;padding:2px 7px;border-radius:6px;font-weight:800;flex:none}
+  .an-op.buy{background:var(--up-soft);color:var(--up)}
+  .an-op.hold{background:var(--warn-soft);color:var(--warn-ink)}
+  .an-op.sell{background:var(--down-soft);color:var(--down)}
+  .an-op.na{background:var(--slate-soft);color:var(--t3)}
+  .an-tpv{font-size:13px;font-weight:800;font-family:var(--mono);color:var(--t1);width:66px;text-align:right;flex:none}
+  .an-disc{color:var(--t3);font-size:11.5px;line-height:1.6;padding:4px 6px 20px;text-align:center}
+  .an-tip{position:fixed;pointer-events:none;background:var(--card-2);box-shadow:0 0 0 1px var(--line) inset,0 6px 20px rgba(0,0,0,.32);border-radius:10px;padding:9px 11px;font-size:12px;opacity:0;transition:opacity .12s;z-index:60;min-width:120px}
+  .an-tip .tb{font-weight:700;margin-bottom:3px;color:var(--t1)}
+  .an-tip .tp{font-family:var(--mono);color:var(--up);font-weight:800}
+  .an-tip .to{color:var(--t3);font-size:11px}
+  .an-empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:50px 12px;line-height:1.7}
+</style>
 
 <!-- 메자닌 전환 캘린더: 오버레이 폐기 → ④캘린더 탭 본문(#mezzBody)으로 승격(shell.js lazy-load). -->
 <style>
@@ -1047,7 +1096,9 @@
     background:var(--card);color:var(--t2);font-size:16px;line-height:1;box-shadow:0 0 0 1px var(--line) inset;
     font-family:inherit;transition:transform .08s ease}
   .miniref:active{transform:scale(.94)}
-  .miniref.busy{animation:miriSpin .8s linear infinite;opacity:1}   /* 항목27: 새로고침 중 회전 */
+  .miniref .ic{display:inline-block;line-height:1}   /* 트랙5: 회전은 아이콘 span만(버튼 프레임 고정) */
+  .miniref.busy{opacity:1}
+  .miniref.busy .ic{animation:miriSpin .8s linear infinite}   /* 항목27: 새로고침 중 버튼 안 아이콘만 회전 */
   @keyframes miriSpin{to{transform:rotate(360deg)}}
   .miniref:disabled{opacity:.5;cursor:default}
   .miniref:focus-visible,.newfeedpill:focus-visible{outline:2px solid var(--blue);outline-offset:2px}

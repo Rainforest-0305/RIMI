@@ -15,6 +15,9 @@
   var _todayLoaded=false;
   var WATCH_SEG='feed';           // 'feed'(관심피드) | 'inbox'(알림함)
   var RANK_SEG='disc', RANK_DATA=[];
+  var TOP100_DATA=[], _top100Loaded=false;   // 트랙2: 시총 Top100 캐시
+  // 트랙1 QA 폴백: /api/analyst 404 시 렌더 보장용 프로토 인라인 픽스처(주경로는 API). 백엔드 준비되면 미사용.
+  var ANALYST_FIXTURE={"005930":{"name":"삼성전자","current":262000,"avg_tp":416333,"n_total":33,"n_tp":15,"window_start":"2026-02-25","prices":[["2026-02-25",205500],["2026-02-26",223000],["2026-02-27",217500],["2026-03-03",186000],["2026-03-04",181600],["2026-03-05",193500],["2026-03-06",185800],["2026-03-09",171500],["2026-03-10",189700],["2026-03-11",189200],["2026-03-12",188400],["2026-03-13",184000],["2026-03-16",191000],["2026-03-17",194800],["2026-03-18",209500],["2026-03-19",198700],["2026-03-20",199800],["2026-03-23",185300],["2026-03-24",190700],["2026-03-25",191700],["2026-03-26",180200],["2026-03-27",176800],["2026-03-30",177000],["2026-03-31",166700],["2026-04-01",188100],["2026-04-02",175600],["2026-04-03",185800],["2026-04-06",196800],["2026-04-07",192700],["2026-04-08",213000],["2026-04-09",203000],["2026-04-10",207000],["2026-04-13",200500],["2026-04-14",209000],["2026-04-15",212000],["2026-04-16",217500],["2026-04-17",218000],["2026-04-20",215500],["2026-04-21",221000],["2026-04-22",217500],["2026-04-23",222500],["2026-04-24",219000],["2026-04-27",225000],["2026-04-28",220000],["2026-04-29",226500],["2026-04-30",222500],["2026-05-04",230000],["2026-05-06",274000],["2026-05-07",270500],["2026-05-08",276500],["2026-05-11",285500],["2026-05-12",272500],["2026-05-13",286500],["2026-05-14",293000],["2026-05-15",273500],["2026-05-18",281500],["2026-05-19",273500],["2026-05-20",280500],["2026-05-21",295000],["2026-05-22",293000],["2026-05-26",302500],["2026-05-27",313500],["2026-05-28",295500],["2026-05-29",318500],["2026-06-01",355000],["2026-06-02",362500],["2026-06-04",342000],["2026-06-05",329000],["2026-06-08",303000],["2026-06-09",327000],["2026-06-10",297500],["2026-06-11",306000],["2026-06-12",324500],["2026-06-15",341500],["2026-06-16",343000],["2026-06-17",343000],["2026-06-18",363500],["2026-06-19",350500],["2026-06-22",356500],["2026-06-23",310500],["2026-06-24",339500],["2026-06-25",359500],["2026-06-26",339000],["2026-06-29",325000],["2026-06-30",333000],["2026-07-01",316000],["2026-07-02",290500],["2026-07-03",314500],["2026-07-06",320000],["2026-07-07",291000],["2026-07-08",267000],["2026-07-09",282500],["2026-07-10",286500],["2026-07-13",257500],["2026-07-14",268000],["2026-07-15",273500],["2026-07-16",253500],["2026-07-20",251500],["2026-07-21",263500],["2026-07-22",262000]],"reports":[{"date":"2026-03-03","title":"","target_price":265000,"opinion":"N/A","broker":"iM증권"},{"date":"2026-04-01","title":"","target_price":280000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-04-08","title":"","target_price":300000,"opinion":"Buy","broker":"한화투자증권"},{"date":"2026-04-08","title":"","target_price":350000,"opinion":"매수","broker":"IBK투자증권"},{"date":"2026-04-08","title":"","target_price":300000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-04-15","title":"","target_price":270000,"opinion":"Buy","broker":"LS증권"},{"date":"2026-05-18","title":"","target_price":400000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-06-22","title":"","target_price":480000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-06-25","title":"","target_price":560000,"opinion":"Buy","broker":"대신증권"},{"date":"2026-07-03","title":"","target_price":480000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-07-06","title":"","target_price":500000,"opinion":"Buy","broker":"메리츠증권"},{"date":"2026-07-06","title":"","target_price":560000,"opinion":"Strong Buy","broker":"유진투자증권"},{"date":"2026-07-08","title":"","target_price":480000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-07-08","title":"","target_price":460000,"opinion":"매수","broker":"IBK투자증권"},{"date":"2026-07-08","title":"","target_price":560000,"opinion":"Strong Buy","broker":"유진투자증권"}]},"010130":{"name":"고려아연","current":997000,"avg_tp":1866667,"n_total":13,"n_tp":3,"window_start":"2026-02-25","prices":[["2026-02-25",2115000],["2026-03-16",1620000],["2026-04-01",1515000],["2026-04-17",1687000],["2026-05-08",1560000],["2026-06-01",1375000],["2026-06-15",1270000],["2026-07-01",1093000],["2026-07-16",1009000],["2026-07-22",997000]],"reports":[{"date":"2026-04-17","title":"","target_price":1950000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-05-08","title":"","target_price":1950000,"opinion":"Buy","broker":"iM증권"},{"date":"2026-06-15","title":"","target_price":1700000,"opinion":"Buy","broker":"iM증권"}]}};
 
   // 브랜드 상단바 원본(오늘 탭용) 캡처
   var _tb=document.getElementById('topbar');
@@ -116,15 +119,19 @@
       var dist=d.type_distribution||{};
       var distTop=Object.keys(dist).sort(function(a,b){return dist[b]-dist[a];}).slice(0,3)
         .map(function(k){return esc(k)+' '+dist[k];}).join(' · ');
-      brief+='<div class="brief hero-am"><div class="bl"><b>밤사이 공시 <span class="nowrap" style="white-space:nowrap">'+ovCnt+'건</span></b>'+(distTop?(' — '+distTop):'')+'</div>'+
-            '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(_fmtYmd(d.dataset_as_of||d.generated_at||''))+'</div></div>';
+      // 트랙4: 밴드를 버튼화 → 탭하면 밤사이 공시 섹션(#ovSecH)으로 스크롤. 카운트 로직(항목46)은 불변.
+      brief+='<button type="button" class="brief hero-am" data-ov-jump="1" aria-label="밤사이 공시 '+ovCnt+'건 자세히 보기" '+
+            'style="display:block;width:100%;text-align:left;border:none;font-family:inherit;cursor:pointer">'+
+            '<div class="bl"><b>밤사이 공시 <span class="nowrap" style="white-space:nowrap">'+ovCnt+'건</span></b>'+(distTop?(' — '+distTop):'')+
+            '<span class="brief-cta" aria-hidden="true" style="margin-left:auto;color:var(--blue);font-weight:700;font-size:12.5px">자세히 ›</span></div>'+
+            '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(_fmtYmd(d.dataset_as_of||d.generated_at||''))+'</div></button>';
       body+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
       if(cur.length&&curStatus!=='pending_contract'){
         body+=markWatched(cur).map(function(a){return cardHTML(a,'');}).join('');
       }else{
         body+='<div class="empty" style="padding:22px 10px">큐레이션 준비중 — 곧 오늘의 핵심 공시를 선별해 보여드립니다.</div>';
       }
-      body+='<div class="sec-h"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
+      body+='<div class="sec-h" id="ovSecH"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
       // 항목53: 밤사이 공시는 청크 렌더(초기 OV_CHUNK, 나머지는 더보기). ovWrap 컨테이너만 재렌더로 확장.
       _ovItems=markWatched(ov); _ovShown=Math.min(OV_CHUNK,_ovItems.length);
       body+='<div id="ovWrap">'+_renderOvChunk()+'</div>';
@@ -198,8 +205,32 @@
       '<span class="rk-info"><span class="rk-nm">'+esc(it.corp_name||code)+'<span class="cd num">'+esc(code)+'</span></span>'+
       '<span class="rk-sub">'+sub+'</span></span>'+valHTML+'</button>';
   }
+  /* 트랙2: 시총 Top100 (GET /api/top100). 행 = 순위+종목명+코드+시총(cap_label). 행 탭 → 애널 그래프(openAnalyst). */
+  function loadTop100(){
+    jget(API+'/top100').then(function(d){ TOP100_DATA=(d&&d.items)||[]; _top100Loaded=true; if(RANK_SEG==='cap')renderTop100(document.getElementById('rankBody')); })
+      .catch(function(){ _top100Loaded=true; if(RANK_SEG==='cap')renderTop100(document.getElementById('rankBody')); });
+  }
+  function top100RowHTML(it,i){
+    var rank=i+1;
+    var code=String(it.stock_code||it.code||'');
+    var nm=esc(it.corp_name||it.name||code);
+    var cap=esc(it.cap_label||'');
+    return '<button class="rk-row" type="button" data-analyst="'+esc(code)+'" data-nm="'+esc(it.corp_name||it.name||'')+'">'+
+      '<span class="rk-no'+(rank<=3?' top':'')+' num">'+rank+'</span>'+
+      '<span class="rk-info"><span class="rk-nm">'+nm+'<span class="cd num">'+esc(code)+'</span></span>'+
+      '<span class="rk-sub">시가총액</span></span>'+
+      (cap?'<span class="rk-val flat num">'+cap+'</span>':'')+'</button>';
+  }
+  function renderTop100(host){
+    if(!host)return;
+    var cap=document.getElementById('rankCap'); if(cap)cap.textContent='시가총액 상위 100 종목';
+    if(!_top100Loaded&&!TOP100_DATA.length){ host.innerHTML='<div class="empty" style="padding:30px 10px">시총 상위 종목 불러오는 중…</div>'; loadTop100(); return; }
+    if(!TOP100_DATA.length){ host.innerHTML='<div class="empty" style="padding:30px 10px">시총 데이터 준비중입니다.</div>'; return; }
+    host.innerHTML='<div class="rank">'+TOP100_DATA.map(top100RowHTML).join('')+'</div>';
+  }
   function renderRanking(){
     var host=document.getElementById('rankBody'); if(!host)return;
+    if(RANK_SEG==='cap'){ renderTop100(host); return; }   // 트랙2: 시총 세그는 별도 소스/렌더
     var items=RANK_DATA.slice();
     var moveBanner='';
     if(RANK_SEG==='move'){ // 급등락: price_signal 있는 항목 우선 정렬(null-graceful), 값 없으면 원순서
@@ -229,6 +260,174 @@
      .tabpanel 토글이 이미 처리) → 여기선 이중바인딩 방지 위해 아무것도 하지 않는다. 분기만 유지. */
   function loadSettings(){ /* no-op: 정적 패널, 바인딩은 frontend(index.html) 소유 */ }
 
+  /* ============ 트랙1: 애널리스트 전망 오버레이 (openAnalyst/closeAnalyst — #detail 뒤로가기 트랩 미러) ============
+     데이터=GET /api/analyst?code=. SVG: dots=증권사 목표가, 실선=종가, 점선=평균목표. 프로토 이식 + President 확정:
+     ①의견 한글화 ②평균 점선 라벨 좌측 배치(겹침 회피) ③추세선 2종 토글(N>=5시만) ④리스트 기본 접힘(자세히 보기). */
+  var _anFmt=function(n){return n==null?'-':Number(n).toLocaleString('ko-KR');};
+  var _anWon=function(n){return n==null?'-':(Math.abs(n)>=10000?Math.round(n/10000).toLocaleString('ko-KR')+'만':_anFmt(n));};
+  var _anParseD=function(s){return new Date(String(s).slice(0,10)+'T00:00:00');};
+  // 의견 한글화: 원문 영어 AND 이미 한글 모두 처리. 색 매핑 c: buy=up(빨강), hold=warn, sell=down(파랑), na=slate
+  function _anOpinion(op){
+    var s=String(op==null?'':op).trim();
+    if(!s||/^(n\/?a|na|없음|의견\s*없음|-)$/i.test(s))return {t:'의견없음',c:'na'};
+    if(/strong\s*buy|적극\s*매수|강력\s*매수/i.test(s))return {t:'적극매수',c:'buy'};
+    if(/buy|매수|비중\s*확대|outperform|overweight/i.test(s))return {t:'매수',c:'buy'};
+    if(/hold|neutral|중립|보유|market\s*perform/i.test(s))return {t:'중립',c:'hold'};
+    if(/sell|매도|비중\s*축소|underperform|underweight/i.test(s))return {t:'매도',c:'sell'};
+    return {t:s,c:'na'};
+  }
+  var _anState=null, _analystHistPushed=false;
+
+  function openAnalyst(code,name){
+    code=String(code||''); if(!code)return;
+    var ov=document.getElementById('analyst'); if(!ov)return;
+    var host=document.getElementById('analystBody');
+    document.getElementById('anNm').textContent=name||code;
+    document.getElementById('anCd').textContent=code;
+    if(host)host.innerHTML='<div class="an-empty">애널리스트 전망 불러오는 중…</div>';
+    ov.hidden=false; document.body.style.overflow='hidden';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){ov.classList.add('open');});});
+    if(!_analystHistPushed){try{history.pushState({miriModal:'analyst'},'');_analystHistPushed=true;}catch(e){}}
+    if(typeof track==='function')track('analyst_open',{code:code});
+    jget(API+'/analyst?code='+encodeURIComponent(code)).then(function(d){
+      if(!d||d.cached===false||(!d.prices&&!d.reports)){ _anEmpty(host); return; }
+      _anRender(code,name,d);
+    }).catch(function(){
+      // QA 폴백: API 404/실패 → 프로토 005930 샘플 픽스처(주경로는 API)
+      var fx=(typeof ANALYST_FIXTURE!=='undefined')?(ANALYST_FIXTURE[code]||ANALYST_FIXTURE['005930']):null;
+      if(fx)_anRender(code,fx.name||name,fx); else _anEmpty(host);
+    });
+  }
+  function _anEmpty(host){ if(host)host.innerHTML='<div class="an-empty">애널리스트 전망 준비중<br>증권사 리포트가 모이면 여기에 표시됩니다.</div>'; }
+  function closeAnalyst(fromPop){
+    var ov=document.getElementById('analyst'); if(!ov||ov.hidden)return;
+    ov.classList.remove('open'); _anState=null;
+    var done=function(){ ov.hidden=true;
+      var anyS=document.querySelector('.sheet:not([hidden])'), dt=document.getElementById('detail');
+      if(!anyS&&(!dt||dt.hidden))document.body.style.overflow=''; };
+    if(typeof prefersReduce==='function'&&prefersReduce())done(); else setTimeout(done,300);
+    if(_analystHistPushed){_analystHistPushed=false; if(!fromPop){try{history.back();}catch(e){}}}
+    var tip=document.getElementById('anTip'); if(tip)tip.style.opacity=0;
+  }
+  window.openAnalyst=openAnalyst; window.closeAnalyst=closeAnalyst;
+
+  function _anRender(code,name,d){
+    document.getElementById('anNm').textContent=d.name||name||code;
+    document.getElementById('anCd').textContent=code;
+    _anState={code:code,name:d.name||name,data:d,reg:false,cons:false,listOpen:false};
+    var host=document.getElementById('analystBody'); if(!host)return;
+    var reps=(d.reports||[]).filter(function(r){return r.target_price!=null;});
+    var nTp=(typeof d.n_tp==='number')?d.n_tp:reps.length;
+    var nTot=(typeof d.n_total==='number')?d.n_total:(d.reports?d.reports.length:0);
+    var up=(d.avg_tp!=null&&d.current)?((d.avg_tp-d.current)/d.current*100):null;
+    var showToggle=nTp>=5;   // ③ 토글은 리포트 N>=5일 때만 노출
+    host.innerHTML=
+      '<div class="an-sub">증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건</div>'+
+      '<div class="an-metrics">'+
+        '<div class="an-metric"><div class="k">현재가</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
+        '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+_anFmt(d.avg_tp)+'원</div></div>'+
+        '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'-':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
+      '</div>'+
+      (showToggle?('<div class="an-chips">'+
+        '<button type="button" class="an-chip" data-an-toggle="reg" aria-pressed="false">회귀 추세선</button>'+
+        '<button type="button" class="an-chip" data-an-toggle="cons" aria-pressed="false">컨센서스 추이</button></div>'):'')+
+      '<div class="an-card">'+
+        '<div class="an-card-t"><span>목표주가 · 실제주가</span><span class="cnt">리포트 '+nTp+'개 · 최근 5개월</span></div>'+
+        '<div id="anChart"></div>'+
+        '<div class="an-legend" id="anLegend"></div>'+
+        '<button type="button" class="an-more" id="anMore" aria-expanded="false">자세히 보기 ›</button>'+
+      '</div>'+
+      '<div class="an-card an-list" id="anList" hidden></div>'+
+      '<div class="an-disc">※ 증권사 전망을 정리한 참고 자료이며<br>투자 권유가 아닙니다. 목표주가는 각 증권사 리포트 기준.</div>';
+    _anDrawChart(); _anDrawList();
+  }
+  function _anRegLine(reports){   // ③(a) 직선 회귀선: 목표가 vs 날짜 선형회귀
+    var pts=reports.map(function(r){return [_anParseD(r.date).getTime(), r.target_price];}).sort(function(a,b){return a[0]-b[0];});
+    if(pts.length<2)return null;
+    var base=pts[0][0], n=pts.length, sx=0,sy=0,sxy=0,sxx=0;
+    pts.forEach(function(p){var x=(p[0]-base)/86400000, y=p[1]; sx+=x;sy+=y;sxy+=x*y;sxx+=x*x;});
+    var den=n*sxx-sx*sx; if(!den)return null;
+    var m=(n*sxy-sx*sy)/den, b=(sy-m*sx)/n, xa=pts[0][0], xb=pts[n-1][0];
+    return {x0:xa,y0:b+m*(xa-base)/86400000,x1:xb,y1:b+m*(xb-base)/86400000};
+  }
+  function _anConsLine(reports){  // ③(b) 이동 컨센서스: 각 리포트 시점 기준 최근 3개월 목표가 평균의 시간축 라인
+    var pts=reports.map(function(r){return [_anParseD(r.date).getTime(), r.target_price];}).sort(function(a,b){return a[0]-b[0];});
+    var out=[], win=90*86400000;
+    pts.forEach(function(p){ var lo=p[0]-win, s=0,c=0;
+      pts.forEach(function(q){ if(q[0]<=p[0]&&q[0]>=lo){s+=q[1];c++;} }); if(c)out.push([p[0],s/c]); });
+    return out;
+  }
+  function _anDrawChart(){
+    var st=_anState; if(!st)return; var d=st.data;
+    var el=document.getElementById('anChart'); if(!el)return;
+    var prices=d.prices||[], reports=(d.reports||[]).filter(function(r){return r.target_price!=null;});
+    if(!prices.length){ el.innerHTML='<div class="an-empty" style="padding:24px 8px">가격 데이터 준비중</div>'; return; }
+    var W=390,H=230,PL=52,PR=14,PT=16,PB=26, iw=W-PL-PR, ih=H-PT-PB, i;
+    var xs=prices.map(function(p){return _anParseD(p[0]).getTime();});
+    var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs);
+    var vals=prices.map(function(p){return p[1];}).concat(reports.map(function(r){return r.target_price;}));
+    if(d.avg_tp!=null)vals.push(d.avg_tp); if(d.current!=null)vals.push(d.current);
+    var y0=Math.min.apply(null,vals), y1=Math.max.apply(null,vals);
+    var pad=(y1-y0)*0.12||1; y0-=pad; y1+=pad;
+    var X=function(t){return PL+(t-x0)/((x1-x0)||1)*iw;};
+    var Y=function(v){return PT+(1-(v-y0)/((y1-y0)||1))*ih;};
+    var grid='', steps=4;
+    for(i=0;i<=steps;i++){ var gv=y0+(y1-y0)*i/steps, gy=Y(gv);
+      grid+='<line x1="'+PL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+gy.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>';
+      grid+='<text x="'+(PL-8)+'" y="'+(gy+4).toFixed(1)+'" fill="var(--t3)" font-size="11" text-anchor="end">'+_anWon(Math.round(gv))+'</text>'; }
+    var xlab='', seen={};
+    prices.forEach(function(p){ var dt=_anParseD(p[0]), key=dt.getMonth();
+      if(!seen[key]&&dt.getDate()<=6){ seen[key]=1; var x=X(dt.getTime());
+        xlab+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" fill="var(--t3)" font-size="11" text-anchor="middle">'+(dt.getMonth()+1)+'월</text>'; } });
+    var path=prices.map(function(p,ix){return (ix?'L':'M')+X(_anParseD(p[0]).getTime()).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join(' ');
+    // ② 평균 목표 점선 — 라벨을 좌측(text-anchor start, x=PL+4)에 배치해 우측 '현재…' 라벨/그리드와 겹침 회피
+    var avg='';
+    if(d.avg_tp!=null){ var ay=Y(d.avg_tp);
+      avg='<line x1="'+PL+'" y1="'+ay.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+ay.toFixed(1)+'" stroke="#ff5b64" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>'+
+        '<text x="'+(PL+4)+'" y="'+(ay-6).toFixed(1)+'" fill="#ff5b64" font-size="11" text-anchor="start" font-weight="700">평균 '+_anWon(d.avg_tp)+'</text>'; }
+    var trend='';
+    if(st.reg){ var rl=_anRegLine(reports); if(rl)trend+='<line x1="'+X(rl.x0).toFixed(1)+'" y1="'+Y(rl.y0).toFixed(1)+'" x2="'+X(rl.x1).toFixed(1)+'" y2="'+Y(rl.y1).toFixed(1)+'" stroke="#2dd48a" stroke-width="2" opacity="0.9"/>'; }
+    if(st.cons){ var cl=_anConsLine(reports); if(cl.length>1)trend+='<path d="'+cl.map(function(p,ix){return (ix?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join(' ')+'" fill="none" stroke="#4d94ff" stroke-width="2" stroke-dasharray="2 3" opacity="0.9"/>'; }
+    var dots='';
+    reports.forEach(function(r,ix){ var x=X(_anParseD(r.date).getTime()), y=Y(r.target_price);
+      dots+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.5" fill="#fbbf24" fill-opacity="0.95" stroke="var(--card)" stroke-width="1.5" data-i="'+ix+'" class="an-pt" style="cursor:pointer"/>'; });
+    var lastx=X(x1), lasty=Y(d.current);
+    var curm=(d.current!=null)?('<circle cx="'+lastx.toFixed(1)+'" cy="'+lasty.toFixed(1)+'" r="3.5" fill="var(--t1)"/>'+
+      '<text x="'+(lastx-6).toFixed(1)+'" y="'+(lasty+4).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700">현재 '+_anWon(d.current)+'</text>'):'';
+    el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'">'+grid+xlab+avg+trend+
+      '<path d="'+path+'" fill="none" stroke="var(--t1)" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>'+curm+dots+'</svg>';
+    var leg='<span><i style="width:9px;height:9px;border-radius:50%;background:#fbbf24"></i>증권사 목표가</span>'+
+      '<span><i style="width:16px;height:0;border-top:2px solid var(--t1)"></i>실제 종가</span>'+
+      '<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>평균 목표가</span>';
+    if(st.reg)leg+='<span><i style="width:16px;height:0;border-top:2px solid #2dd48a"></i>회귀 추세선</span>';
+    if(st.cons)leg+='<span><i style="width:16px;height:0;border-top:2px dashed #4d94ff"></i>컨센서스 추이</span>';
+    var lg=document.getElementById('anLegend'); if(lg)lg.innerHTML=leg;
+    _anBindDots(reports);
+  }
+  function _anBindDots(reports){
+    var tip=document.getElementById('anTip'); if(!tip)return;
+    var hide=function(){tip.style.opacity=0;};
+    document.querySelectorAll('#anChart .an-pt').forEach(function(elp){
+      var show=function(ev){ if(ev)ev.stopPropagation(); var r=reports[+elp.dataset.i]; if(!r)return;
+        var op=_anOpinion(r.opinion);
+        tip.innerHTML='<div class="tb">'+esc(r.broker||'')+'</div><div class="tp">'+_anFmt(r.target_price)+'원</div>'+
+          '<div class="to">'+esc(op.t)+' · '+esc(r.date||'')+'</div>';
+        var b=elp.getBoundingClientRect();
+        tip.style.left=Math.max(8,Math.min(window.innerWidth-140,b.left+8))+'px';
+        tip.style.top=Math.max(8,b.top-70)+'px'; tip.style.opacity=1; };
+      elp.addEventListener('mouseenter',show); elp.addEventListener('click',show); elp.addEventListener('mouseleave',hide);
+    });
+  }
+  function _anDrawList(){
+    var st=_anState; if(!st)return; var listEl=document.getElementById('anList'); if(!listEl)return;
+    var rows=(st.data.reports||[]).slice().sort(function(a,b){return (String(b.date||''))<(String(a.date||''))?-1:1;});
+    listEl.innerHTML=rows.map(function(r){ var op=_anOpinion(r.opinion);
+      return '<div class="an-row"><span class="dt">'+esc(String(r.date||'').slice(2))+'</span>'+
+        '<span class="br">'+esc(r.broker||'')+'</span>'+
+        '<span class="an-op '+op.c+'">'+esc(op.t)+'</span>'+
+        '<span class="an-tpv">'+_anWon(r.target_price)+'</span></div>'; }).join('');
+  }
+
   /* ---------- 탭 전환 ---------- */
   var _scrollY={};   // 항목34: 탭별 마지막 스크롤 위치(복귀 복원용)
   function activateTab(name){
@@ -239,6 +438,8 @@
     // 공존 규칙: 탭 전환 시 열린 상세 모달/시트 먼저 닫기(body 스크롤락·history 꼬임 방지)
     var dv=document.getElementById('detail');
     if(dv&&!dv.hidden&&typeof closeDetail==='function')closeDetail(true);
+    var av=document.getElementById('analyst');   // 트랙1: 탭 전환 시 열린 애널리스트 오버레이도 닫기
+    if(av&&!av.hidden)closeAnalyst(true);
     document.querySelectorAll('.sheet:not([hidden])').forEach(function(s){ if(typeof closeSheet==='function')closeSheet(s.id); });
     // 관심 탭을 떠나면 피드 옵저버 해제(숨은 탭 sentinel 오관측 방지)
     if(window.CUR_TAB==='watch'&&name!=='watch'&&typeof FEED_OBSERVER!=='undefined'&&FEED_OBSERVER){
@@ -318,6 +519,42 @@
     if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
   });
 
+  // 트랙4: 밤사이 밴드(밴드=버튼 data-ov-jump) → 밤사이 공시 섹션(#ovSecH)으로 부드럽게 스크롤(엘리먼트=버튼이라 키보드 기본지원)
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('[data-ov-jump]'))return;
+    var sec=document.getElementById('ovSecH'); if(!sec)return;
+    try{ sec.scrollIntoView({behavior:(typeof prefersReduce==='function'&&prefersReduce())?'auto':'smooth',block:'start'}); }
+    catch(_){ sec.scrollIntoView(); }
+  });
+
+  // 트랙2→트랙1: 시총 Top100 행(data-analyst) 탭 → 애널리스트 그래프 화면. (data-detail 아님 → 상세 모달과 충돌 없음)
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('[data-analyst]'); if(!t)return;
+    openAnalyst(t.dataset.analyst,t.dataset.nm||'');
+  });
+
+  // 트랙1: 애널리스트 오버레이 바인딩(닫기·추세선 토글·자세히 보기·Escape·자체 popstate 트랩)
+  var _anEl=document.getElementById('analyst');
+  if(_anEl){
+    var _anX=document.getElementById('analystX'); if(_anX)_anX.addEventListener('click',function(){closeAnalyst();});
+    var _anB=document.getElementById('analystBack'); if(_anB)_anB.addEventListener('click',function(){closeAnalyst();});
+    var _anBody=document.getElementById('analystBody');
+    if(_anBody)_anBody.addEventListener('click',function(e){
+      var tg=e.target.closest('[data-an-toggle]');
+      if(tg&&_anState){ var k=tg.getAttribute('data-an-toggle'); _anState[k]=!_anState[k];
+        tg.classList.toggle('on',_anState[k]); tg.setAttribute('aria-pressed',String(_anState[k])); _anDrawChart(); return; }
+      var mb=e.target.closest('#anMore');
+      if(mb&&_anState){ _anState.listOpen=!_anState.listOpen;
+        var lst=document.getElementById('anList'); if(lst)lst.hidden=!_anState.listOpen;
+        mb.setAttribute('aria-expanded',String(_anState.listOpen));
+        mb.textContent=_anState.listOpen?'접기 ‹':'자세히 보기 ›'; return; }
+    });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape'){var a=document.getElementById('analyst'); if(a&&!a.hidden)closeAnalyst();} });
+    window.addEventListener('popstate',function(){   // 뒤로가기=오버레이만 닫기(앱 종료 아님). detail popstate와 독립(서로 hidden 가드)
+      var a=document.getElementById('analyst'); if(a&&!a.hidden){_analystHistPushed=false;closeAnalyst(true);}
+    });
+  }
+
   /* ── 시트 뒤로가기 트랩(항목7·CTO정정3): openSheet(index.html)는 history를 안 쌓아
         back이 밑의 탭 엔트리를 소비(탭이동 유발)한다. 시트가 '열릴 때' 동일-해시 가드
         엔트리를 대신 push해 → back=시트만 닫힘(탭 유지). detail/mezz는 자체 트랩 보유 → 무접촉.
@@ -355,6 +592,7 @@
     // (a) 상세/메자닌 = 자체 리스너 보유 → 이중닫힘 금지, 개입 안 함
     var dv=document.getElementById('detail'); if(dv&&!dv.hidden)return;
     var mz=document.getElementById('mezz');   if(mz&&!mz.hidden)return;
+    var an=document.getElementById('analyst');if(an&&!an.hidden)return;   // 트랙1: 애널리스트=자체 popstate 트랩 → 개입 안 함
     // (b) 열린 시트(자체 리스너 없음) → 최상단만 직접 닫고 종료. __miriPop=true 로 옵저버 close-branch의 back 억제
     var sheets=document.querySelectorAll('.sheet:not([hidden])');
     if(sheets.length){
