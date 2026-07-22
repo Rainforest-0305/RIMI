@@ -713,8 +713,8 @@
     <div class="search-mount"></div>
     <div class="cal-count"><span class="lb" id="calCountLb">이번 달 예상 공시</span><b class="num" id="calCount">–</b><span class="u">건</span></div>
     <div class="cal-tabs" id="calTabs" role="tablist" aria-label="캘린더 종류">
-      <button role="tab" data-cseg="mezz" class="on" aria-selected="true">메자닌 전환</button>
-      <button role="tab" data-cseg="earn" aria-selected="false">실적발표</button>
+      <button role="tab" data-cseg="mezz" aria-selected="false">메자닌 전환</button>
+      <button role="tab" data-cseg="earn" class="on" aria-selected="true">실적발표</button>
       <button role="tab" data-cseg="div" aria-selected="false" disabled>배당·상장<span class="soon">준비중</span></button>
     </div>
     <div class="cal-nav"><button id="calPrev" aria-label="이전 달">‹</button><b id="calMonth" class="num">–</b><button id="calNext" aria-label="다음 달">›</button></div>
@@ -2146,8 +2146,21 @@ function openDetailList(title,items){
   if(!items||!items.length){
     body.innerHTML=`<div class="detail-empty">표시할 공시가 없습니다.</div>`;
   }else{
-    body.innerHTML=items.map(a=>cardHTML(a,'')).join('');   // 피드와 동일한 풀카드(별 토글·규모보기 유지)
-    attachSegToggle(body);
+    // 대표값(평균/중앙/보정) 세그를 목록 상단에 제공 — 전역 VALMODE 공유, 선택 시 목록 재렌더
+    const renderList=()=>{
+      const seg='<div class="valwrap" style="margin:0 0 10px"><span class="vlab">대표값</span>'+
+        '<div class="valmode" role="tablist" aria-label="대표값 선택">'+
+        [['avg','평균값'],['med','중앙값'],['car','보정값']].map(([v,l])=>
+          '<button role="tab" data-v="'+v+'" aria-selected="'+String(VALMODE===v)+'">'+l+'</button>').join('')+'</div></div>';
+      const st=body.scrollTop;
+      body.innerHTML=seg+items.map(a=>cardHTML(a,'')).join('');   // 피드와 동일한 풀카드(별 토글·규모보기 유지)
+      attachSegToggle(body);
+      body.scrollTop=st;
+      const vm=body.querySelector('.valmode');
+      if(vm)vm.addEventListener('click',e=>{const b=e.target.closest('button[data-v]');
+        if(!b||b.dataset.v===VALMODE)return;setValmode(b.dataset.v);renderList();});
+    };
+    renderList();
   }
   body.scrollTop=0;
   const ov=document.getElementById('detail');

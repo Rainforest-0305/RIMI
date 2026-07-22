@@ -214,11 +214,14 @@
     var rows=stocks.map(function(s){
       var code=String(s.stock_code||''), nm=esc(s.name||code);
       var rank=(window.__TOP100_RANK&&window.__TOP100_RANK[code])?window.__TOP100_RANK[code]:0;
-      var right=rank?('<span class="rk-val flat num">시총 '+rank+'위</span>')
-                    :('<span class="rk-go" aria-hidden="true">›</span>');
-      return '<button class="rk-row" type="button" data-analyst="'+esc(code)+'" data-nm="'+esc(s.name||'')+'">'+
+      // 시총 순위는 좌측 보조라인으로, 우측 끝은 관심 제외(✕) 버튼 (President 지정 레이아웃)
+      return '<div style="display:flex;align-items:stretch">'+
+        '<button class="rk-row" type="button" style="flex:1;min-width:0" data-analyst="'+esc(code)+'" data-nm="'+esc(s.name||'')+'">'+
         '<span class="rk-info"><span class="rk-nm">'+nm+'<span class="cd num">'+esc(code)+'</span></span>'+
-        '<span class="rk-sub">컨센서스 그래프</span></span>'+right+'</button>';
+        '<span class="rk-sub">컨센서스 그래프'+(rank?(' · 시총 '+rank+'위'):'')+'</span></span>'+
+        '<span class="rk-go" aria-hidden="true">›</span></button>'+
+        '<button type="button" data-wl-del="'+esc(code)+'" aria-label="'+nm+' 관심 제외" title="관심 제외" '+
+        'style="flex:none;border:none;background:none;color:var(--t3);font-size:15px;padding:0 14px;cursor:pointer">✕</button></div>';
     }).join('');
     host.innerHTML='<div class="sec-h"><span class="st">관심종목</span><span class="ss">'+stocks.length+'</span></div>'+
       '<div class="rank">'+rows+'</div>';
@@ -310,7 +313,7 @@
   }
 
   /* ---------- ④ 캘린더 (메자닌 lazy-load, #mezzBody 승격) ---------- */
-  function loadCalendar(){ if(typeof loadMezz==='function')loadMezz(); }
+  function loadCalendar(){ if(typeof loadEarn==='function')loadEarn(); else if(typeof loadMezz==='function')loadMezz(); }   // 기본 탭=실적발표(President 지정)
 
   /* ---------- ⑤ 설정 — no-op (CTO 정정) ----------
      설정 컨트롤 바인딩(initSettings/applyTheme·miri-starttab 저장 등)은 frontend가 index.html에서
@@ -372,7 +375,9 @@
   function _anRender(code,name,d){
     document.getElementById('anNm').textContent=d.name||name||code;
     document.getElementById('anCd').textContent=code;
-    _anState={code:code,name:d.name||name,data:d,reg:false,cons:false,listOpen:false};
+    var _pReg=false,_pCons=false;   // 추세선 토글 상태 영속(종목·세션 간 유지)
+    try{_pReg=localStorage.getItem('miri-antrend-reg')==='1';_pCons=localStorage.getItem('miri-antrend-cons')==='1';}catch(e){}
+    _anState={code:code,name:d.name||name,data:d,reg:_pReg,cons:_pCons,listOpen:false};
     var host=document.getElementById('analystBody'); if(!host)return;
     var reps=(d.reports||[]).filter(function(r){return r.target_price!=null;});
     var nTp=(typeof d.n_tp==='number')?d.n_tp:reps.length;
@@ -389,8 +394,8 @@
         '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'—':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
       '</div>'+
       (showToggle?('<div class="an-chips">'+
-        '<button type="button" class="an-chip" data-an-toggle="reg" aria-pressed="false">회귀 추세선</button>'+
-        '<button type="button" class="an-chip" data-an-toggle="cons" aria-pressed="false">컨센서스 추세선</button></div>'):'')+
+        '<button type="button" class="an-chip'+(_anState.reg?' on':'')+'" data-an-toggle="reg" aria-pressed="'+String(!!_anState.reg)+'">회귀 추세선</button>'+
+        '<button type="button" class="an-chip'+(_anState.cons?' on':'')+'" data-an-toggle="cons" aria-pressed="'+String(!!_anState.cons)+'">컨센서스 추세선</button></div>'):'')+
       '<div class="an-card">'+
         '<div class="an-card-t"><span>'+(noRep?'실제 종가 추이':'목표주가 · 실제주가')+'</span><span class="cnt">'+(noRep?'최근 5개월':('리포트 '+nTp+'개 · 최근 5개월'))+'</span></div>'+
         '<div id="anChart"></div>'+
@@ -598,6 +603,8 @@
 
   // 트랙2→트랙1: 시총 Top100 행(data-analyst) 탭 → 애널리스트 그래프 화면. (data-detail 아님 → 상세 모달과 충돌 없음)
   document.addEventListener('click',function(e){
+    var del=e.target.closest('[data-wl-del]');   // 관심 행 ✕ → 관심종목 제외(전역 delStock 재사용)
+    if(del){ if(typeof delStock==='function')delStock(del.getAttribute('data-wl-del')); return; }
     var t=e.target.closest('[data-analyst]'); if(!t)return;
     openAnalyst(t.dataset.analyst,t.dataset.nm||'');
   });
@@ -611,6 +618,7 @@
     if(_anBody)_anBody.addEventListener('click',function(e){
       var tg=e.target.closest('[data-an-toggle]');
       if(tg&&_anState){ var k=tg.getAttribute('data-an-toggle'); _anState[k]=!_anState[k];
+        try{localStorage.setItem('miri-antrend-'+k,_anState[k]?'1':'0');}catch(err){}   // 상태 영속(다른 종목에도 유지)
         tg.classList.toggle('on',_anState[k]); tg.setAttribute('aria-pressed',String(_anState[k])); _anDrawChart(); return; }
       var mb=e.target.closest('#anMore');
       if(mb&&_anState){ _anState.listOpen=!_anState.listOpen;
