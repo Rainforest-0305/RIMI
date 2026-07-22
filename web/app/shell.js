@@ -142,8 +142,9 @@
       // 트랙4: 밴드를 버튼화 → 탭하면 밤사이 공시 섹션(#ovSecH)으로 스크롤. 카운트 로직(항목46)은 불변.
       brief+='<button type="button" class="brief hero-am" data-ov-jump="1" aria-label="밤사이 공시 '+ovCnt+'건 자세히 보기" '+
             'style="display:block;width:100%;text-align:left;border:none;font-family:inherit;cursor:pointer">'+
-            '<div class="bl"><b>밤사이 공시 <span class="nowrap" style="white-space:nowrap">'+ovCnt+'건</span></b>'+(distTop?(' — '+distTop):'')+
-            '<span class="brief-cta" aria-hidden="true" style="margin-left:auto;color:var(--blue);font-weight:700;font-size:12.5px">자세히 ›</span></div>'+
+            '<div class="bl"><b style="white-space:nowrap;flex:none">밤사이 공시 '+ovCnt+'건</b>'+
+            (distTop?('<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+distTop+'</span>'):'<span style="flex:1"></span>')+
+            '<span class="brief-cta" aria-hidden="true" style="flex:none;color:var(--blue);font-weight:700;font-size:12.5px">자세히 ›</span></div>'+
             '<div class="bl">'+esc(d.market_scope||'코스피·코스닥')+' · 기준 '+esc(_fmtYmd(d.dataset_as_of||d.generated_at||''))+'</div></button>';
       body+='<div class="sec-h"><span class="st">오늘의 큐레이션</span><span class="ss">MIRI 선별</span></div>';
       if(cur.length&&curStatus!=='pending_contract'){
