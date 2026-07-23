@@ -1145,7 +1145,7 @@ let STATE={items:[],stocks:[],meta:'',filter:'all'};
 const WINSEL={};   // rcept_no -> 'd1'|'w1'|'m1'
 const DEFWIN='m1'; // 프로토타입 기본 = 1개월
 // 대표값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본=보정값.
-let VALMODE=(localStorage.getItem('miri-valmode2')||'car'); // 기본=보정값(President 확정 2026-07-18)
+let VALMODE=(localStorage.getItem('miri-valmode2')||'avg'); // 기본=평균값(President 재확정 2026-07-23; 기존 선택자는 localStorage 유지)
 const VALCAP={avg:'평균 등락',med:'중앙값 등락',car:'시장대비 초과등락'};
 const VALWORD={avg:'평균',med:'중앙값',car:'시장대비'};
 function valPick(w){ // 창 객체 -> {val, up} (선택 대표값 + 해당 상승확률). 폴백 안전.

@@ -1623,6 +1623,14 @@ def _restore_item_signals(items, alerts=None):
         if isinstance(imp, dict) and imp.get("status") != "ok" \
                 and _curation_windows_valid(imp.get("windows")):
             imp["status"] = "ok"
+        # [regime 복원] build_curation_fallback 이 impact 를 grade/confidence/windows 로만
+        # 재구성하며 regime(시장국면별 과거영향)을 드롭 → 오늘탭 큐레이션 카드에서 레짐 블록이
+        # 통째로 미노출됐다. 소스 알럿(_attach_regime 적용본)의 regime 을 동형 복원한다.
+        # 알럿에 regime 이 없으면 손대지 않음 → 프론트 regimeBlock 이 우아하게 스킵(무손상).
+        if isinstance(imp, dict) and not imp.get("regime") and a is not None:
+            _a_imp = a.get("impact")
+            if isinstance(_a_imp, dict) and isinstance(_a_imp.get("regime"), dict):
+                imp["regime"] = _a_imp["regime"]
         # scale_eligible 동형 복원(소스 알럿 우선, 매칭 실패 시 기존값/False).
         if a is not None:
             it["scale_eligible"] = bool(a.get("scale_eligible"))
