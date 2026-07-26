@@ -191,7 +191,13 @@
   .valmode button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .valmode button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
-  .feed{display:flex;flex-direction:column;gap:12px}   /* 항목6: 카드 간 간격 통일(9→12, 스크롤 시 카드 붙어보임 해소) */
+  /* ===== 카드 스택 세로 간격 단일 정의(--stack-gap) =====
+     .card 자체에는 margin이 없어 간격이 100% 컨테이너 flex gap에 의존한다.
+     => 카드를 담는 컨테이너를 새로 만들면 반드시 이 셀렉터 목록에 추가할 것. 안 그러면 간격 0이 된다.
+     260726 P0(President 반복지적): #ovWrap(밤사이 공시 청크 래퍼, app/shell.js:159)이 누락돼
+     상단 큐레이션(.today-body 직접자식)=12px, 하단 밤사이(#ovWrap 손자)=0px 로 "아래로 갈수록 붙음" 발생.
+     (구 항목6: 카드 간 간격 통일 9→12) */
+  .feed,.today-body,#ovWrap{display:flex;flex-direction:column;gap:var(--stack-gap,12px)}
   .scan{display:none;align-items:center;gap:8px;justify-content:center;color:var(--t3);font-size:13px;font-weight:600;padding:12px}
   .scan.on{display:flex}
   .scan i{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
@@ -938,7 +944,22 @@
   /* .filter{display:flex}가 UA [hidden]를 이기므로 id 특이성으로 강제 숨김(관심 탭은 세그가 필터 대체) */
   #filter[hidden]{display:none}
   .htitle{font-weight:800;font-size:17px;letter-spacing:-.03em}
-  .today-body{display:flex;flex-direction:column;gap:12px}   /* 항목6: 메인 카드 간격 피드와 통일 */
+  /* .today-body 의 카드 스택 간격은 상단 <style> 의 `.feed,.today-body,#ovWrap` 단일 정의(--stack-gap)로 이관.
+     여기서 재정의하지 말 것(중복되면 density 오버라이드가 갈라진다). */
+
+  /* ===== [분리 블록] .morebtn — 밤사이 공시 '더보기'(app/shell.js:124) =====
+     기존에 web/ 전체에 규칙이 0건이라 브라우저 기본 네이티브 버튼으로 렌더됐다(카드 스택 한가운데 노출).
+     톤 기준 .scaletog(L278) · .feed-err .fe-retry(L205) 재사용. display:block —
+     flex로 하면 "더보기 / 24 / 건" 이 각각 flex item이 돼 '24 건' 처럼 조사 앞이 벌어진다. */
+  .morebtn{display:block;width:100%;text-align:center;font-family:inherit;
+    font-size:14px;font-weight:700;letter-spacing:-.02em;color:var(--blue);
+    background:var(--card);border:none;border-radius:var(--radius);
+    box-shadow:0 0 0 1px var(--line) inset;
+    padding:17px 14px;min-height:52px;cursor:pointer}
+  .morebtn .num{font-weight:800}
+  .morebtn:active{transform:translateY(1px)}
+  .morebtn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  /* ===== [분리 블록] 끝 ===== */
   /* 섹션 헤더 */
   .sec-h{display:flex;align-items:center;gap:8px;padding:4px 4px 2px;margin-top:0}
   .sec-h[hidden]{display:none}   /* 항목55(hidden스캔): mezzHoldHead(head.hidden 토글) — 종목현황 헤더 고아노출 방지 */
@@ -1091,9 +1112,12 @@
      lg에선 풀블리드 중화(거터=동색 --bg라 이음새 없음). sm/md는 기존 풀블리드 유지. */
   html[data-fs="lg"] header{margin-inline:0;padding-left:2px;padding-right:2px}
   html[data-density="compact"] .card{padding:12px 14px 10px}
-  html[data-density="compact"] .feed{gap:6px}
   html[data-density="roomy"] .card{padding:20px 18px 16px}
-  html[data-density="roomy"] .feed{gap:12px}
+  /* 카드 스택 간격은 --stack-gap 하나로. 컨테이너별(.feed/.today-body/#ovWrap) 오버라이드를 쓰면
+     새 컨테이너가 생길 때마다 누락된다(260726 #ovWrap 사고). html[data-density] = (0,1,1) 로
+     :root = (0,1,0) 보다 특이도가 높아 오버라이드 성립. 셀렉터 정의는 상단 <style> 참조. */
+  html[data-density="compact"]{--stack-gap:6px}
+  html[data-density="roomy"]{--stack-gap:12px}
 
   /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
   .tabpanel>*:first-child{margin-top:0}
