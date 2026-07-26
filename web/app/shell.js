@@ -327,6 +327,17 @@
   var _anFmt=function(n){return n==null?'-':Number(n).toLocaleString('ko-KR');};
   var _anWon=function(n){return n==null?'-':(Math.abs(n)>=10000?Math.round(n/10000).toLocaleString('ko-KR')+'만':_anFmt(n));};
   var _anParseD=function(s){return new Date(String(s).slice(0,10)+'T00:00:00');};
+  /* 결함1: 지표에 쓰인 값이 '언제 기준'인지. current 는 prices 마지막 일봉 종가이므로
+     기준일의 정답은 prices[-1][0](그 종가의 거래일). 수집일(updated_at)은 배치가 돈 날이라
+     휴장일에 돌면 종가 거래일과 어긋난다 → 종가 거래일 우선, 없을 때만 updated_at 폴백.
+     어느 쪽도 없으면 표기를 생략(없는 날짜를 지어내지 않는다). */
+  function _anAsOf(d){
+    var s='';
+    try{ var p=d&&d.prices; if(p&&p.length)s=String(p[p.length-1][0]||''); }catch(e){}
+    if(!s&&d&&d.updated_at)s=String(d.updated_at);
+    var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    return m?(+m[2]+'월 '+(+m[3])+'일'):'';
+  }
   // 의견 한글화: 원문 영어 AND 이미 한글 모두 처리. 색 매핑 c: buy=up(빨강), hold=warn, sell=down(파랑), na=slate
   function _anOpinion(op){
     var s=String(op==null?'':op).trim();
@@ -347,6 +358,7 @@
     document.getElementById('anCd').textContent=code;
     if(host)host.innerHTML='<div class="an-empty">애널리스트 전망 불러오는 중…</div>';
     ov.hidden=false; document.body.style.overflow='hidden';
+    document.body.classList.add('an-open');   // 결함1: 오버레이 동안 상단바 '실시간' 배지 숨김(가격은 종가 스냅샷)
     requestAnimationFrame(function(){requestAnimationFrame(function(){ov.classList.add('open');});});
     if(!_analystHistPushed){try{history.pushState({miriModal:'analyst'},'');_analystHistPushed=true;}catch(e){}}
     if(typeof track==='function')track('analyst_open',{code:code});
@@ -363,6 +375,7 @@
   function closeAnalyst(fromPop){
     var ov=document.getElementById('analyst'); if(!ov||ov.hidden)return;
     ov.classList.remove('open'); _anState=null;
+    document.body.classList.remove('an-open');   // 결함1: 배지 원복(다른 탭·공시 피드는 실제 5분 폴링이라 '실시간' 유지)
     var done=function(){ ov.hidden=true;
       var anyS=document.querySelector('.sheet:not([hidden])'), dt=document.getElementById('detail');
       if(!anyS&&(!dt||dt.hidden))document.body.style.overflow=''; };
@@ -389,10 +402,12 @@
       '<div class="an-sub">'+(noRep?'아직 증권사 목표주가 리포트가 없어요 · 종가 추이만 표시'
                                     :('증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건'))+'</div>'+
       '<div class="an-metrics">'+
-        '<div class="an-metric"><div class="k">현재가</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
+        '<div class="an-metric"><div class="k">종가</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
         '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+(noRep?'—':(_anFmt(d.avg_tp)+'원'))+'</div></div>'+
         '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'—':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
       '</div>'+
+      /* 결함1: 값의 성격을 정확히 — 실시간가가 아니라 수집 기준일의 종가. 상승여력도 같은 기준. */
+      (_anAsOf(d)?('<div class="an-asof">종가·상승여력은 '+esc(_anAsOf(d))+' 종가 기준입니다. 실시간 시세가 아닙니다.</div>'):'')+
       (showToggle?('<div class="an-chips">'+
         '<button type="button" class="an-chip'+(_anState.reg?' on':'')+'" data-an-toggle="reg" aria-pressed="'+String(!!_anState.reg)+'">회귀 추세선</button>'+
         '<button type="button" class="an-chip'+(_anState.cons?' on':'')+'" data-an-toggle="cons" aria-pressed="'+String(!!_anState.cons)+'">컨센서스 추세선</button></div>'):'')+
@@ -463,10 +478,19 @@
     reports.forEach(function(r,ix){ var x=X(_anParseD(r.date).getTime()), y=Y(r.target_price);
       dots+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="3.6" fill="#fbbf24" fill-opacity="0.95" stroke="var(--card)" stroke-width="1.1" data-i="'+ix+'" class="an-pt" style="cursor:pointer"/>'; });
     var lastx=X(x1), lasty=Y(d.current);
+    /* 결함2: '현재 N만' 라벨이 종가 라인과 겹쳐 안 보이던 문제.
+       라벨을 마커와 같은 높이(=라인 위)에 두지 않고, 렌더 후 실측 bbox로 상/하 후보를 충돌
+       스코어링해 빈 쪽에 배치한다(+배경 박스). 라인이 상단/하단 어디로 오든 무너지지 않음.
+       배경 rect 는 text 앞에 넣어야(=먼저 그려져야) 뒤에 깔린다. */
     var curm=(d.current!=null)?('<circle cx="'+lastx.toFixed(1)+'" cy="'+lasty.toFixed(1)+'" r="3.5" fill="var(--t1)"/>'+
-      '<text x="'+(lastx-6).toFixed(1)+'" y="'+(lasty+4).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700">현재 '+_anWon(d.current)+'</text>'):'';
+      '<rect id="anCurLabelBg" rx="3" ry="3" fill="var(--card)" fill-opacity="0.82" x="0" y="0" width="0" height="0"/>'+
+      '<text id="anCurLabel" x="'+(lastx+2).toFixed(1)+'" y="'+(lasty-9).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700">종가 '+_anWon(d.current)+'</text>'):'';
     el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'">'+grid+xlab+avg+trend+
       '<path d="'+path+'" fill="none" stroke="var(--t1)" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>'+curm+dots+'</svg>';
+    if(d.current!=null)_anPlaceCurLabel(el,{lastx:lastx,lasty:lasty,PT:PT,PB:PB,H:H,
+      pricePts:prices.map(function(p){return [X(_anParseD(p[0]).getTime()),Y(p[1])];}),
+      dotPts:reports.map(function(r){return [X(_anParseD(r.date).getTime()),Y(r.target_price)];}),
+      avgY:(d.avg_tp!=null?Y(d.avg_tp):null)});
     var leg=(reports.length?'<span><i style="width:9px;height:9px;border-radius:50%;background:#fbbf24"></i>증권사 목표가</span>':'')+
       '<span><i style="width:16px;height:0;border-top:2px solid var(--t1)"></i>실제 종가</span>'+
       (d.avg_tp!=null?'<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>평균 목표가</span>':'');
@@ -474,6 +498,61 @@
     if(st.cons)leg+='<span><i style="width:16px;height:0;border-top:2px dashed #4d94ff"></i>컨센서스 추세선</span>';
     var lg=document.getElementById('anLegend'); if(lg)lg.innerHTML=leg;
     _anBindDots(reports);
+  }
+  /* 결함2: '현재 N만' 라벨 충돌회피 배치(결정론적).
+     구동작은 라벨을 마커와 같은 높이(=종가 라인 위)에 찍어 항상 겹쳤다.
+     대신 ①라벨 실측 bbox 로 x범위를 정하고 ②그 x범위 안에 실제로 존재하는 장애물
+     (종가 라인 점·목표가 점·평균 목표 점선)의 y좌표를 모은 뒤 ③마커 높이에서 위아래로
+     퍼져나가며 '장애물이 하나도 안 걸리는 가장 가까운 빈 슬롯'을 찾아 붙인다.
+     (전체 y밴드 바깥으로 밀면 목표가 점이 높은 종목에서 라벨이 차트 최상단까지
+      튕겨나가므로, 밴드가 아니라 '틈'을 찾는다 → 라인이 상단/하단 어디로 끝나도 겹침 0
+      + 마커 근처 유지.) 빈 슬롯이 없으면 종가 라인만 회피하는 완화 규칙으로 폴백.
+     배경 박스로 가독 보강, 마커에서 멀어지면 리더선으로 연결해 어떤 점의 값인지 유지. */
+  function _anPlaceCurLabel(el,g){
+    var tx=el.querySelector('#anCurLabel'), bg=el.querySelector('#anCurLabelBg');
+    if(!tx)return;
+    var bb; try{bb=tx.getBBox();}catch(e){return;}
+    if(!bb||!bb.width)return;
+    var x0=parseFloat(tx.getAttribute('x')), y0=parseFloat(tx.getAttribute('y'));
+    var dx=bb.x-x0, dy=bb.y-y0;                 // baseline 기준 bbox 오프셋(폰트 무관 실측)
+    var PAD=3, GAP=4, w=bb.width, h=bb.height;
+    var bw=w+PAD*2, bh=h+PAD*2;
+    var cx=g.lastx+2;                            // 마커 우측 정렬(오른쪽 여백 최대 활용)
+    var bx=cx+dx-PAD;
+    var lo=bx-2, hi=bx+bw+2, hard=[], soft=[], k;   // hard=종가 라인(절대 회피), soft=목표가·평균선
+    for(k=0;k<g.pricePts.length;k++){ if(g.pricePts[k][0]>=lo&&g.pricePts[k][0]<=hi)hard.push(g.pricePts[k][1]); }
+    for(k=0;k<g.dotPts.length;k++){ if(g.dotPts[k][0]>=lo-4&&g.dotPts[k][0]<=hi+4)soft.push(g.dotPts[k][1]); }
+    if(g.avgY!=null)soft.push(g.avgY);           // 평균 목표 점선은 전폭 → 항상 장애물
+    var top=g.PT-2, bot=g.H-g.PB+2;
+    var clear=function(by,obs){ if(by<top||by+bh>bot)return false;
+      for(var j=0;j<obs.length;j++){ if(obs[j]>=by-GAP&&obs[j]<=by+bh+GAP)return false; } return true; };
+    // 마커와 같은 높이(박스 중심=마커)에서 시작해 1px씩 위·아래로 퍼지며 첫 빈 슬롯 채택
+    var start=g.lasty-bh/2, span=bot-top, by=null, both=hard.concat(soft), off;
+    for(off=0;off<=span;off++){
+      if(clear(start-off,both)){by=start-off;break;}
+      if(clear(start+off,both)){by=start+off;break;}
+    }
+    if(by==null){                                 // 폴백①: 종가 라인만 회피(목표가·평균선 겹침 허용)
+      for(off=0;off<=span;off++){
+        if(clear(start-off,hard)){by=start-off;break;}
+        if(clear(start+off,hard)){by=start+off;break;}
+      }
+    }
+    if(by==null)by=g.lasty+GAP;                   // 폴백②: 마커 바로 아래
+    by=Math.max(top,Math.min(bot-bh,by));         // 플롯영역 클램프(잘림 방지)
+    tx.setAttribute('x',cx.toFixed(1)); tx.setAttribute('y',(by+PAD-dy).toFixed(1));
+    if(bg){ bg.setAttribute('x',bx.toFixed(1)); bg.setAttribute('y',by.toFixed(1));
+      bg.setAttribute('width',bw.toFixed(1)); bg.setAttribute('height',bh.toFixed(1)); }
+    // 라벨이 마커에서 멀어지면 리더선으로 연결(어느 점의 값인지 상실 방지)
+    var cyMid=by+bh/2;
+    if(Math.abs(cyMid-g.lasty)>22){
+      var ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',g.lastx.toFixed(1)); ln.setAttribute('y1',g.lasty.toFixed(1));
+      ln.setAttribute('x2',g.lastx.toFixed(1)); ln.setAttribute('y2',(cyMid>g.lasty?by:by+bh).toFixed(1));
+      ln.setAttribute('stroke','var(--t3)'); ln.setAttribute('stroke-width','1');
+      ln.setAttribute('stroke-dasharray','2 2'); ln.setAttribute('id','anCurLeader');
+      if(bg&&bg.parentNode)bg.parentNode.insertBefore(ln,bg);
+    }
   }
   function _anBindDots(reports){
     var tip=document.getElementById('anTip'); if(!tip)return;

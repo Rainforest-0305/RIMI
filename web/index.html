@@ -871,7 +871,13 @@
 <div class="an-tip" id="anTip" role="status" aria-live="off"></div>
 <style>
   .an-sub{color:var(--t3);font-size:12.5px;margin:0 2px 14px}
-  .an-metrics{display:flex;gap:9px;margin-bottom:14px}
+  .an-metrics{display:flex;gap:9px;margin-bottom:7px}
+  /* 결함1(표기 정정): 애널리스트 지표는 '실시간'이 아니라 배치가 수집한 '종가' 스냅샷이다.
+     기준일(updated_at)을 지표 바로 아래 한 줄로 명시해 종가·상승여력이 같은 기준임을 밝힌다. */
+  .an-asof{color:var(--t3);font-size:11.5px;margin:0 2px 14px;line-height:1.45}
+  /* 결함1: 애널리스트 오버레이가 열려 있는 동안엔 상단바 '실시간' 배지를 감춘다.
+     (공시 피드는 실제 5분 폴링이라 다른 탭에선 사실 → 배지 유지. 여기서만 숨김) */
+  body.an-open header .live{display:none}
   .an-metric{flex:1;background:var(--card);border-radius:14px;padding:12px 13px;box-shadow:0 0 0 1px var(--line) inset}
   .an-metric .k{font-size:11.5px;color:var(--t3);margin-bottom:5px}
   .an-metric .v{font-size:17px;font-weight:800;font-family:var(--mono);color:var(--t1);white-space:nowrap}   /* 항목4: 숫자+단위(원) 줄바꿈 금지. 초과 시 _anFitMetrics 가 폰트 자동 축소 */
