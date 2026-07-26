@@ -196,8 +196,14 @@
      => 카드를 담는 컨테이너를 새로 만들면 반드시 이 셀렉터 목록에 추가할 것. 안 그러면 간격 0이 된다.
      260726 P0(President 반복지적): #ovWrap(밤사이 공시 청크 래퍼, app/shell.js:159)이 누락돼
      상단 큐레이션(.today-body 직접자식)=12px, 하단 밤사이(#ovWrap 손자)=0px 로 "아래로 갈수록 붙음" 발생.
-     (구 항목6: 카드 간 간격 통일 9→12) */
-  .feed,.today-body,#ovWrap{display:flex;flex-direction:column;gap:var(--stack-gap,12px)}
+     (구 항목6: 카드 간 간격 통일 9→12)
+     260726 추가: #detailBody(상세 오버레이 카드 스택, L2149·L2180에서 cardHTML 직접 주입)도 편입.
+     .detail-body{gap:11px}(L409) 하드코딩이 남아 본문 12px과 갈라져 있었고 density에도 무반응이었다.
+     ID(1,0,0) > .detail-body 클래스(0,1,0) 라 선언 순서와 무관하게 여기서 이긴다.
+     ※ #analystBody 는 같은 .detail-body 클래스지만 자식이 .card 가 아니라
+       .an-sub/.an-metrics/.an-chips/.an-card/.an-disc 섹션이다(카드 스택 아님).
+       성격이 다른 간격이므로 편입하지 않고 .detail-body 의 11px 을 그대로 쓴다. */
+  .feed,.today-body,#ovWrap,#detailBody{display:flex;flex-direction:column;gap:var(--stack-gap,12px)}
   .scan{display:none;align-items:center;gap:8px;justify-content:center;color:var(--t3);font-size:13px;font-weight:600;padding:12px}
   .scan.on{display:flex}
   .scan i{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
@@ -406,6 +412,8 @@
   .detail-x::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px}
   .detail-x:active{transform:translateY(1px)}
   .detail-x:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  /* gap:11px 은 이제 #analystBody(애널리스트 뷰 섹션 간격) 전용이다.
+     #detailBody(카드 스택)는 상단 <style> 의 `--stack-gap` 단일 정의로 편입돼 이 값을 덮어쓴다. */
   .detail-body{overflow-y:auto;display:flex;flex-direction:column;gap:11px;padding:12px 0 4px}
   .detail-empty{text-align:center;color:var(--t3);font-size:14px;font-weight:600;padding:44px 12px;line-height:1.7}
 
