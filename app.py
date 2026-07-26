@@ -691,6 +691,12 @@ def health():
         "watch_backend": watch_store.backend_name(),  # 관심종목 영속 백엔드(supabase/json)
         "push_enabled": _PUSH_ENABLED,                 # VAPID 설정(웹푸시 활성) 여부
         "push_backend": push_store.backend_name(),     # 구독 영속 백엔드(supabase/json)
+        # 종가 자동갱신 관측: external=실제 외부조회 횟수, skipped=최신이라 호출 안 한 횟수.
+        # '이미 최신이면 외부 호출 0'을 운영 중에도 수치로 확인하기 위한 카운터.
+        "price_chain": list(_PRICE_CHAIN),
+        "price_expected_trade_day": _expected_trade_day(),
+        "price_market_latest": _MARKET.get("latest"),
+        "price_calls": dict(_PRICE_CALLS),
     }
 
 
@@ -1846,11 +1852,223 @@ def _empty_analyst(code, name=None):
             "disclaimer": _ANALYST_DISCLAIMER}
 
 
+# ---------------- 종가 신선도 자동 갱신(서버 자체 · 배치/VM/노트북 불요) ----------------
+# 설계: '매 요청 실시간 조회'가 아니다. 저장된 종가의 **기준 거래일**이 지금 시점에서
+# 있어야 할 최신 거래일보다 낡았을 때만 외부에서 1회 가져온다. 최신이면 외부 호출 0.
+# Render 는 24시간 떠 있으므로 노트북·VM 이 모두 꺼져 있어도 사용자가 앱을 열면
+# 그 자리에서 최신 종가로 맞춰진다.
+#
+# 휴장일(공휴일) 처리: 한국 공휴일 달력이 없으면 '평일인데 종가가 없는 날'을 판정할 수
+# 없어 매 요청 재조회에 빠진다. 그래서 달력 대신 **관측**을 쓴다 — 어떤 종목이든 조회에
+# 성공하면 그 응답의 거래일을 _MARKET['latest'](시장이 실제로 내놓은 최신 거래일)로
+# 기록하고, 저장값이 그 이상이면 더 새 것이 없다고 보고 호출하지 않는다.
+# 여기에 종목별 재시도 쿨다운을 더해 어떤 경우에도 호출량이 발산하지 않는다.
+from datetime import timedelta as _td, timezone as _tz
+
+_KST = _tz(_td(hours=9))
+_MKT_CLOSE_MIN = 16 * 60        # 15:30 정규장 마감 + 정산 여유 → 16:00(KST) 이후를 '오늘 종가 확정'으로 본다
+_PRICE_SYNC_WAIT = float(os.getenv("GONGSI_PRICE_SYNC_WAIT", "2.5"))   # 동기 대기 상한(초). 초과 시 기존값 즉시 반환 + 백그라운드가 마저 완료
+_PRICE_RETRY_SEC = float(os.getenv("GONGSI_PRICE_RETRY_SEC", "1800"))  # 종목별 재시도 쿨다운(휴장일 무한 재시도 방지)
+_MARKET_TTL_SEC = float(os.getenv("GONGSI_MARKET_TTL_SEC", "21600"))   # 관측된 시장 최신거래일 유효기간(6h)
+# 소스 체인: 토스 유지(1순위). Render 에는 toss_data/pykrx 가 없어 자연히 fdr 로 폴백된다.
+_PRICE_CHAIN = tuple(s.strip() for s in
+                     os.getenv("GONGSI_PRICE_CHAIN", "toss,pykrx,fdr").split(",") if s.strip())
+
+_PRICE_FRESH = {}     # code -> {"price","asof","source","ts"}  갱신 성공값 오버레이
+_PRICE_JOBS = {}      # code -> {"ev":Event,"res":tuple|None}   in-flight 병합(중복 호출 방지)
+_PRICE_ATTEMPT = {}   # code -> 마지막 시도 시각(쿨다운)
+_PRICE_PERSISTED = {} # code -> 마지막으로 Supabase 에 쓴 거래일(중복 upsert 차단)
+_MARKET = {"latest": None, "checked_ts": 0.0}
+_PRICE_LOCK = threading.Lock()
+_PRICE_CALLS = {"external": 0, "skipped": 0}   # 관측용 카운터(외부 호출이 실제로 안 나가는지 입증)
+
+
+def _expected_trade_day(now=None):
+    """지금 시점에 '있어야 할 최신 종가'의 거래일(KST, YYYY-MM-DD).
+
+    평일 16:00(KST) 이후면 오늘, 그 전이면 직전 영업일. 주말은 직전 금요일.
+    공휴일은 판정하지 않는다(달력 없음) — 그 오차는 _MARKET 관측이 흡수한다."""
+    now = now or datetime.now(_KST)
+    d = now.date()
+    after_close = (now.hour * 60 + now.minute) >= _MKT_CLOSE_MIN
+    if not (d.weekday() < 5 and after_close):
+        d -= _td(days=1)
+    while d.weekday() >= 5:        # 토(5)·일(6) → 직전 금요일
+        d -= _td(days=1)
+    return d.isoformat()
+
+
+def _fetch_price_with_asof(code):
+    """외부 소스에서 (종가, 거래일, 소스명). 거래일을 못 주는 응답은 채택하지 않는다
+    (신선도 판정이 날짜 기반이라 asof 없는 값은 이 설계에서 쓸 수 없다).
+    어떤 예외도 밖으로 던지지 않는다."""
+    for name in _PRICE_CHAIN:
+        try:
+            if name == "toss":
+                # 토스 일봉 마지막 종가(=거래일 포함). toss_data 는 읽기 전용 import(수정 금지).
+                import price_source as _ps   # sys.path 에 kis-trading 을 넣어주는 역할도 겸함
+                _ = _ps
+                import toss_data
+                df = toss_data.candles(code, "1d")
+                if df is not None and len(df):
+                    close = float(df["close"].iloc[-1])
+                    asof = df.index[-1].strftime("%Y-%m-%d")
+                    if close > 0:
+                        return close, asof, "toss"
+            else:
+                import price_source as _ps
+                r = _ps.get_price(code, sources=(name,))
+                if r and r.get("price") and r.get("asof"):
+                    return float(r["price"]), str(r["asof"]), name
+        except Exception as e:  # noqa: BLE001
+            print(f"[price] {code} {name} 실패: {type(e).__name__}")
+    return None
+
+
+def _price_worker(code, job):
+    """단일 종목 외부 조회 1회(백그라운드 스레드). 결과를 오버레이·시장관측에 반영."""
+    res = None
+    try:
+        res = _fetch_price_with_asof(code)
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] {code} worker 예외: {type(e).__name__}")
+    try:
+        if res:
+            price, asof, source = res
+            with _PRICE_LOCK:
+                _PRICE_FRESH[code] = {"price": price, "asof": asof,
+                                      "source": source, "ts": time.time()}
+                if not _MARKET["latest"] or asof > _MARKET["latest"]:
+                    _MARKET["latest"] = asof
+                _MARKET["checked_ts"] = time.time()
+    finally:
+        job["res"] = res
+        job["ev"].set()
+
+
+def _run_price_refresh(code, wait):
+    """단일비행(single-flight) 갱신. 진행 중이면 새 호출 없이 합류, 쿨다운 중이면 호출 안 함.
+    wait 초까지만 기다리고 그 뒤엔 None(=호출자는 기존값으로 응답, 워커는 계속 진행)."""
+    now = time.time()
+    with _PRICE_LOCK:
+        job = _PRICE_JOBS.get(code)
+        if job is not None and not job["ev"].is_set():
+            pass                                   # 진행 중 → 합류(외부 호출 추가 없음)
+        else:
+            if now - _PRICE_ATTEMPT.get(code, 0.0) < _PRICE_RETRY_SEC:
+                _PRICE_CALLS["skipped"] += 1
+                return None                        # 쿨다운 → 외부 호출 안 함
+            _PRICE_ATTEMPT[code] = now
+            job = {"ev": threading.Event(), "res": None}
+            _PRICE_JOBS[code] = job
+            _PRICE_CALLS["external"] += 1
+            print(f"[price] {code} 외부조회 시작 (누적 external={_PRICE_CALLS['external']}, "
+                  f"skipped={_PRICE_CALLS['skipped']})")
+            threading.Thread(target=_price_worker, args=(code, job), daemon=True).start()
+    job["ev"].wait(timeout=max(0.0, wait))
+    return job["res"] if job["ev"].is_set() else None
+
+
+def _apply_price(payload, price, asof, source):
+    """갱신된 종가를 payload 에 반영. prices 궤적도 함께 맞춰 프런트의 기준일 표기
+    (prices[-1][0])와 값이 어긋나지 않게 한다. 원본 캐시 dict 는 건드리지 않는다(복사)."""
+    out = dict(payload)
+    prices = list(out.get("prices") or [])
+    ival = int(round(price))
+    if prices and str(prices[-1][0]) == asof:
+        prices[-1] = [asof, ival]
+    elif not prices or asof > str(prices[-1][0]):
+        prices.append([asof, ival])
+    out["prices"] = prices
+    out["current"] = ival
+    out["current_asof"] = asof
+    out["current_source"] = source
+    return out
+
+
+def _ensure_fresh_price(payload):
+    """저장값이 최신 거래일 종가가 아니면 서버가 그 자리에서 갱신한다.
+    최신이면 외부 호출 0. 실패·지연 시에도 기존 값으로 정상 응답한다(화면 안 멈춤)."""
+    try:
+        code = str(payload.get("code") or "")
+        if not re.fullmatch(r"\d{6}", code):
+            return payload
+        prices = payload.get("prices") or []
+        asof = str(prices[-1][0]) if prices else str(payload.get("updated_at") or "")
+
+        # 0) 이전 요청에서 백그라운드로 끝난 갱신결과가 있으면 먼저 반영
+        with _PRICE_LOCK:
+            ov = _PRICE_FRESH.get(code)
+        if ov and (not asof or ov["asof"] >= asof):
+            payload = _apply_price(payload, ov["price"], ov["asof"], ov["source"])
+            asof = ov["asof"]
+
+        exp = _expected_trade_day()
+        if asof and asof >= exp:
+            _PRICE_CALLS["skipped"] += 1
+            payload.setdefault("current_asof", asof)
+            return payload                                   # 최신 → 외부 호출 0
+
+        # 1) 휴장일 흡수: 시장이 실제로 내놓은 최신 거래일을 최근에 관측했고,
+        #    저장값이 이미 그 수준이면 더 새 것은 존재하지 않는다 → 호출 0
+        with _PRICE_LOCK:
+            mk_latest, mk_ts = _MARKET["latest"], _MARKET["checked_ts"]
+        if (asof and mk_latest and asof >= mk_latest
+                and (time.time() - mk_ts) < _MARKET_TTL_SEC):
+            _PRICE_CALLS["skipped"] += 1
+            payload.setdefault("current_asof", asof)
+            return payload
+
+        # 2) 갱신 필요 → 단일비행 조회(대기 상한 내에서만 동기 반영)
+        res = _run_price_refresh(code, _PRICE_SYNC_WAIT)
+        if res:
+            price, new_asof, source = res
+            if not asof or new_asof >= asof:
+                payload = _apply_price(payload, price, new_asof, source)
+                _persist_price_async(payload)
+        payload.setdefault("current_asof", asof or None)
+        return payload
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] ensure_fresh 예외(기존값 유지): {type(e).__name__} {e}")
+        return payload
+
+
+def _persist_price_async(payload):
+    """영속을 요청 경로에서 떼어낸다.
+
+    단일비행으로 합류한 동시요청은 **모두 같은 결과를 받으므로** 그대로 두면 요청 수만큼
+    upsert 가 발생한다(20 동시요청 → 20 upsert, 실측 응답 6.5s). (code, 거래일) 당 1회로
+    묶고 백그라운드로 보내 응답 지연과 쓰기 증폭을 함께 없앤다."""
+    try:
+        code = str(payload.get("code") or "")
+        asof = str(payload.get("current_asof") or "")
+        with _PRICE_LOCK:
+            if not code or _PRICE_PERSISTED.get(code) == asof:
+                return
+            _PRICE_PERSISTED[code] = asof
+        threading.Thread(target=_persist_price, args=(payload,), daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] 영속 스케줄 실패(무시): {type(e).__name__}")
+
+
+def _persist_price(payload):
+    """갱신분 Supabase 영속(best-effort). 쓰기 권한이 없어도 서버 메모리 갱신만으로
+    동작하므로 실패는 무시한다(조용한 실패가 아니라 로그로 드러냄)."""
+    try:
+        row = dict(payload)
+        for k in ("disclaimer", "cached", "current_asof", "current_source"):
+            row.pop(k, None)
+        miri_cache.upsert("analyst_consensus", [row], on_conflict="code")
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] supabase 영속 실패(무시): {type(e).__name__}")
+
+
 @api.get("/api/analyst")
 def get_analyst(request: Request, code: str = ""):
-    """②종목 애널리스트 전망(캐시 전용). Supabase analyst_consensus 우선 → 로컬 폴백.
+    """②종목 애널리스트 전망. 리포트/목표가는 배치 캐시(Supabase→로컬 폴백),
+    **종가만** 서버가 신선도를 판정해 필요할 때 갱신한다(최신이면 외부 호출 0).
 
-    미수집/미존재 코드는 200 graceful(cached:false, 빈 reports/prices). 라이브콜 0."""
+    미수집/미존재 코드는 200 graceful(cached:false, 빈 reports/prices)."""
     code = (code or "").strip()
     if not re.fullmatch(r"\d{6}", code):
         return _json_cached(request, _empty_analyst(code or "", None))
@@ -1859,7 +2077,8 @@ def get_analyst(request: Request, code: str = ""):
         with _MIRI_LOCK:
             ent = _ANALYST_MEM["data"].get(code)
             if ent and (now - ent[0]) < _MIRI_TTL_SEC:
-                return _json_cached(request, ent[1])
+                # 리포트/목표가는 캐시 그대로, 종가만 신선도 판정(최신이면 외부 호출 0)
+                return _json_cached(request, _ensure_fresh_price(ent[1]))
         payload = None
         # 1) Supabase 우선
         try:
@@ -1878,8 +2097,8 @@ def get_analyst(request: Request, code: str = ""):
         if payload is None:
             payload = _empty_analyst(code, _corp_name(code))
         with _MIRI_LOCK:
-            _ANALYST_MEM["data"][code] = (now, payload)
-        return _json_cached(request, payload)
+            _ANALYST_MEM["data"][code] = (now, payload)   # 배치분(리포트/목표가) 캐시
+        return _json_cached(request, _ensure_fresh_price(payload))
     except Exception as e:  # noqa: BLE001
         print(f"[analyst] 예외 폴백: {type(e).__name__} {e}")
         return _json_cached(request, _empty_analyst(code, None))
