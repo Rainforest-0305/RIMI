@@ -1898,31 +1898,47 @@ def _expected_trade_day(now=None):
     return d.isoformat()
 
 
-def _fetch_price_with_asof(code):
+def _fetch_price_with_asof(code, not_after=None):
     """외부 소스에서 (종가, 거래일, 소스명). 거래일을 못 주는 응답은 채택하지 않는다
     (신선도 판정이 날짜 기반이라 asof 없는 값은 이 설계에서 쓸 수 없다).
-    어떤 예외도 밖으로 던지지 않는다."""
+    어떤 예외도 밖으로 던지지 않는다.
+
+    ★기준 거래일 컷: 어떤 소스든 장중에는 '오늘' 행을 내려주지만 그건 그 순간 체결가지
+    확정 종가가 아니다. not_after(기본 _expected_trade_day())를 넘는 행은 채택하지 않고
+    **직전 확정 종가**를 쓴다(analyst_collect._prices 와 동일 규칙). 인자를 안 주면 항상
+    현재 기준일이 적용되므로 어떤 호출 경로도 필터를 우회할 수 없다."""
+    not_after = not_after or _expected_trade_day()
     for name in _PRICE_CHAIN:
+        cand = None
         try:
             if name == "toss":
-                # 토스 일봉 마지막 종가(=거래일 포함). toss_data 는 읽기 전용 import(수정 금지).
+                # 토스 일봉의 '기준일 이하' 마지막 종가. toss_data 는 읽기 전용 import(수정 금지).
                 import price_source as _ps   # sys.path 에 kis-trading 을 넣어주는 역할도 겸함
-                _ = _ps
-                import toss_data
-                df = toss_data.candles(code, "1d")
+                df = _ps._cut(_ps_candles(code), not_after)
                 if df is not None and len(df):
                     close = float(df["close"].iloc[-1])
-                    asof = df.index[-1].strftime("%Y-%m-%d")
+                    asof = _ps._asof_str(df.index[-1])
                     if close > 0:
-                        return close, asof, "toss"
+                        cand = (close, asof, "toss")
             else:
                 import price_source as _ps
-                r = _ps.get_price(code, sources=(name,))
+                r = _ps.get_price(code, sources=(name,), not_after=not_after)
                 if r and r.get("price") and r.get("asof"):
-                    return float(r["price"]), str(r["asof"]), name
+                    cand = (float(r["price"]), str(r["asof"]), name)
         except Exception as e:  # noqa: BLE001
             print(f"[price] {code} {name} 실패: {type(e).__name__}")
+        if cand:
+            if cand[1] <= not_after:      # 마지막 방어선(조용히 새어나가지 않게)
+                return cand
+            print(f"[price] {code} {name} 미확정 종가 {cand[1]} > 기준일 {not_after} → 기각")
     return None
+
+
+def _ps_candles(code):
+    """토스 일봉(읽기 전용). price_source import 로 sys.path 에 kis-trading 이 들어간 뒤에만
+    유효하므로 별도 함수로 분리한다(없으면 예외 → 호출부가 다음 소스로 폴백)."""
+    import toss_data
+    return toss_data.candles(code, "1d")
 
 
 def _price_worker(code, job):
@@ -1986,6 +2002,34 @@ def _apply_price(payload, price, asof, source):
     return out
 
 
+def _drop_unconfirmed(payload, exp):
+    """기준 거래일(exp)을 넘는 값 = 장중 미확정 체결가 → 종가로 내보내지 않는다.
+
+    저장(Supabase/로컬)된 값에도 과거 폴백이 남긴 미확정 행이 있을 수 있으므로 응답
+    경로에서 한 번 더 거른다(코드만 고치면 이미 저장된 오염은 계속 표기된다).
+    직전 확정 종가가 남아 있으면 그것으로 되돌리고, 남는 게 없으면 값 없이 둔다 —
+    그 뒤 신선도 로직이 확정 종가를 가져와 채운다. 원본 dict 는 건드리지 않는다."""
+    prices = payload.get("prices") or []
+    over = [p for p in prices if str(p[0]) > exp]
+    cur_over = str(payload.get("current_asof") or "") > exp
+    if not over and not cur_over:
+        return payload
+    kept = [p for p in prices if str(p[0]) <= exp]
+    out = dict(payload)
+    out["prices"] = kept
+    if kept:
+        out["current"] = kept[-1][1]
+        out["current_asof"] = str(kept[-1][0])
+        out.pop("current_source", None)      # 되돌린 값의 출처는 알 수 없다 → 주장하지 않음
+    else:
+        out["current"] = None
+        out["current_asof"] = None
+        out.pop("current_source", None)
+    print(f"[price] {payload.get('code')} 미확정행 {len(over)}건 제외(기준일 {exp}) → "
+          f"current={out['current']} asof={out['current_asof']}")
+    return out
+
+
 def _ensure_fresh_price(payload):
     """저장값이 최신 거래일 종가가 아니면 서버가 그 자리에서 갱신한다.
     최신이면 외부 호출 0. 실패·지연 시에도 기존 값으로 정상 응답한다(화면 안 멈춤)."""
@@ -1993,17 +2037,20 @@ def _ensure_fresh_price(payload):
         code = str(payload.get("code") or "")
         if not re.fullmatch(r"\d{6}", code):
             return payload
+        exp = _expected_trade_day()
+        payload = _drop_unconfirmed(payload, exp)     # ★ 저장된 장중값 무력화(응답 경로 방어)
         prices = payload.get("prices") or []
         asof = str(prices[-1][0]) if prices else str(payload.get("updated_at") or "")
+        if asof > exp:
+            asof = ""       # 수집일(updated_at)이 기준일보다 뒤 → 신선도 근거로 쓸 수 없다
 
         # 0) 이전 요청에서 백그라운드로 끝난 갱신결과가 있으면 먼저 반영
         with _PRICE_LOCK:
             ov = _PRICE_FRESH.get(code)
-        if ov and (not asof or ov["asof"] >= asof):
+        if ov and ov["asof"] <= exp and (not asof or ov["asof"] >= asof):
             payload = _apply_price(payload, ov["price"], ov["asof"], ov["source"])
             asof = ov["asof"]
 
-        exp = _expected_trade_day()
         if asof and asof >= exp:
             _PRICE_CALLS["skipped"] += 1
             payload.setdefault("current_asof", asof)
@@ -2042,6 +2089,10 @@ def _persist_price_async(payload):
     try:
         code = str(payload.get("code") or "")
         asof = str(payload.get("current_asof") or "")
+        exp = _expected_trade_day()
+        if asof > exp or any(str(p[0]) > exp for p in (payload.get("prices") or [])):
+            print(f"[price] {code} 미확정 종가(asof={asof} > 기준일 {exp}) → 영속 안 함")
+            return          # 장중값은 DB 에 '종가'로 남기지 않는다(오염 재발 차단)
         with _PRICE_LOCK:
             if not code or _PRICE_PERSISTED.get(code) == asof:
                 return

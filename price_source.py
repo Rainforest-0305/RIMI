@@ -28,13 +28,36 @@ logger = logging.getLogger("price_source")
 # 3순위 폴백을 나타내는 명시 sentinel. price is None 으로도 판별 가능.
 SOURCE_NONE = None
 
+
+# ── 기준 거래일 컷(장중 미확정 행 배제) ──
+# 어떤 소스든 '오늘 장중'이면 오늘 날짜 행을 내려준다. 그 값은 체결가일 뿐 종가가
+# 아니다. not_after(= 확정 종가의 기준 거래일)를 주면 그 날짜를 넘는 행을 잘라내고
+# **직전 확정 종가**를 돌려준다. not_after=None 이면 기존 동작 그대로(하위호환).
+def _asof_str(ts):
+    """일봉 인덱스 → 'YYYY-MM-DD'. Timestamp/str 어느 쪽이든 안전."""
+    try:
+        return ts.strftime("%Y-%m-%d")
+    except Exception:  # noqa: BLE001
+        return str(ts)[:10]
+
+
+def _cut(df, not_after):
+    """일봉 df 를 not_after(포함)까지로 자른다. not_after 없으면 원본 그대로."""
+    if df is None or not_after is None or len(df) == 0:
+        return df
+    keep = [i for i, ts in enumerate(df.index) if _asof_str(ts) <= str(not_after)]
+    if len(keep) == len(df):
+        return df
+    return df.iloc[keep]
+
+
 # ── toss_data.py 를 수정 없이 import 하기 위한 경로 추가 ──
 _KIS_DIR = Path.home() / "kis-trading"
 if _KIS_DIR.is_dir() and str(_KIS_DIR) not in sys.path:
     sys.path.insert(0, str(_KIS_DIR))
 
 
-def _try_pykrx(ticker, lookback_days=15):
+def _try_pykrx(ticker, lookback_days=15, not_after=None):
     """1순위. pykrx 최근 종가. 성공 시 (price:float, asof:'YYYY-MM-DD'), 실패 시 None."""
     try:
         from pykrx import stock
@@ -52,10 +75,15 @@ def _try_pykrx(ticker, lookback_days=15):
     if df is None or len(df) == 0:
         logger.info("[price_source] pykrx 데이터 0건 %s → 다음 순위 폴백", ticker)
         return None
+    df = _cut(df, not_after)
+    if df is None or len(df) == 0:
+        logger.info("[price_source] pykrx %s: %s 이전 확정행 없음 → 다음 순위 폴백",
+                    ticker, not_after)
+        return None
     try:
         last = df.iloc[-1]
         close = float(last["종가"])
-        asof = df.index[-1].strftime("%Y-%m-%d")
+        asof = _asof_str(df.index[-1])
     except (KeyError, ValueError, TypeError, IndexError) as e:
         logger.warning("[price_source] pykrx 파싱 실패 %s: %r → 다음 순위 폴백", ticker, e)
         return None
@@ -65,28 +93,31 @@ def _try_pykrx(ticker, lookback_days=15):
     return close, asof
 
 
-def _try_toss(ticker):
+def _try_toss(ticker, not_after=None):
     """2순위. toss_data.price() 우선, 실패 시 candles() 마지막 종가.
-       성공 시 (price:float, asof:str|None), 실패 시 None. (현재 403이면 정상적으로 None 반환.)"""
+       성공 시 (price:float, asof:str|None), 실패 시 None. (현재 403이면 정상적으로 None 반환.)
+       not_after 가 주어지면 2a(실시간 현재가)는 건너뛴다 — 거래일이 없어 확정 종가인지
+       판정할 수 없는 값이기 때문(장중이면 그냥 체결가다)."""
     try:
         import toss_data
     except Exception as e:
         logger.warning("[price_source] toss_data import 실패: %r → 다음 순위 폴백", e)
         return None
-    # 2a) 실시간 현재가
-    try:
-        px = toss_data.price(ticker)
-        if px and ticker in px and float(px[ticker]) > 0:
-            return float(px[ticker]), None
-        logger.info("[price_source] toss price() 응답에 %s 없음/0 → candles 시도", ticker)
-    except Exception as e:
-        logger.warning("[price_source] toss price() 실패 %s: %r → candles 시도", ticker, e)
+    # 2a) 실시간 현재가 (기준 거래일 판정이 필요한 호출에서는 사용 불가 → 건너뜀)
+    if not_after is None:
+        try:
+            px = toss_data.price(ticker)
+            if px and ticker in px and float(px[ticker]) > 0:
+                return float(px[ticker]), None
+            logger.info("[price_source] toss price() 응답에 %s 없음/0 → candles 시도", ticker)
+        except Exception as e:
+            logger.warning("[price_source] toss price() 실패 %s: %r → candles 시도", ticker, e)
     # 2b) 캔들 마지막 종가
     try:
-        df = toss_data.candles(ticker, "1d")
+        df = _cut(toss_data.candles(ticker, "1d"), not_after)
         if df is not None and len(df):
             close = float(df["close"].iloc[-1])
-            asof = df.index[-1].strftime("%Y-%m-%d")
+            asof = _asof_str(df.index[-1])
             if close > 0:
                 return close, asof
         logger.info("[price_source] toss candles 데이터 없음 %s → 다음 순위 폴백", ticker)
@@ -95,7 +126,7 @@ def _try_toss(ticker):
     return None
 
 
-def _try_fdr(ticker, lookback_days=15):
+def _try_fdr(ticker, lookback_days=15, not_after=None):
     """3순위. FinanceDataReader 최근 종가 (pykrx·toss 모두 실패 시 폴백, KIS-독립).
        성공 시 (price:float, asof:'YYYY-MM-DD'), 실패 시 None."""
     try:
@@ -113,9 +144,14 @@ def _try_fdr(ticker, lookback_days=15):
     if df is None or len(df) == 0:
         logger.info("[price_source] fdr 데이터 0건 %s → 다음 순위 폴백", ticker)
         return None
+    df = _cut(df, not_after)
+    if df is None or len(df) == 0:
+        logger.info("[price_source] fdr %s: %s 이전 확정행 없음 → 다음 순위 폴백",
+                    ticker, not_after)
+        return None
     try:
         close = float(df["Close"].iloc[-1])
-        asof = df.index[-1].strftime("%Y-%m-%d")
+        asof = _asof_str(df.index[-1])
     except (KeyError, ValueError, TypeError, IndexError) as e:
         logger.warning("[price_source] fdr 파싱 실패 %s: %r → 다음 순위 폴백", ticker, e)
         return None
@@ -134,12 +170,14 @@ _DISPATCH = {
 _DEFAULT_CHAIN = ("pykrx", "toss", "fdr")
 
 
-def get_price(ticker, sources=_DEFAULT_CHAIN):
+def get_price(ticker, sources=_DEFAULT_CHAIN, not_after=None):
     """단일 종목 시세를 우선순위 체인으로 취득.
 
     Args:
         ticker: 종목코드 문자열 (예 '005930').
         sources: 시도 순서. 기본 ('pykrx','toss','fdr'). 각 소스 실패 시 다음으로 폴백.
+        not_after: 'YYYY-MM-DD'. 주면 그 날짜를 넘는 일봉 행(=장중 미확정 체결가)을
+            채택하지 않고 직전 확정 종가를 돌려준다. None 이면 종전 동작(하위호환).
 
     Returns:
         dict: {
@@ -158,9 +196,15 @@ def get_price(ticker, sources=_DEFAULT_CHAIN):
             logger.warning("[price_source] 알 수 없는 소스 %r 건너뜀", name)
             chain.append({"source": name, "ok": False})
             continue
-        res = fn(ticker)
+        res = fn(ticker, not_after=not_after)
         if res is not None:
             price, asof = res
+            # 방어선(각 소스가 이미 컷했지만, 어떤 경로로도 미확정 종가가 새어나가면 안 된다)
+            if not_after and asof and str(asof) > str(not_after):
+                logger.warning("[price_source] %s %s: 미확정 종가 %s > 기준일 %s → 기각",
+                               ticker, name, asof, not_after)
+                chain.append({"source": name, "ok": False})
+                continue
             logger.info("[price_source] %s → %s @%s (source=%s)", ticker, price, asof, name)
             chain.append({"source": name, "ok": True})
             return {"ticker": ticker, "price": price, "source": name,
@@ -182,7 +226,9 @@ if __name__ == "__main__":
     ap.add_argument("--ticker", default="005930")
     ap.add_argument("--sources", default="pykrx,toss,fdr",
                     help="시도 순서 콤마구분 (예 'pykrx,toss,fdr' | 'fdr' | 'toss,fdr')")
+    ap.add_argument("--not-after", dest="not_after", default=None,
+                    help="기준 거래일 'YYYY-MM-DD'. 이 날짜를 넘는 장중 미확정 행 배제")
     args = ap.parse_args()
     src = tuple(s.strip() for s in args.sources.split(",") if s.strip())
-    out = get_price(args.ticker, sources=src)
+    out = get_price(args.ticker, sources=src, not_after=args.not_after)
     print(json.dumps(out, ensure_ascii=False, indent=2))
