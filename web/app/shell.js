@@ -374,16 +374,38 @@
   var _anFmt=function(n){return n==null?'-':Number(n).toLocaleString('ko-KR');};
   var _anWon=function(n){return n==null?'-':(Math.abs(n)>=10000?Math.round(n/10000).toLocaleString('ko-KR')+'만':_anFmt(n));};
   var _anParseD=function(s){return new Date(String(s).slice(0,10)+'T00:00:00');};
-  /* 결함1: 지표에 쓰인 값이 '언제 기준'인지. current 는 prices 마지막 일봉 종가이므로
-     기준일의 정답은 prices[-1][0](그 종가의 거래일). 수집일(updated_at)은 배치가 돈 날이라
-     휴장일에 돌면 종가 거래일과 어긋난다 → 종가 거래일 우선, 없을 때만 updated_at 폴백.
-     어느 쪽도 없으면 표기를 생략(없는 날짜를 지어내지 않는다). */
-  function _anAsOf(d){
+  /* 결함1: 지표에 쓰인 값이 '언제 기준'인지. 기준일의 정답은 서버가 확정해 내려주는
+     current_asof(= current 종가의 거래일). 없으면 prices[-1][0](그 종가의 거래일),
+     그마저 없으면 수집일(updated_at) 순으로 폴백한다. updated_at 은 배치가 돈 날이라
+     휴장일에 돌면 종가 거래일과 어긋나므로 최후순위. 판정 규칙은 서버 소유 — 여기선 표기만.
+     어느 쪽도 파싱 안 되면 null 을 돌려 표기를 생략한다(없는 날짜를 지어내지 않는다,
+     'undefined/NaN 종가' 방지). 카드 라벨·차트 라벨·안내문구가 모두 이 한 곳을 쓴다. */
+  function _anAsOfYMD(d){
     var s='';
-    try{ var p=d&&d.prices; if(p&&p.length)s=String(p[p.length-1][0]||''); }catch(e){}
+    try{ if(d&&d.current_asof)s=String(d.current_asof); }catch(e){}
+    if(!s){ try{ var p=d&&d.prices; if(p&&p.length)s=String(p[p.length-1][0]||''); }catch(e){} }
     if(!s&&d&&d.updated_at)s=String(d.updated_at);
-    var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-    return m?(+m[2]+'월 '+(+m[3])+'일'):'';
+    var m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+    if(!m)return null;
+    var y=+m[1], mo=+m[2], da=+m[3];
+    if(!(y>=1900&&y<=9999)||!(mo>=1&&mo<=12)||!(da>=1&&da<=31))return null;
+    return {y:y,m:mo,d:da};
+  }
+  /* President 지시: 값 옆에 기준일 병기 → '7/24 종가 249,500원'. 앞자리 0 없음(07/24 아님).
+     연도 경계: 월/일만 쓰면 작년 종가와 구분이 안 된다(연초엔 12/30 이 작년인지 올해인지
+     불명). 기준일 연도가 브라우저 현재 연도와 다르면 2자리 연도를 앞에 붙여 'YY/M/D'
+     (예 25/12/30)로 쓴다 — 구분자를 '/'로 통일해 같은 표기 계열로 읽히고, 세 토막이면
+     맨 앞이 연도임이 자명하다. 같은 해면 지시 원형 그대로 'M/D'.
+     기준일을 못 구하면 '' → 호출부에서 날짜 없이 기존처럼 '종가'만 출력된다. */
+  function _anAsOfMD(d){
+    var v=_anAsOfYMD(d); if(!v)return '';
+    var yy=v.y%100, cy=new Date().getFullYear();
+    return (v.y===cy?'':((yy<10?'0'+yy:yy)+'/'))+v.m+'/'+v.d;
+  }
+  /* 안내 문구용 'N월 N일'. 연도가 다르면 'YYYY년 N월 N일'(위와 같은 이유). */
+  function _anAsOf(d){
+    var v=_anAsOfYMD(d); if(!v)return '';
+    return (v.y===new Date().getFullYear()?'':(v.y+'년 '))+v.m+'월 '+v.d+'일';
   }
   // 의견 한글화: 원문 영어 AND 이미 한글 모두 처리. 색 매핑 c: buy=up(빨강), hold=warn, sell=down(파랑), na=slate
   function _anOpinion(op){
@@ -445,16 +467,22 @@
     var up=(d.avg_tp!=null&&d.current)?((d.avg_tp-d.current)/d.current*100):null;
     var showToggle=nTp>=5;   // ③ 토글은 리포트 N>=5일 때만 노출
     var noRep=(nTp===0);     // 항목8: 목표가 리포트 없음 → 종가 추이만 표시(리포트 없음 상태 명시)
+    var asofMD=_anAsOfMD(d), asofKo=_anAsOf(d);   // President 지시: 값 옆 기준일 병기('7/24 종가'). 없으면 ''(날짜 생략)
     host.innerHTML=
       '<div class="an-sub">'+(noRep?'아직 증권사 목표주가 리포트가 없어요 · 종가 추이만 표시'
                                     :('증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건'))+'</div>'+
       '<div class="an-metrics">'+
-        '<div class="an-metric"><div class="k">종가</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
+        /* 지시: 기준일을 값 옆에 병기. 라벨(.k)에 붙인다 — 값(.v)은 nowrap+자동축소(_anFitMetrics)
+           대상이라 날짜를 넣으면 폰트만 쪼그라들고 360px에서 잘린다. .k/.v 세로 스택이라
+           화면에선 '7/24 종가 / 249,500원'으로 붙어 읽힌다. */
+        '<div class="an-metric"><div class="k">'+(asofMD?esc(asofMD)+' 종가':'종가')+'</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
         '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+(noRep?'—':(_anFmt(d.avg_tp)+'원'))+'</div></div>'+
         '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'—':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
       '</div>'+
-      /* 결함1: 값의 성격을 정확히 — 실시간가가 아니라 수집 기준일의 종가. 상승여력도 같은 기준. */
-      (_anAsOf(d)?('<div class="an-asof">종가·상승여력은 '+esc(_anAsOf(d))+' 종가 기준입니다. 실시간 시세가 아닙니다.</div>'):'')+
+      /* 결함1: 값의 성격을 정확히 — 실시간가가 아니라 수집 기준일의 종가. 상승여력도 같은 기준.
+         기준일을 못 구해도 '실시간 아님' 고지는 반드시 남긴다(구동작은 통째로 사라졌다). */
+      '<div class="an-asof">'+(asofKo?('종가·상승여력은 '+esc(asofKo)+' 종가 기준입니다. ')
+                                     :'종가·상승여력은 최근 종가 기준입니다. ')+'실시간 시세가 아닙니다.</div>'+
       (showToggle?('<div class="an-chips">'+
         '<button type="button" class="an-chip'+(_anState.reg?' on':'')+'" data-an-toggle="reg" aria-pressed="'+String(!!_anState.reg)+'">회귀 추세선</button>'+
         '<button type="button" class="an-chip'+(_anState.cons?' on':'')+'" data-an-toggle="cons" aria-pressed="'+String(!!_anState.cons)+'">컨센서스 추세선</button></div>'):'')+
@@ -529,12 +557,15 @@
        라벨을 마커와 같은 높이(=라인 위)에 두지 않고, 렌더 후 실측 bbox로 상/하 후보를 충돌
        스코어링해 빈 쪽에 배치한다(+배경 박스). 라인이 상단/하단 어디로 오든 무너지지 않음.
        배경 rect 는 text 앞에 넣어야(=먼저 그려져야) 뒤에 깔린다. */
-    var curm=(d.current!=null)?('<circle cx="'+lastx.toFixed(1)+'" cy="'+lasty.toFixed(1)+'" r="3.5" fill="var(--t1)"/>'+
-      '<rect id="anCurLabelBg" rx="3" ry="3" fill="var(--card)" fill-opacity="0.82" x="0" y="0" width="0" height="0"/>'+
-      '<text id="anCurLabel" x="'+(lastx+2).toFixed(1)+'" y="'+(lasty-9).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700">종가 '+_anWon(d.current)+'</text>'):'';
+    /* 라벨은 목표가 점(dots) '뒤에' 그려져 점이 글자를 덮어 판독을 망가뜨렸다 → 순서를
+       dots 다음으로 옮겨 라벨이 항상 위에 온다. 대신 ①포인터 이벤트를 통과시켜(점 탭 →
+       툴팁 유지) ②배경 불투명도를 0.82→0.94 로 올려 밑에 뭐가 깔려도 글자가 읽히게 한다. */
+    var curm=(d.current!=null)?('<circle cx="'+lastx.toFixed(1)+'" cy="'+lasty.toFixed(1)+'" r="3.5" fill="var(--t1)" pointer-events="none"/>'+
+      '<rect id="anCurLabelBg" rx="3" ry="3" fill="var(--card)" fill-opacity="0.94" x="0" y="0" width="0" height="0" pointer-events="none"/>'+
+      '<text id="anCurLabel" x="'+(lastx+2).toFixed(1)+'" y="'+(lasty-9).toFixed(1)+'" fill="var(--t1)" font-size="11" text-anchor="end" font-weight="700" pointer-events="none">'+(_anAsOfMD(d)?esc(_anAsOfMD(d))+' ':'')+'종가 '+_anWon(d.current)+'</text>'):'';
     el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'">'+grid+xlab+avg+trend+
-      '<path d="'+path+'" fill="none" stroke="var(--t1)" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>'+curm+dots+'</svg>';
-    if(d.current!=null)_anPlaceCurLabel(el,{lastx:lastx,lasty:lasty,PT:PT,PB:PB,H:H,
+      '<path d="'+path+'" fill="none" stroke="var(--t1)" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>'+dots+curm+'</svg>';
+    if(d.current!=null)_anPlaceCurLabel(el,{lastx:lastx,lasty:lasty,PT:PT,PB:PB,H:H,PL:PL,W:W,PR:PR,
       pricePts:prices.map(function(p){return [X(_anParseD(p[0]).getTime()),Y(p[1])];}),
       dotPts:reports.map(function(r){return [X(_anParseD(r.date).getTime()),Y(r.target_price)];}),
       avgY:(d.avg_tp!=null?Y(d.avg_tp):null)});
@@ -546,10 +577,31 @@
     var lg=document.getElementById('anLegend'); if(lg)lg.innerHTML=leg;
     _anBindDots(reports);
   }
+  /* 라벨 x밴드 안에서 폴리라인이 실제로 지나가는 y구간을 모은다(구간 = [ymin,ymax]).
+     구동작은 '꼭짓점의 y'만 모아서 두 가지를 놓쳤다:
+       ① 가파른 세그먼트 — 두 꼭짓점이 박스 위/아래로 각각 비켜 있어도 그 사이 선분은
+          박스를 관통한다(꼭짓점 기준으론 '비었다'고 오판).
+       ② 점이 성긴 종목 — 꼭짓점 간격이 밴드보다 넓으면 밴드를 통째로 건너뛰는 세그먼트가
+          장애물 목록에서 아예 빠진다.
+     라벨이 길어질수록 밴드가 넓어져 둘 다 더 잘 터진다(기준일 병기로 라벨 4~5자 증가) →
+     점이 아니라 '선분을 밴드로 클리핑한 y구간'으로 바꿔 원인 자체를 없앤다. */
+  function _anSpans(pts,lo,hi,out){
+    for(var k=0;k+1<pts.length;k++){
+      var a=pts[k], b=pts[k+1];
+      var l=Math.max(Math.min(a[0],b[0]),lo), r=Math.min(Math.max(a[0],b[0]),hi);
+      if(l>r)continue;                                  // 밴드와 x가 안 겹치는 선분은 장애물 아님
+      var den=b[0]-a[0], ya, yb;
+      if(Math.abs(den)<1e-6){ ya=Math.min(a[1],b[1]); yb=Math.max(a[1],b[1]); }
+      else{ var p=a[1]+(b[1]-a[1])*((l-a[0])/den), q=a[1]+(b[1]-a[1])*((r-a[0])/den);
+            ya=Math.min(p,q); yb=Math.max(p,q); }
+      out.push([ya,yb]);
+    }
+    if(pts.length===1&&pts[0][0]>=lo&&pts[0][0]<=hi)out.push([pts[0][1],pts[0][1]]);
+  }
   /* 결함2: '현재 N만' 라벨 충돌회피 배치(결정론적).
      구동작은 라벨을 마커와 같은 높이(=종가 라인 위)에 찍어 항상 겹쳤다.
      대신 ①라벨 실측 bbox 로 x범위를 정하고 ②그 x범위 안에 실제로 존재하는 장애물
-     (종가 라인 점·목표가 점·평균 목표 점선)의 y좌표를 모은 뒤 ③마커 높이에서 위아래로
+     (종가 라인 구간·목표가 점·평균 목표 점선)의 y구간을 모은 뒤 ③마커 높이에서 위아래로
      퍼져나가며 '장애물이 하나도 안 걸리는 가장 가까운 빈 슬롯'을 찾아 붙인다.
      (전체 y밴드 바깥으로 밀면 목표가 점이 높은 종목에서 라벨이 차트 최상단까지
       튕겨나가므로, 밴드가 아니라 '틈'을 찾는다 → 라인이 상단/하단 어디로 끝나도 겹침 0
@@ -566,26 +618,69 @@
     var bw=w+PAD*2, bh=h+PAD*2;
     var cx=g.lastx+2;                            // 마커 우측 정렬(오른쪽 여백 최대 활용)
     var bx=cx+dx-PAD;
-    var lo=bx-2, hi=bx+bw+2, hard=[], soft=[], k;   // hard=종가 라인(절대 회피), soft=목표가·평균선
-    for(k=0;k<g.pricePts.length;k++){ if(g.pricePts[k][0]>=lo&&g.pricePts[k][0]<=hi)hard.push(g.pricePts[k][1]); }
-    for(k=0;k<g.dotPts.length;k++){ if(g.dotPts[k][0]>=lo-4&&g.dotPts[k][0]<=hi+4)soft.push(g.dotPts[k][1]); }
-    if(g.avgY!=null)soft.push(g.avgY);           // 평균 목표 점선은 전폭 → 항상 장애물
+    /* x 클램프: 라벨은 text-anchor=end 라 왼쪽으로 자란다. 데이터가 1~2점뿐인 종목은
+       마커가 좌측(PL)에 찍혀 긴 라벨이 차트 밖으로 잘려나간다(기준일 병기로 폭이 커져
+       재발 위험 ↑) → 플롯영역[PL, W-PR] 안으로 되민다. 뷰박스가 아니라 플롯영역인 이유:
+       PL 왼쪽은 y축 눈금 텍스트 자리라 거기까지 밀면 숫자 위에 라벨이 겹친다.
+       y 클램프만 있던 구멍을 막는 것. */
+    var pl=(typeof g.PL==='number')?g.PL:52, pr2=(typeof g.PR==='number')?g.PR:14;
+    var right=((typeof g.W==='number')?g.W:390)-pr2, shift=0;
+    if(bw<=right-pl){ if(bx<pl)shift=pl-bx; else if(bx+bw>right)shift=right-(bx+bw); }
+    else shift=right-(bx+bw);                    // 플롯보다 넓은 라벨: 오른쪽 정렬(왼쪽 축 침범 방지)
+    cx+=shift; bx+=shift;
+    var SGAP=1, k;                                // 여유간격: 라인·텍스트=GAP(4), 점·평균선=1
+    /* 장애물은 '정확판정용(패딩 0)'과 '여유판정용(패딩 GAP)' 두 벌로 만든다.
+       한 벌만 패딩해서 쓰면, 모든 후보가 '패딩 기준 접촉'으로 동점이 되는 포화 차트에서
+       실제로는 안 닿는 자리와 닿는 자리를 구분하지 못해 닿는 쪽을 고를 수 있다
+       (퍼즈에서 minPossible=0 인데 actual=1 로 실측된 원인). 정확판정은 라벨 박스의
+       실제 x범위[bx, bx+bw] 로 클리핑하므로 '선분 vs 사각형' 판정과 수학적으로 동치다. */
+    var lo=bx, hi=bx+bw;
+    var lineX=[], lineP=[];                       // 종가 라인 y구간(정확 / 여유)
+    _anSpans(g.pricePts,lo,hi,lineX);
+    _anSpans(g.pricePts,lo-GAP,hi+GAP,lineP);
+    /* 축 눈금·'평균 NNN만' 등 이미 그려진 텍스트도 라인과 동급(hard). 글자 위 글자는 둘 다 판독 불가. */
+    var txX=[], txP=[], txs=el.querySelectorAll('text'), tb, ti;
+    for(ti=0;ti<txs.length;ti++){ if(txs[ti]===tx)continue;
+      try{tb=txs[ti].getBBox();}catch(e){continue;}
+      if(!tb||!tb.width)continue;
+      if(tb.x+tb.width>=lo&&tb.x<=hi)txX.push([tb.y,tb.y+tb.height]);
+      if(tb.x+tb.width>=lo-GAP&&tb.x<=hi+GAP)txP.push([tb.y,tb.y+tb.height]);
+    }
+    // 목표가 점은 원-사각형 정확판정(구 y구간 근사는 모서리에서 과대판정) · 반경에 테두리 0.6 포함
+    var dotsA=[];
+    for(k=0;k<g.dotPts.length;k++){ if(g.dotPts[k][0]>=lo-12&&g.dotPts[k][0]<=hi+12)dotsA.push(g.dotPts[k]); }
     var top=g.PT-2, bot=g.H-g.PB+2;
-    var clear=function(by,obs){ if(by<top||by+bh>bot)return false;
-      for(var j=0;j<obs.length;j++){ if(obs[j]>=by-GAP&&obs[j]<=by+bh+GAP)return false; } return true; };
-    // 마커와 같은 높이(박스 중심=마커)에서 시작해 1px씩 위·아래로 퍼지며 첫 빈 슬롯 채택
-    var start=g.lasty-bh/2, span=bot-top, by=null, both=hard.concat(soft), off;
-    for(off=0;off<=span;off++){
-      if(clear(start-off,both)){by=start-off;break;}
-      if(clear(start+off,both)){by=start+off;break;}
+    /* 배치 = 단일 점수 스캔(구 '첫 빈 슬롯 + 완화 폴백' 3단 캐스케이드 대체).
+       플롯 y구간을 0.5px 씩 전수로 훑어 벌점 최소 높이를 고른다. 우선순위는 자릿수로 강제:
+         ① 종가 라인·텍스트 실제 접촉 0            (1e6)  ← President 지적사항, 절대 우선
+         ② 목표가 점·평균선 실제 접촉 0            (1e5)
+         ③ 종가 라인·텍스트 여유간격(GAP) 확보     (1e3)
+         ④ 목표가 점·평균선 여유간격(SGAP) 확보    (10)
+         ⑤ 동점이면 마커에 가까운 높이             (거리/1e5)
+       '실제 접촉'(①②)이 '여유간격'(③④)보다 반드시 위여야 한다. 여유간격을 위에 두면
+       라인에서 4px 더 떨어지려고 목표가 점을 밟는 교환이 일어난다(퍼즈에서 25건 실측).
+       구 캐스케이드의 결함: ①만 만족하면 '마커에서 가장 가까운' 자리를 즉시 확정해버려,
+       조금 더 떨어진 곳에 ①② 동시 만족 자리가 있어도 목표가 점을 덮었다(퍼즈 실측 84건).
+       전수 스캔은 그 실수를 구조적으로 못 하게 만든다 — 존재하는 무겹침 자리를 놓치지 않는다. */
+    var start=g.lasty-bh/2, by=null;
+    var iv=function(y,arr,gap){ var n=0,a=y-gap,b=y+bh+gap,j;
+      for(j=0;j<arr.length;j++){ if(arr[j][1]>=a&&arr[j][0]<=b)n++; } return n; };
+    var dotHit=function(y,gap){ var n=0,j,c,nx,ny,rr;
+      for(j=0;j<dotsA.length;j++){ c=dotsA[j]; rr=4.2+gap;
+        nx=(c[0]<lo?lo:(c[0]>hi?hi:c[0])); ny=(c[1]<y?y:(c[1]>y+bh?y+bh:c[1]));
+        if((c[0]-nx)*(c[0]-nx)+(c[1]-ny)*(c[1]-ny)<=rr*rr)n++; }
+      return n; };
+    var avgHit=function(y,gap){ return (g.avgY!=null&&g.avgY>=y-gap&&g.avgY<=y+bh+gap)?1:0; };
+    var bestSc=Infinity, cy2, sc;
+    for(cy2=top; cy2+bh<=bot; cy2+=0.5){
+      sc=(iv(cy2,lineX,0)+iv(cy2,txX,0))*1000000
+        +(dotHit(cy2,0)+avgHit(cy2,0))*100000
+        +(iv(cy2,lineP,GAP)+iv(cy2,txP,GAP))*1000
+        +(dotHit(cy2,SGAP)+avgHit(cy2,SGAP))*10
+        +Math.abs(cy2-start)/100000;
+      if(sc<bestSc){bestSc=sc;by=cy2;}
     }
-    if(by==null){                                 // 폴백①: 종가 라인만 회피(목표가·평균선 겹침 허용)
-      for(off=0;off<=span;off++){
-        if(clear(start-off,hard)){by=start-off;break;}
-        if(clear(start+off,hard)){by=start+off;break;}
-      }
-    }
-    if(by==null)by=g.lasty+GAP;                   // 폴백②: 마커 바로 아래
+    if(by==null)by=g.lasty+GAP;                   // 플롯이 라벨보다 낮은 이론상 극단만 해당
     by=Math.max(top,Math.min(bot-bh,by));         // 플롯영역 클램프(잘림 방지)
     tx.setAttribute('x',cx.toFixed(1)); tx.setAttribute('y',(by+PAD-dy).toFixed(1));
     if(bg){ bg.setAttribute('x',bx.toFixed(1)); bg.setAttribute('y',by.toFixed(1));

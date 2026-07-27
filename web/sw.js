@@ -1,7 +1,7 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v26';   // v25→v26: 버그A(중복DOM id 클릭오작동)·B(today 중복fetch)·C(대표값세그 8초지연)·D(today SWR 무알림 stale)·E(오프라인 loadWatchlist 콘솔에러)·F(roomy 밀도 --stack-gap 미반영) 수정. SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
+const CACHE = 'miri-v27';   // v26→v27: 애널리스트 종가 표기에 기준일 병기('7/24 종가 249,500원' — 지표카드 라벨·차트 라벨·안내문구 3곳 통일, current_asof 기준·연도 다르면 YY/M/D). SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
 const DATA_CACHE = 'miri-data-v1';   // 읽기 API(/api/alerts·today·ranking·mezzanine) 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
 /* 41-a iOS 스플래시(11종) — 재방문·오프라인 즉시 렌더용 precache */
 const SPLASH = [
