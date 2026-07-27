@@ -1131,7 +1131,9 @@
      새 컨테이너가 생길 때마다 누락된다(260726 #ovWrap 사고). html[data-density] = (0,1,1) 로
      :root = (0,1,0) 보다 특이도가 높아 오버라이드 성립. 셀렉터 정의는 상단 <style> 참조. */
   html[data-density="compact"]{--stack-gap:6px}
-  html[data-density="roomy"]{--stack-gap:12px}
+  /* 버그F: roomy가 기본(md=12px)과 같은 값이라 "넉넉" 밀도가 카드 간격에 반영되지 않았다.
+     내부 padding(20/18/16)처럼 md 대비 뚜렷이 넓게 18px로. md=12px·compact=6px는 불변. */
+  html[data-density="roomy"]{--stack-gap:18px}
 
   /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
   .tabpanel>*:first-child{margin-top:0}
@@ -1346,7 +1348,17 @@ function applyWatchlist(d){
 }
 async function loadWatchlist(){
   try{const d=await jget(API+'/watchlist');applyWatchlist(d);}
-  catch(e){console.error('loadWatchlist',e);if(!WLSTATE.loaded){renderGroups();renderChips();}}
+  catch(e){
+    /* 버그E 근본수정: /api/watchlist는 개인화 API라 sw.js가 의도적으로 캐시 제외(가드레일②)
+       → 오프라인이면 반드시 실패하는 정상 경로인데도 매번 console.error로 미착지 예외처럼
+       노출됐다. fetch() 자체가 던지는 네트워크단절(TypeError: Failed to fetch)은 조용히
+       폴백하고, jget이 !r.ok일 때 스스로 던지는 plain Error(실서버 오류)만 남긴다.
+       어느 경우든 WLSTATE(관심목록)는 절대 비우지 않는다(이미 아래서 손대지 않음) —
+       로드 실패로 화면에서 관심종목이 사라지면 오프라인 배너보다 더 나쁜 회귀다. */
+    if(e instanceof TypeError)console.debug('loadWatchlist(오프라인/네트워크 단절 — 정상 폴백, 관심목록 유지)',e&&e.message);
+    else console.error('loadWatchlist',e);
+    if(!WLSTATE.loaded){renderGroups();renderChips();}
+  }
 }
 function skeletonChips(){
   return '<span class="chip sk" style="width:78px">·</span>'+
@@ -1647,11 +1659,23 @@ function impactInner(item){
     ${bar?'':`<div class="plain">${plain}</div>`}
     ${regimeBlock(imp,h)}`;
 }
-function setWin(rno,k){WINSEL[rno]=k;
+/* 버그A 근본수정: pfx=''(피드) 렌더 컨테이너가 메인피드/밤사이오버레이/오늘탭 밤사이·큐레이션/
+   폴백목록 등 5곳에 동시 존재 — getElementById는 문서상 첫 번째 요소만 반환하므로 클릭한
+   카드가 아닌 엉뚱한(먼저 나온) 카드가 갱신되는 사고가 발생했다(오버레이에서 세그를 눌러도
+   반응 없음). 전역 id 조회를 버리고 '클릭된 box를 우선 갱신 + 나머지는 상대탐색(id 접미사
+   매칭)'으로 바꾼다 — id를 늘리는 방식은 컨테이너가 늘 때마다 또 깨지므로 채택하지 않는다. */
+function setWin(rno,k,box){WINSEL[rno]=k;
   const item=STATE.items.find(x=>x.rcept_no===rno);if(!item)return;
-  // 피드(imp-) + 상세뷰(dimp-) 양쪽 박스를 동기 갱신
-  ['imp-','dimp-'].forEach(pfx=>{const box=document.getElementById(pfx+cssId(rno));
-    if(box)box.innerHTML=impactInner(item);});}
+  const html=impactInner(item);
+  if(box)box.innerHTML=html;   // 클릭이 실제로 일어난 박스를 최우선 갱신(중복 id와 무관하게 항상 정확)
+  // 피드(imp-)·상세뷰(dimp-) 등 동일 rno의 다른 사본도 동기화. '.impact'엔 규모박스(scale-*)도
+  // 있으나 id가 'scale-'로 시작해 'imp-<rno>' 접미사와 겹치지 않으므로 endsWith로 안전하게 구분된다.
+  const suffix='imp-'+cssId(rno);
+  document.querySelectorAll('.impact').forEach(el=>{
+    if(el===box)return;
+    if(el.id&&el.id.endsWith(suffix))el.innerHTML=html;
+  });
+}
 
 /* ---------- 규모보정(온탭 /api/scale) ---------- */
 /* 규모 대상 = bullet 대상과 동일(백엔드 scale_eligible 플래그). 두 목록 자동 일치. */
@@ -1752,12 +1776,17 @@ function scaleInner(d){
     ${rows}
     ${rgBlock}`;
 }
-async function loadScale(rno,pfx){
-  pfx=pfx||'';   // ''=피드, 'd'=상세뷰(ID 충돌 방지)
+async function loadScale(rno,pfx,el){
+  pfx=pfx||'';   // ''=피드, 'd'=상세뷰(ID 충돌 방지) — 단 el이 있으면 아래 상대탐색이 우선
   track('scale_view', {rcept: rno});
   const item=STATE.items.find(x=>x.rcept_no===rno);
-  const box=document.getElementById(pfx+'scale-'+cssId(rno));
-  const btn=document.getElementById(pfx+'scbtn-'+cssId(rno));
+  // 버그A 근본수정: pfx=''인 컨테이너가 여러 곳(피드/오버레이/오늘탭 등)에 동시 존재해
+  // id 조회가 항상 문서상 첫 카드를 반환할 수 있다 → 클릭된 버튼(el) 기준으로 그 카드
+  // 안의 .scalebox를 상대탐색. el이 없을 때(구버전 서비스워커 캐시로 남은 옛 HTML 등)만
+  // 기존 전역 id 조회로 폴백해 하위호환을 지킨다.
+  const card=(el&&el.closest)?el.closest('.card'):null;
+  const box=(card&&card.querySelector('.scalebox'))||document.getElementById(pfx+'scale-'+cssId(rno));
+  const btn=el||document.getElementById(pfx+'scbtn-'+cssId(rno));
   if(!item||!box)return;
   if(box.classList.contains('open')){
     box.classList.remove('open');if(btn)btn.textContent='📏 이 공시 규모로 보기';return;
@@ -2027,7 +2056,7 @@ function cardHTML(a,pfx){
   const ok=a.impact&&a.impact.status==='ok';
   const id=cssId(a.rcept_no);
   const scale=hasScale(a)?
-    `<button class="scaletog" id="${pfx}scbtn-${id}" onclick="loadScale('${esc(a.rcept_no)}','${pfx}')">📏 이 공시 규모로 보기</button>`+
+    `<button class="scaletog" id="${pfx}scbtn-${id}" onclick="loadScale('${esc(a.rcept_no)}','${pfx}',this)">📏 이 공시 규모로 보기</button>`+
     `<div class="impact scalebox" id="${pfx}scale-${id}" data-loaded="0"></div>`:'';
   const tk=pfx
     ? `<span class="tk">${esc(a.corp_name)}</span>`
@@ -2066,7 +2095,8 @@ function attachSegToggle(container){
       const m=box.id.match(/imp-(.+)$/);if(!m)return;
       const rno=m[1];   // cssId 손실 대비: 실아이템에서 원 rcept 매칭
       const item=STATE.items.find(x=>cssId(x.rcept_no)===rno);
-      if(item)setWin(item.rcept_no,b.dataset.h);
+      // 버그A: 클릭이 발생한 이 box(컨테이너별로 고유한 DOM 노드)를 넘겨 정확히 그 카드만 1차 갱신.
+      if(item)setWin(item.rcept_no,b.dataset.h,box);
     });
   });
 }
@@ -2862,6 +2892,11 @@ async function reloadAlertsQuiet(){
 if('serviceWorker' in navigator&&navigator.serviceWorker){
   navigator.serviceWorker.addEventListener('message',e=>{
     if(e.data&&e.data.type==='alerts-updated')reloadAlertsQuiet();
+    // 버그D: sw.js가 /api/today 캐시본과 실제로 다른(=stale) 최신 응답을 백그라운드에서
+    // 확인했을 때만 온다. window.__miriRenderToday는 이제 캐시 재렌더 전용(버그C)이라
+    // 이 경로엔 부적합 — 실네트워크 재조회 훅(shell.js __miriReloadToday)을 별도로 쓴다.
+    if(e.data&&e.data.type==='data-updated'&&e.data.path==='/api/today'
+       &&typeof window.__miriReloadToday==='function')window.__miriReloadToday();
   });
 }
 
@@ -2870,7 +2905,10 @@ if('serviceWorker' in navigator&&navigator.serviceWorker){
   const bar=document.getElementById('offlineBar');if(!bar)return;
   const sync=()=>{bar.hidden=!!navigator.onLine;};
   window.addEventListener('offline',sync);
-  window.addEventListener('online',()=>{sync();try{reloadAlertsQuiet();}catch(e){}});
+  window.addEventListener('online',()=>{sync();try{reloadAlertsQuiet();}catch(e){}
+    // 버그E: 오프라인 중 loadWatchlist가 실패해 있었다면(WLSTATE 미로드) 온라인 복귀 시 재시도.
+    // 이미 성공(WLSTATE.loaded)했으면 불필요한 재조회를 하지 않는다.
+    try{if(!WLSTATE.loaded)loadWatchlist();}catch(e){}});
   sync();   // 초기 상태 반영(오프라인 진입 시 즉시 배너)
 })();
 

@@ -94,7 +94,16 @@
     if(window.CUR_TAB==='today'&&!_todayLoaded)loadToday(true);
   }
   window.updateTabBadges=updateTabBadges;
-  window.__miriRenderToday=function(){ loadToday(true); };   // 항목16-b: valmode 변경 시 오늘 큐레이션 강제 재렌더(frontend index.html:1860 훅)
+  /* 버그C 근본수정: 대표값(평균/중앙/보정) 세그 변경은 이미 받아둔 데이터를 다른 값으로
+     다시 그리는 것뿐인데, 종전엔 loadToday(true)로 매번 /api/today(실측 8.4초)를 재요청해
+     반응이 8초 지연되고 renderToday가 밤사이 '더보기' 펼침(_ovShown)을 초기화해버렸다.
+     캐시(_todayData)가 있으면 네트워크 없이 즉시 재렌더(keepState=true로 펼침 보존),
+     캐시가 없을 때만(최초 로드 실패 등) 실제 fetch로 폴백한다. */
+  window.__miriRenderToday=function(){
+    var host=document.getElementById('todayBody'); if(!host)return;
+    if(_todayData){ renderToday(host,_todayData,true); return; }
+    loadToday(true);
+  };   // 항목16-b: valmode 변경 시 오늘 큐레이션 재렌더(frontend index.html:1860 훅)
 
   function markWatched(arr){
     var ws={}; (typeof WLSTATE!=='undefined'?(WLSTATE.stocks||[]):[]).forEach(function(s){ws[String(s.stock_code)]=1;});
@@ -102,12 +111,44 @@
   }
 
   /* ---------- ① 오늘 (GET /api/today, 폴백=최근 STATE.items) ---------- */
+  /* 버그B 근본수정: _todayLoaded는 응답이 렌더된 '뒤'에야 true가 되는데 /api/today는
+     실측 8.4초 걸린다. 그 사이 updateTabBadges(force=true라 위 가드를 그냥 통과) 등이
+     부팅 중 여러 번 불려 병렬 fetch가 중복 발생했고, 늦게 시작한 응답이 먼저 도착하면
+     나중 도착한 옛 응답이 화면을 덮어써 _ovShown(더보기 펼침)까지 리셋시켰다.
+     in-flight 프라미스를 캐싱해 진행 중이면 새 fetch를 띄우지 않고 재사용한다. */
+  var _todayInflight=null, _todayData=null;
   function loadToday(force){
     if(_todayLoaded&&!force)return;
     var host=document.getElementById('todayBody'); if(!host)return;
-    jget(API+'/today').then(function(d){ renderToday(host,d); })
-      .catch(function(){ renderToday(host,null); });
+    if(_todayInflight)return _todayInflight;   // 진행 중 요청 재사용 → 중복 fetch 차단
+    _todayInflight=jget(API+'/today')
+      .then(function(d){ _todayInflight=null; _todayData=d; renderToday(host,d); })
+      .catch(function(){ _todayInflight=null; renderToday(host,null); });
+    return _todayInflight;
   }
+  /* 버그D: sw.js가 /api/today 캐시본(stale일 수 있음)과 실제 최신 네트워크본이 다름을
+     감지했을 때만 'data-updated' 메시지를 보내고(index.html 리스너), 그 훅이 이 함수를
+     부른다. __miriRenderToday(버그C, 캐시 재렌더 전용)와 달리 여기는 진짜 재조회가 목적
+     — SW의 백그라운드 revalidate가 이미 최신 응답을 DATA_CACHE에 넣어뒀으므로 이 재조회는
+     그 최신본을 그대로 받는다(실측: 2번째 fetch=최신). 사용자가 읽던 스크롤 위치·밤사이
+     '더보기' 펼침 상태는 보존한다(자동갱신으로 화면이 튀면 안 됨). */
+  var _todayReloadLast=0;
+  window.__miriReloadToday=function(){
+    var now=Date.now();
+    if(now-_todayReloadLast<8000)return;   // 연속 알림 폭주 가드(reloadAlertsQuiet와 동일 패턴)
+    _todayReloadLast=now;
+    var savedShown=_ovShown, savedY=(window.pageYOffset||window.scrollY||0);
+    _todayLoaded=false; _todayInflight=null;
+    var p=loadToday(true);
+    if(p&&p.then)p.then(function(){
+      if(_ovItems&&_ovItems.length){
+        _ovShown=Math.min(Math.max(OV_CHUNK,savedShown||0),_ovItems.length);
+        var w=document.getElementById('ovWrap');
+        if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
+      }
+      try{window.scrollTo(0,savedY);}catch(e){}
+    });
+  };
   /* 항목26 후속: 날짜 하이픈 통일(frontend fmtYmd 동형). ISO(2026-07-22T..)면 날짜부만, 8자리(YYYYMMDD)→YYYY-MM-DD, 이미 하이픈이면 그대로. */
   function _fmtYmd(s){
     s=String(s==null?'':s).trim(); if(!s)return '';
@@ -126,7 +167,10 @@
   }
   /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
      최종 화면순서 = #todayBrief(밴드) → 정적 대표값세그 → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful. */
-  function renderToday(host,d){
+  /* keepState=true면 캐시 재렌더 경로(버그C: window.__miriRenderToday)로, 밤사이 '더보기'
+     펼침 상태(_ovShown)를 보존한다. 진짜 새 fetch(loadToday)일 때는 keepState 없이 호출되어
+     기존과 동일하게 OV_CHUNK로 리셋된다(새 데이터이므로 이전 펼침 위치가 무의미). */
+  function renderToday(host,d,keepState){
     var brief='';   // → #todayBrief
     var body='';    // → #todayBody(host)
     if(d&&(d.overnight||d.curation)){
@@ -154,7 +198,10 @@
       }
       body+='<div class="sec-h" id="ovSecH"><span class="st">밤사이 공시</span><span class="ss">'+ov.length+'건</span></div>';
       // 항목53: 밤사이 공시는 청크 렌더(초기 OV_CHUNK, 나머지는 더보기). ovWrap 컨테이너만 재렌더로 확장.
-      _ovItems=markWatched(ov); _ovShown=Math.min(OV_CHUNK,_ovItems.length);
+      _ovItems=markWatched(ov);
+      _ovShown=keepState
+        ? Math.min(Math.max(OV_CHUNK,_ovShown||0),_ovItems.length)   // 캐시 재렌더: 기존 펼침 유지(+상한 보정)
+        : Math.min(OV_CHUNK,_ovItems.length);                        // 새 fetch: 초기 청크로 리셋
       window.__OV_ITEMS=_ovItems;   // 항목5: 밴드 탭 시 상세 오버레이에 담을 밤사이 공시 전량
       body+='<div id="ovWrap">'+_renderOvChunk()+'</div>';
       if(d.disclaimer)body+='<p class="disc">'+esc(d.disclaimer)+'</p>';

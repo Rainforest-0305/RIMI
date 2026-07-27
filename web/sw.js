@@ -1,7 +1,7 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v25';   // v24→v25: 애널리스트 뷰 2건 — (1)표기 정정: '현재가'→'종가'+기준일(prices 마지막 거래일) 명시, 오버레이 동안 상단바 '실시간' 배지 숨김(값은 배치 수집 종가 스냅샷이라 실시간 주장이 사실과 다름). (2)차트 '종가 N만' 라벨을 종가 라인과 겹치지 않게 빈 슬롯 탐색 배치(+배경박스·리더선). SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
+const CACHE = 'miri-v26';   // v25→v26: 버그A(중복DOM id 클릭오작동)·B(today 중복fetch)·C(대표값세그 8초지연)·D(today SWR 무알림 stale)·E(오프라인 loadWatchlist 콘솔에러)·F(roomy 밀도 --stack-gap 미반영) 수정. SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
 const DATA_CACHE = 'miri-data-v1';   // 읽기 API(/api/alerts·today·ranking·mezzanine) 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
 /* 41-a iOS 스플래시(11종) — 재방문·오프라인 즉시 렌더용 precache */
 const SPLASH = [
@@ -65,13 +65,35 @@ async function swrAlerts(request) {
   return new Response(JSON.stringify({ alerts: [], offline: true, errors: [] }),
     { status: 200, headers: { 'Content-Type': 'application/json' } });  // 오프라인+캐시없음
 }
+/* 버그D: /api/today 변경 감지용 시그니처. 전체 바디 비교는 무거우니 안정 필드만
+   조합(dataset_as_of + generated_at + overnight.count) — alertsSig와 동일 취지. */
+function dataSig(text) {
+  try {
+    const d = JSON.parse(text);
+    const ov = (d.overnight && typeof d.overnight.count === 'number') ? d.overnight.count : '';
+    return String(d.dataset_as_of || '') + '|' + String(d.generated_at || '') + '|' + String(ov);
+  } catch (_) { return text; }
+}
 /* 범용 SWR(today·ranking·mezzanine): 캐시 즉시 반환 + 백그라운드 revalidate로 캐시 갱신.
-   alerts 와 달리 변경 notify 불요(폴링 대상 아님) — 다음 진입/재조회에서 갱신본 수렴. */
-async function swrData(request) {
+   ranking·mezzanine은 알림 불요(폴링 대상 아님) — 다음 진입/재조회에서 갱신본 수렴.
+   /api/today 는 버그D(캐시 즉시반환이 낡은 브리핑을 보여줄 수 있음) 수정 대상이라 alerts와
+   동일하게 캐시본↔네트워크본 시그니처가 다를 때만 notify한다(최초 방문·캐시 없음은 알림 제외). */
+async function swrData(request, pathname) {
   const cache = await caches.open(DATA_CACHE);
   const cached = await cache.match(request);
-  const netP = fetch(request).then((res) => {
-    if (res && res.ok) { cache.put(request, res.clone()).catch(() => {}); }
+  const netP = fetch(request).then(async (res) => {
+    if (res && res.ok) {
+      const toStore = res.clone();
+      if (pathname === '/api/today' && cached) {
+        let changed = true;
+        try { changed = dataSig(await cached.clone().text()) !== dataSig(await res.clone().text()); }
+        catch (_) { changed = true; }
+        await cache.put(request, toStore);
+        if (changed) notifyClients({ type: 'data-updated', path: pathname });
+      } else {
+        await cache.put(request, toStore).catch(() => {});
+      }
+    }
     return res;
   }).catch(() => null);
   if (cached) { netP.catch(() => {}); return cached; }         // 재방문: 캐시 즉시 표시(+백그라운드 갱신)
@@ -94,7 +116,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (SWR_DATA_PATHS[url.pathname]) {                   // today·ranking·mezzanine: 범용 SWR(캐시 즉시+백그라운드 갱신)
-    e.respondWith(swrData(e.request));
+    e.respondWith(swrData(e.request, url.pathname));
     return;
   }
   if (url.pathname.startsWith('/api/')) return;        // 그 외 API(개인화·기타)는 항상 네트워크(실시간)
