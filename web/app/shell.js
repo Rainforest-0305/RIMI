@@ -441,14 +441,16 @@
     });
   }
   function _anEmpty(host){ if(host)host.innerHTML='<div class="an-empty">애널리스트 전망 준비중<br>증권사 리포트가 모이면 여기에 표시됩니다.</div>'; }
-  function closeAnalyst(fromPop){
+  /* 결함②: immediate=true 면 300ms 전환 없이 즉시 언마운트(탭 전환 전용 — 잔상 겹침 방지).
+     사용자 닫기(X/뒤로가기)는 immediate 없이 호출돼 애니메이션 유지. */
+  function closeAnalyst(fromPop,immediate){
     var ov=document.getElementById('analyst'); if(!ov||ov.hidden)return;
     ov.classList.remove('open'); _anState=null;
     document.body.classList.remove('an-open');   // 결함1: 배지 원복(다른 탭·공시 피드는 실제 5분 폴링이라 '실시간' 유지)
     var done=function(){ ov.hidden=true;
       var anyS=document.querySelector('.sheet:not([hidden])'), dt=document.getElementById('detail');
       if(!anyS&&(!dt||dt.hidden))document.body.style.overflow=''; };
-    if(typeof prefersReduce==='function'&&prefersReduce())done(); else setTimeout(done,300);
+    if(immediate||(typeof prefersReduce==='function'&&prefersReduce()))done(); else setTimeout(done,300);
     if(_analystHistPushed){_analystHistPushed=false; if(!fromPop){try{history.back();}catch(e){}}}
     var tip=document.getElementById('anTip'); if(tip)tip.style.opacity=0;
   }
@@ -728,11 +730,13 @@
     // 항목34: 탭을 '떠날 때' 현재 스크롤 저장(탭이 실제로 바뀔 때만). 같은 탭 재클릭은 저장 안 함(top 유도).
     if(_prevTab&&_prevTab!==name)_scrollY[_prevTab]=(window.pageYOffset||window.scrollY||0);
     // 공존 규칙: 탭 전환 시 열린 상세 모달/시트 먼저 닫기(body 스크롤락·history 꼬임 방지)
+    // 결함②: 두번째 인자 immediate=true — 어차피 화면이 통째로 바뀌므로 슬라이드아웃(300/240ms)은
+    //  무의미하고, 그 사이 fixed 오버레이가 새 탭 위에 잔상으로 겹쳐 그려진다. 여기서만 즉시 언마운트.
     var dv=document.getElementById('detail');
-    if(dv&&!dv.hidden&&typeof closeDetail==='function')closeDetail(true);
+    if(dv&&!dv.hidden&&typeof closeDetail==='function')closeDetail(true,true);
     var av=document.getElementById('analyst');   // 트랙1: 탭 전환 시 열린 애널리스트 오버레이도 닫기
-    if(av&&!av.hidden)closeAnalyst(true);
-    document.querySelectorAll('.sheet:not([hidden])').forEach(function(s){ if(typeof closeSheet==='function')closeSheet(s.id); });
+    if(av&&!av.hidden)closeAnalyst(true,true);
+    document.querySelectorAll('.sheet:not([hidden])').forEach(function(s){ if(typeof closeSheet==='function')closeSheet(s.id,true); });
     // 관심 탭을 떠나면 피드 옵저버 해제(숨은 탭 sentinel 오관측 방지)
     if(window.CUR_TAB==='watch'&&name!=='watch'&&typeof FEED_OBSERVER!=='undefined'&&FEED_OBSERVER){
       try{FEED_OBSERVER.disconnect();}catch(e){} FEED_OBSERVER=null;
