@@ -696,6 +696,11 @@ def health():
         "price_chain": list(_PRICE_CHAIN),
         "price_expected_trade_day": _expected_trade_day(),
         "price_market_latest": _MARKET.get("latest"),
+        # 진단용: cap=그 관측에 적용한 기준일 컷, age=관측 후 경과초.
+        # latest == cap 이면 '컷에 눌린 관측'이라 스킵 게이트의 증거로 쓰이지 않는다.
+        "price_market_cap": _MARKET.get("cap"),
+        "price_market_age_sec": (round(time.time() - _MARKET["checked_ts"], 1)
+                                 if _MARKET.get("checked_ts") else None),
         "price_calls": dict(_PRICE_CALLS),
     }
 
@@ -1878,7 +1883,10 @@ _PRICE_FRESH = {}     # code -> {"price","asof","source","ts"}  갱신 성공값
 _PRICE_JOBS = {}      # code -> {"ev":Event,"res":tuple|None}   in-flight 병합(중복 호출 방지)
 _PRICE_ATTEMPT = {}   # code -> 마지막 시도 시각(쿨다운)
 _PRICE_PERSISTED = {} # code -> 마지막으로 Supabase 에 쓴 거래일(중복 upsert 차단)
-_MARKET = {"latest": None, "checked_ts": 0.0}
+# latest=관측된 시장 최신 거래일, cap=그 관측에 적용했던 기준일 컷(_expected_trade_day).
+# cap 을 함께 남기지 않으면 '컷에 눌려서 옛 날짜가 나온 것'과 '시장에 정말 더 없는 것'을
+# 구분할 수 없어, 마감 후 당일 종가 갱신이 스스로 막히는 자기봉쇄가 생긴다.
+_MARKET = {"latest": None, "cap": None, "checked_ts": 0.0}
 _PRICE_LOCK = threading.Lock()
 _PRICE_CALLS = {"external": 0, "skipped": 0}   # 관측용 카운터(외부 호출이 실제로 안 나가는지 입증)
 
@@ -1944,8 +1952,9 @@ def _ps_candles(code):
 def _price_worker(code, job):
     """단일 종목 외부 조회 1회(백그라운드 스레드). 결과를 오버레이·시장관측에 반영."""
     res = None
+    cap = _expected_trade_day()      # 이 관측에 적용한 기준일 컷(관측과 함께 기록해야 의미가 산다)
     try:
-        res = _fetch_price_with_asof(code)
+        res = _fetch_price_with_asof(code, cap)
     except Exception as e:  # noqa: BLE001
         print(f"[price] {code} worker 예외: {type(e).__name__}")
     try:
@@ -1956,6 +1965,7 @@ def _price_worker(code, job):
                                       "source": source, "ts": time.time()}
                 if not _MARKET["latest"] or asof > _MARKET["latest"]:
                     _MARKET["latest"] = asof
+                _MARKET["cap"] = cap
                 _MARKET["checked_ts"] = time.time()
     finally:
         job["res"] = res
@@ -2058,9 +2068,18 @@ def _ensure_fresh_price(payload):
 
         # 1) 휴장일 흡수: 시장이 실제로 내놓은 최신 거래일을 최근에 관측했고,
         #    저장값이 이미 그 수준이면 더 새 것은 존재하지 않는다 → 호출 0
+        #
+        #    ★ 단, 그 관측이 '더 새 것이 없다'의 증거가 되려면 두 조건이 필요하다.
+        #    (a) mk_latest < mk_cap — 컷에 눌려서 나온 값(latest == cap)은 소스에 더 새
+        #        데이터가 있어도 그렇게 보일 뿐이라 증거가 못 된다. 이걸 증거로 쓰면
+        #        마감(16:00) 후 당일 종가 갱신이 다음 관측 TTL 만료까지 막히고, 조회가
+        #        막히니 _MARKET 도 갱신되지 않는 자기봉쇄가 된다.
+        #    (b) exp <= mk_cap — 그 증거는 관측 당시 컷까지만 커버한다. 기준일이 그보다
+        #        앞서 나갔으면(예: 휴장일 관측이 다음 거래일 마감 후까지 이월) 무효다.
         with _PRICE_LOCK:
-            mk_latest, mk_ts = _MARKET["latest"], _MARKET["checked_ts"]
+            mk_latest, mk_cap, mk_ts = _MARKET["latest"], _MARKET["cap"], _MARKET["checked_ts"]
         if (asof and mk_latest and asof >= mk_latest
+                and mk_cap and mk_latest < mk_cap and exp <= mk_cap
                 and (time.time() - mk_ts) < _MARKET_TTL_SEC):
             _PRICE_CALLS["skipped"] += 1
             payload.setdefault("current_asof", asof)
