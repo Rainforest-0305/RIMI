@@ -985,7 +985,12 @@
 
 <style>
   /* ===== 5탭 셸 (venture-frontend: 하단 네비 승격 · 기존 토큰 재사용) ===== */
-  .tabpanel{display:none;flex-direction:column;gap:12px}   /* 항목6: 섹션 여백 통일 */
+  /* 항목6: 섹션 여백 통일. 260728 Phase4 — 하드코딩 12px → --sp-3 토큰.
+     이 gap 은 '탭 내부 섹션 사이' 간격(검색·세그·헤더·피드 블록)이라 카드 스택(--stack-gap=--sp-3)과
+     같은 위계다. 12px 고정이던 탓에 표시밀도(촘촘/기본/넉넉)가 카드 간격만 6/12/18로 움직이고
+     섹션 간격은 12px에 붙박여 밀도 기능이 절반만 작동했다. --sp-3 의 md 값이 정확히 12px 이라
+     기본 밀도 렌더는 1px도 바뀌지 않는다(무회귀 기준). 5개 탭 전부가 이 한 줄을 공유한다. */
+  .tabpanel{display:none;flex-direction:column;gap:var(--sp-3)}
   .tabpanel.on{display:flex}
   /* .filter{display:flex}가 UA [hidden]를 이기므로 id 특이성으로 강제 숨김(관심 탭은 세그가 필터 대체) */
   #filter[hidden]{display:none}
@@ -2301,8 +2306,14 @@ window.addEventListener('popstate',function(){
 });
 (function(){
   const ov=document.getElementById('detail');if(!ov)return;
-  document.getElementById('detailX').addEventListener('click',closeDetail);
-  document.getElementById('detailBack').addEventListener('click',closeDetail);
+  /* 260728 P0: addEventListener('click',closeDetail) 는 클릭 이벤트 객체를 1번 인자 fromPop 으로
+     넘긴다(MouseEvent=truthy). 그래서 X/백드롭으로 닫을 때 `if(!fromPop)history.back()` 가 건너뛰어져
+     openDetail 이 쌓은 history 엔트리가 스택에 남았다 → 닫은 뒤 뒤로가기 1회가 그 유령 엔트리를
+     소비하며 "아무 일도 안 일어남". 반드시 무인자 호출로 감쌀 것(같은 실수 재발 방지).
+     ※ Escape(아래)·closeMezz·closeAnalyst 는 이미 무인자 래퍼라 정상. 탭전환의 closeDetail(true,true)
+       는 의도적 — 그 경로는 위에 탭 해시 엔트리가 더 쌓여 있어 back() 하면 이전 탭으로 되돌아간다. */
+  document.getElementById('detailX').addEventListener('click',()=>closeDetail());
+  document.getElementById('detailBack').addEventListener('click',()=>closeDetail());
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDetail();});
   // 종목명(.tk / .sres-nm) 클릭·키보드 → 상세뷰
   document.addEventListener('click',e=>{

@@ -217,6 +217,97 @@ def get_price(ticker, sources=_DEFAULT_CHAIN, not_after=None):
             "asof": None, "chain": chain}
 
 
+# ── 일봉 시계열(중간 거래일 backfill 용) ──
+# get_price 는 '마지막 확정 종가' 1점만 준다. 그 계약으로는 중간에 빠진 거래일을
+# 메울 수 없다(배치가 07-22 까지 쓰고 서버가 07-24 를 붙이면 07-23 이 영원히 빈다).
+# 아래는 같은 소스·같은 _cut(not_after) 규칙으로 **구간**을 돌려주는 별도 경로다.
+# 기존 함수들은 손대지 않는다 — 장중 미확정 컷 동작에 회귀를 만들지 않기 위해서.
+_SERIES_MAX_DAYS = 400        # 조회창 상한(무한 조회 방지). 호출부가 더 크게 줘도 여기서 잘린다
+
+
+def _norm_series(df, col, not_after):
+    """일봉 df → [[YYYY-MM-DD, close:int], ...] 오름차순. not_after 컷 적용. 실패 시 []."""
+    df = _cut(df, not_after)
+    if df is None or len(df) == 0 or col not in df:
+        return []
+    out = []
+    for ts, v in df[col].items():
+        try:
+            ds = _asof_str(ts)
+            iv = int(round(float(v)))
+        except (TypeError, ValueError):
+            continue
+        if iv > 0 and len(ds) == 10:
+            out.append([ds, iv])
+    out.sort(key=lambda r: r[0])
+    return out
+
+
+def _series_pykrx(ticker, lookback_days, not_after):
+    from pykrx import stock
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=lookback_days)
+    df = stock.get_market_ohlcv_by_date(start.strftime("%Y%m%d"),
+                                        end.strftime("%Y%m%d"), ticker)
+    return _norm_series(df, "종가", not_after)
+
+
+def _series_fdr(ticker, lookback_days, not_after):
+    import FinanceDataReader as fdr
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=lookback_days)
+    df = fdr.DataReader(ticker, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+    return _norm_series(df, "Close", not_after)
+
+
+def _series_toss(ticker, lookback_days, not_after):
+    import toss_data
+    return _norm_series(toss_data.candles(ticker, "1d"), "close", not_after)
+
+
+_SERIES_DISPATCH = {"pykrx": _series_pykrx, "toss": _series_toss, "fdr": _series_fdr}
+
+
+def get_series(ticker, sources=_DEFAULT_CHAIN, not_after=None, lookback_days=45):
+    """확정 일봉 종가 구간을 우선순위 체인으로 취득(읽기 전용).
+
+    Args:
+        not_after: 'YYYY-MM-DD'. 이 날짜를 넘는 행(장중 미확정 체결가)은 제외.
+        lookback_days: 오늘 기준 소급 일수. _SERIES_MAX_DAYS(400) 로 상한을 강제한다.
+
+    Returns:
+        {'ticker','series':[[date,close:int],...],'source':str|None,'chain':[...]}
+        어떤 예외도 던지지 않는다. 전 소스 실패 시 series=[] , source=None.
+    """
+    try:
+        lookback_days = max(1, min(int(lookback_days), _SERIES_MAX_DAYS))
+    except (TypeError, ValueError):
+        lookback_days = 45
+    chain = []
+    for name in sources:
+        fn = _SERIES_DISPATCH.get(name)
+        if fn is None:
+            chain.append({"source": name, "ok": False})
+            continue
+        try:
+            ser = fn(ticker, lookback_days, not_after)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[price_source] series %s %s 실패: %r → 다음 순위", name, ticker, e)
+            chain.append({"source": name, "ok": False})
+            continue
+        # 방어선: 어떤 경로로도 미확정 종가가 새어나가면 안 된다(각 소스가 이미 컷했지만).
+        if not_after:
+            ser = [r for r in ser if str(r[0]) <= str(not_after)]
+        if ser:
+            chain.append({"source": name, "ok": True})
+            logger.info("[price_source] series %s → %d행 (%s~%s, source=%s)",
+                        ticker, len(ser), ser[0][0], ser[-1][0], name)
+            return {"ticker": ticker, "series": ser, "source": name, "chain": chain}
+        chain.append({"source": name, "ok": False})
+    logger.warning("[price_source] series %s: 모든 소스 실패 → 빈 구간", ticker)
+    return {"ticker": ticker, "series": [], "source": None, "chain": chain}
+
+
 if __name__ == "__main__":
     import argparse
     import json

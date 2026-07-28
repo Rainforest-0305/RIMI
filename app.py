@@ -645,6 +645,16 @@ def _startup_prewarm():
     except Exception as e:
         print(f"[llm_summary] install 스킵(무시, 기동 유지): {type(e).__name__}")
 
+    # 배치 non-run 워치독(①). 프리웜과 독립적으로 항상 띄운다 — 프리웜을 끈 환경에서
+    # 감시까지 같이 꺼지면 안 된다. 데몬이라 기동/종료를 지연시키지 않는다.
+    if _ANALYST_WATCH_ENABLED:
+        threading.Thread(target=_analyst_watchdog, name="analyst-freshness",
+                         daemon=True).start()
+        print(f"[freshness] 워치독 기동(임계 {_ANALYST_STALE_DAYS:g}일, "
+              f"주기 {_ANALYST_CHECK_SEC:g}s)")
+    else:
+        print("[freshness] 워치독 비활성(GONGSI_ANALYST_WATCH=0)")
+
     if not _PREWARM_ENABLED:
         print("[prewarm] 비활성(GONGSI_PREWARM=0) — 콜드빌드 경로 유지")
         return
@@ -678,7 +688,7 @@ def _device_id(request: Request) -> str:
 # ---------------- 엔드포인트 ----------------
 @api.get("/api/health")
 def health():
-    return {
+    out = {
         "ok": True,
         "dart_key": bool(config.DART_API_KEY),
         "watchlist_count": len(core.load_watchlist()[0]),
@@ -703,6 +713,14 @@ def health():
                                  if _MARKET.get("checked_ts") else None),
         "price_calls": dict(_PRICE_CALLS),
     }
+    # 배치 non-run 감시(①): analyst_consensus.updated_at 신선도. 배치와 독립된 경로라
+    # 배치가 한 번도 안 돌아도(2026-07-25 실사고) 여기서 드러난다. 요청경로 외부호출 0
+    # (워치독 데몬이 채워둔 스냅샷만 읽는다).
+    try:
+        out.update(_analyst_freshness_view())
+    except Exception as e:  # noqa: BLE001
+        out["analyst_freshness_error"] = type(e).__name__
+    return out
 
 
 @api.get("/api/alerts")
@@ -1857,6 +1875,193 @@ def _empty_analyst(code, name=None):
             "disclaimer": _ANALYST_DISCLAIMER}
 
 
+# ---------------- 배치 non-run 감시(데이터 신선도 워치독) ----------------
+# 배경(2026-07-24~25 실사고): 주간 배치 MIRI_AnalystCollect_Sat 이 절전 구간에 예정
+# 시각을 맞아 **한 번도 실행되지 않았다**(LastTaskResult 267011, 로그 파일 자체 없음).
+# 그런데 배치 실패 경보(_alert)는 '배치가 돌아야' 호출되므로 non-run 에는 구조적으로
+# 무력하다. 자기 자신의 부재를 자기 자신이 알릴 수는 없다.
+#   → 감시를 배치 밖(24시간 떠 있는 서버)에 둔다. 서버는 배치 산출물의 updated_at 만
+#     보므로 배치가 죽어 있어도, 노트북·VM 이 꺼져 있어도 계속 판정한다.
+#
+# 임계 N(_ANALYST_STALE_DAYS) = 8일. 근거:
+#   - 배치 주기는 주 1회(토 05:00)라 updated_at 나이는 정상 운영에서도 직전 실행 후
+#     최대 7일(다음 실행 직전)까지 커진다. 7일 임계는 매주 토요일 새벽 정상 상태에서
+#     오경보를 낸다(updated_at 이 date 단위라 경계에서 정확히 7).
+#   - 8일이면 '토요일 실행이 통째로 누락된 뒤 일요일'에 처음 걸린다. 오경보 0,
+#     탐지 지연 약 1일. 실사고(7/25 금 발견)를 하루 안에 잡는 수준이다.
+#   - 더 키우면(9~14일) 다음 주 배치 성공에 가려 사고가 영영 안 드러날 수 있다.
+#   운영 중 조정은 코드 수정 없이 GONGSI_ANALYST_STALE_DAYS 로 한다.
+_ANALYST_STALE_DAYS = float(os.getenv("GONGSI_ANALYST_STALE_DAYS", "8"))
+_ANALYST_CHECK_SEC = float(os.getenv("GONGSI_ANALYST_CHECK_SEC", "21600"))     # 감시 주기 6h
+_ANALYST_FIRST_DELAY = float(os.getenv("GONGSI_ANALYST_FIRST_DELAY", "20"))    # 기동 후 첫 점검 지연
+_ANALYST_ALERT_COOLDOWN = float(os.getenv("GONGSI_ANALYST_ALERT_COOLDOWN", "86400"))  # 재경보 최소간격 24h
+_ANALYST_WATCH_ENABLED = os.getenv("GONGSI_ANALYST_WATCH", "1").strip().lower() \
+    not in ("0", "false", "no")
+# 텔레그램 실발송 스위치(테스트에서 스팸 없이 경로 검증하기 위한 출구). 기본 on.
+_ANALYST_ALERT_TG = os.getenv("GONGSI_ANALYST_ALERT_TG", "1").strip().lower() \
+    not in ("0", "false", "no")
+_ANALYST_ALERT_MARK = config.DATA / "analyst_stale_alert.json"   # 재기동 후 재경보 폭주 방지
+
+_ANALYST_FRESH_STATE = {
+    "updated_at": None,      # 배치 산출물 중 가장 최신 수집일(YYYY-MM-DD)
+    "age_days": None,        # 오늘(KST) - updated_at
+    "stale": None,           # 임계 초과 여부. None = 아직 점검 전
+    "rows": None,            # 관측된 전체 행 수
+    "dated_rows": None,      # 그중 updated_at 이 있는 행 수(신선도 판정 분모)
+    "stale_rows": None,      # 그중 임계보다 낡은 종목 수(부분 정체 탐지)
+    "oldest_updated_at": None,
+    "source": None,          # supabase | local | none
+    "checked_ts": 0.0,
+    "alerted_at": None,      # 마지막 경보 시각(ISO)
+    "error": None,
+}
+
+
+def _analyst_probe():
+    """analyst_consensus 의 updated_at 분포를 읽어 신선도 상태를 만든다(읽기 전용).
+
+    Supabase 우선, 실패 시 로컬 스냅샷(analyst_cache.json) 폴백. 어느 쪽도 못 읽으면
+    source='none' 으로 남기고 **stale 로 단정하지 않는다** — 조회 실패를 데이터 정체로
+    오인해 오경보를 내면 경보 자체의 신뢰가 죽는다."""
+    today = datetime.now(_KST).date()
+    ups, rows, src, err = [], 0, "none", None
+    try:
+        ok, data = miri_cache.select_columns("analyst_consensus", "code,updated_at")
+        if ok and data:
+            ups = [str(r.get("updated_at") or "") for r in data if isinstance(r, dict)]
+            rows, src = len(data), "supabase"
+    except Exception as e:  # noqa: BLE001
+        err = type(e).__name__
+    if not ups:
+        try:
+            cache = miri_cache.load_json(_ANALYST_CACHE_FILE, default={}) or {}
+            if isinstance(cache, dict) and cache:
+                ups = [str((v or {}).get("updated_at") or "")
+                       for v in cache.values() if isinstance(v, dict)]
+                rows, src = len(cache), "local"
+        except Exception as e:  # noqa: BLE001
+            err = err or type(e).__name__
+    # updated_at 이 비어 있는 행이 실제로 있다(실측 2026-07-28: 138행 중 38행).
+    # 서버 종가 갱신 경로가 배치 미수집 종목의 행을 만들 때 생긴다 — 이 행들은 배치
+    # 신선도의 근거가 될 수 없으므로 분모에서 제외하고, 개수는 따로 노출한다.
+    ups = [u for u in ups if len(u) == 10]
+    st = {"rows": rows, "dated_rows": len(ups), "source": src, "error": err,
+          "checked_ts": time.time(), "updated_at": None, "age_days": None,
+          "stale": None, "stale_rows": None, "oldest_updated_at": None}
+    if not ups:
+        return st
+    newest, oldest = max(ups), min(ups)
+    st["updated_at"], st["oldest_updated_at"] = newest, oldest
+    try:
+        st["age_days"] = (today - datetime.strptime(newest, "%Y-%m-%d").date()).days
+    except ValueError:
+        return st
+    st["stale"] = st["age_days"] > _ANALYST_STALE_DAYS
+    limit = (today - _td(days=int(_ANALYST_STALE_DAYS))).isoformat()
+    st["stale_rows"] = sum(1 for u in ups if u < limit)
+    return st
+
+
+def _stale_alert_allowed(now_ts):
+    """경보 쿨다운(24h). 프로세스 재기동으로 메모리가 날아가도 스팸이 안 되게
+    파일 마커를 병행한다(디스크가 휘발돼도 최악 재기동 1회 중복)."""
+    last = _ANALYST_FRESH_STATE.get("alerted_ts") or 0.0
+    if not last:
+        try:
+            mark = miri_cache.load_json(_ANALYST_ALERT_MARK, default={}) or {}
+            last = float(mark.get("ts") or 0.0)
+        except Exception:  # noqa: BLE001
+            last = 0.0
+    return (now_ts - last) >= _ANALYST_ALERT_COOLDOWN
+
+
+def _stale_alert(st):
+    """운영자 텔레그램 경보(notify_alert._tg_send = config.TEST_CHAT_ID 고정).
+    실유저 공시채널(tg_channel/TG_CHANNEL_ID)과 구조적으로 분리돼 있다."""
+    msg = ("[MIRI 신선도경보] analyst_consensus 정체\n"
+           f"최신 수집일 {st.get('updated_at')} · {st.get('age_days')}일 경과 "
+           f"(임계 {_ANALYST_STALE_DAYS:g}일)\n"
+           f"수집일 있는 종목 {st.get('dated_rows')}개(전체 {st.get('rows')}) 중 "
+           f"{st.get('stale_rows')}개 정체 (가장 오래된 {st.get('oldest_updated_at')})\n"
+           f"출처 {st.get('source')}\n"
+           "주간 배치(MIRI_AnalystCollect_Sat)가 실행되지 않았을 가능성 — "
+           "스케줄러 LastRunTime/LastTaskResult 확인 요망")
+    print("[freshness][ALERT] " + msg.replace("\n", " | "))
+    sent = False
+    if _ANALYST_ALERT_TG:
+        try:
+            from notify_alert import _tg_send
+            sent = bool(_tg_send(msg))
+        except Exception as e:  # noqa: BLE001
+            print(f"[freshness] 경보 발송 실패: {type(e).__name__}")
+    now = time.time()
+    _ANALYST_FRESH_STATE["alerted_ts"] = now
+    _ANALYST_FRESH_STATE["alerted_at"] = datetime.now(_KST).isoformat(timespec="seconds")
+    try:
+        miri_cache.save_json(_ANALYST_ALERT_MARK,
+                             {"ts": now, "at": _ANALYST_FRESH_STATE["alerted_at"],
+                              "updated_at": st.get("updated_at"),
+                              "age_days": st.get("age_days"), "tg_sent": sent})
+    except Exception:  # noqa: BLE001
+        pass
+    return sent
+
+
+def _analyst_freshness_check():
+    """1회 점검(+임계 초과 시 경보). 반환: 상태 dict. 예외를 던지지 않는다."""
+    try:
+        st = _analyst_probe()
+    except Exception as e:  # noqa: BLE001
+        print(f"[freshness] 점검 예외(무시): {type(e).__name__}")
+        return dict(_ANALYST_FRESH_STATE)
+    for k, v in st.items():
+        _ANALYST_FRESH_STATE[k] = v
+    print(f"[freshness] analyst updated_at={st.get('updated_at')} "
+          f"age={st.get('age_days')}d stale={st.get('stale')} "
+          f"rows={st.get('rows')}(dated {st.get('dated_rows')}) "
+          f"stale_rows={st.get('stale_rows')} src={st.get('source')}")
+    if st.get("stale") and _stale_alert_allowed(st["checked_ts"]):
+        _stale_alert(st)
+    return dict(_ANALYST_FRESH_STATE)
+
+
+def _analyst_watchdog():
+    """데몬 스레드: 기동 직후 1회 + 이후 _ANALYST_CHECK_SEC 마다 점검.
+    배치와 완전히 독립된 경로다 — 배치가 안 도는 것을 배치가 감지할 수는 없다."""
+    time.sleep(max(0.0, _ANALYST_FIRST_DELAY))
+    while True:
+        _analyst_freshness_check()
+        time.sleep(max(60.0, _ANALYST_CHECK_SEC))
+
+
+def _analyst_freshness_view():
+    """/api/health 노출용 스냅샷(요청경로에서 외부 호출 0).
+
+    워치독 스레드가 죽었거나 아직 안 돈 경우(마지막 점검이 주기의 2배 초과)에는
+    백그라운드 점검을 1회 띄운다 — 감시자가 조용히 죽는 것도 감시한다."""
+    st = dict(_ANALYST_FRESH_STATE)
+    ts = st.get("checked_ts") or 0.0
+    age = round(time.time() - ts, 1) if ts else None
+    if _ANALYST_WATCH_ENABLED and (age is None or age > _ANALYST_CHECK_SEC * 2):
+        if not any(t.name == "analyst-freshness-adhoc" and t.is_alive()
+                   for t in threading.enumerate()):
+            threading.Thread(target=_analyst_freshness_check,
+                             name="analyst-freshness-adhoc", daemon=True).start()
+    return {
+        "analyst_updated_at": st.get("updated_at"),
+        "analyst_age_days": st.get("age_days"),
+        "analyst_stale": st.get("stale"),
+        "analyst_stale_threshold_days": _ANALYST_STALE_DAYS,
+        "analyst_rows": st.get("rows"),
+        "analyst_dated_rows": st.get("dated_rows"),
+        "analyst_stale_rows": st.get("stale_rows"),
+        "analyst_oldest_updated_at": st.get("oldest_updated_at"),
+        "analyst_freshness_source": st.get("source"),
+        "analyst_checked_age_sec": age,
+        "analyst_stale_alerted_at": st.get("alerted_at"),
+    }
+
+
 # ---------------- 종가 신선도 자동 갱신(서버 자체 · 배치/VM/노트북 불요) ----------------
 # 설계: '매 요청 실시간 조회'가 아니다. 저장된 종가의 **기준 거래일**이 지금 시점에서
 # 있어야 할 최신 거래일보다 낡았을 때만 외부에서 1회 가져온다. 최신이면 외부 호출 0.
@@ -1949,20 +2154,96 @@ def _ps_candles(code):
     return toss_data.candles(code, "1d")
 
 
-def _price_worker(code, job):
-    """단일 종목 외부 조회 1회(백그라운드 스레드). 결과를 오버레이·시장관측에 반영."""
+# ---------------- 중간 거래일 backfill ----------------
+# 문제: 서버는 '최신 확정 종가 1점'만 가져와 append 한다. 배치가 07-22 까지 쓰고
+# 서버가 07-24 를 붙이면 07-23 은 다음 배치 성공까지 영원히 빈다(주 1회 배치라
+# 최대 7일 구멍). 1점 조회 계약으로는 구조적으로 못 메운다.
+# 해법: 저장값과 기준일 사이에 '빠졌을 수 있는 거래일'이 실제로 존재할 때만 구간을
+# 1회 조회해 빈 날짜만 채운다. 무한 조회 방지 장치는 4중이다.
+#   (a) 트리거 — 사이에 평일이 0일이면(금→월 등) 아예 조회하지 않는다
+#   (b) 창 상한 — 소급 조회는 _PRICE_BACKFILL_DAYS 로 고정(+price_source 400일 하드캡)
+#   (c) 호출 합류 — 기존 단일비행/쿨다운(_PRICE_RETRY_SEC) 경로를 그대로 탄다.
+#       즉 구간 조회는 '이미 나가는 그 1회 조회'에 얹히지 별도 호출을 만들지 않는다
+#   (d) 자기소멸 — 메우고 나면 (a) 가 거짓이 되어 다음부터 조회 자체가 안 나간다
+_PRICE_BACKFILL_DAYS = int(os.getenv("GONGSI_PRICE_BACKFILL_DAYS", "45"))
+# prices 배열 길이 상한(배치=100행). 배치가 장기 부재해도 서버 append 로 무한 성장하지
+# 않게 tail 절단. 정상 운영(주 1회 배치 + 주 5행)에선 절대 닿지 않는다.
+_PRICE_MAX_ROWS = int(os.getenv("GONGSI_PRICE_MAX_ROWS", "140"))
+
+
+def _biz_days_between(a, b, cap=400):
+    """a 초과 b 미만 구간의 평일 수. 인자가 날짜형식이 아니면 0. 루프는 cap 일로 상한.
+
+    공휴일 달력이 없으므로 '평일=거래일'로 근사한다. 과대추정(휴장일을 구멍으로 오인)
+    쪽으로만 틀리며, 그 경우 구간조회가 1회 헛돌 뿐 데이터는 변하지 않는다."""
+    try:
+        da = datetime.strptime(str(a)[:10], "%Y-%m-%d").date()
+        db = datetime.strptime(str(b)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return 0
+    n, d, i = 0, da + _td(days=1), 0
+    while d < db and i < cap:
+        if d.weekday() < 5:
+            n += 1
+        d += _td(days=1)
+        i += 1
+    return n
+
+
+def _fetch_price_series(code, not_after):
+    """확정 일봉 구간(기준일 컷 적용). 실패 시 []. 예외를 밖으로 던지지 않는다."""
+    try:
+        import price_source as _ps
+        r = _ps.get_series(code, sources=_PRICE_CHAIN, not_after=not_after,
+                           lookback_days=_PRICE_BACKFILL_DAYS)
+        ser = [row for row in (r.get("series") or [])
+               if len(row) >= 2 and str(row[0]) <= str(not_after)]   # 마지막 방어선
+        return ser
+    except Exception as e:  # noqa: BLE001
+        print(f"[price] {code} 구간조회 실패(무시): {type(e).__name__}")
+        return []
+
+
+def _merge_series(prices, series, upto):
+    """빠진 거래일만 채운다. 기존 행 값은 덮지 않는다(출처 혼선·불필요한 쓰기 방지).
+
+    채우는 범위는 prices[0][0] 초과 ~ upto 이하로 제한한다. 앞쪽으로 확장하면
+    window_start(=prices[0][0], avg_tp 집계창의 기준)가 움직여 컨센서스 지표가
+    이유 없이 변한다. 저장된 prices 가 비어 있으면 아무것도 하지 않는다 —
+    최초 적재는 배치의 몫이고, 서버가 짧은 창을 새로 만들면 안 된다."""
+    if not prices or not series:
+        return prices
+    start = str(prices[0][0])
+    have = {str(p[0]) for p in prices}
+    add = [[str(d), int(v)] for d, v in series
+           if start < str(d) <= str(upto) and str(d) not in have]
+    if not add:
+        return prices
+    out = sorted(list(prices) + add, key=lambda p: str(p[0]))
+    if len(out) > _PRICE_MAX_ROWS:
+        out = out[-_PRICE_MAX_ROWS:]
+    print(f"[price] backfill {len(add)}행 채움({add[0][0]}~{add[-1][0]}) "
+          f"→ prices {len(prices)}→{len(out)}행")
+    return out
+
+
+def _price_worker(code, job, want_series=False):
+    """단일 종목 외부 조회 1회(백그라운드 스레드). 결과를 오버레이·시장관측에 반영.
+
+    want_series=True 면 같은 조회 기회에 구간까지 받아 중간 거래일 구멍을 메운다."""
     res = None
     cap = _expected_trade_day()      # 이 관측에 적용한 기준일 컷(관측과 함께 기록해야 의미가 산다)
     try:
         res = _fetch_price_with_asof(code, cap)
     except Exception as e:  # noqa: BLE001
         print(f"[price] {code} worker 예외: {type(e).__name__}")
+    series = _fetch_price_series(code, cap) if (res and want_series) else []
     try:
         if res:
             price, asof, source = res
             with _PRICE_LOCK:
-                _PRICE_FRESH[code] = {"price": price, "asof": asof,
-                                      "source": source, "ts": time.time()}
+                _PRICE_FRESH[code] = {"price": price, "asof": asof, "source": source,
+                                      "series": series, "ts": time.time()}
                 if not _MARKET["latest"] or asof > _MARKET["latest"]:
                     _MARKET["latest"] = asof
                 _MARKET["cap"] = cap
@@ -1972,9 +2253,12 @@ def _price_worker(code, job):
         job["ev"].set()
 
 
-def _run_price_refresh(code, wait):
+def _run_price_refresh(code, wait, want_series=False):
     """단일비행(single-flight) 갱신. 진행 중이면 새 호출 없이 합류, 쿨다운 중이면 호출 안 함.
-    wait 초까지만 기다리고 그 뒤엔 None(=호출자는 기존값으로 응답, 워커는 계속 진행)."""
+    wait 초까지만 기다리고 그 뒤엔 None(=호출자는 기존값으로 응답, 워커는 계속 진행).
+
+    want_series 는 새로 띄우는 워커에만 전달된다 — 이미 진행 중인 조회에 합류한
+    경우엔 추가 호출을 만들지 않는다(구멍은 다음 갱신 기회에 메워진다)."""
     now = time.time()
     with _PRICE_LOCK:
         job = _PRICE_JOBS.get(code)
@@ -1990,17 +2274,23 @@ def _run_price_refresh(code, wait):
             _PRICE_CALLS["external"] += 1
             print(f"[price] {code} 외부조회 시작 (누적 external={_PRICE_CALLS['external']}, "
                   f"skipped={_PRICE_CALLS['skipped']})")
-            threading.Thread(target=_price_worker, args=(code, job), daemon=True).start()
+            threading.Thread(target=_price_worker, args=(code, job, want_series),
+                             daemon=True).start()
     job["ev"].wait(timeout=max(0.0, wait))
     return job["res"] if job["ev"].is_set() else None
 
 
-def _apply_price(payload, price, asof, source):
+def _apply_price(payload, price, asof, source, series=None):
     """갱신된 종가를 payload 에 반영. prices 궤적도 함께 맞춰 프런트의 기준일 표기
-    (prices[-1][0])와 값이 어긋나지 않게 한다. 원본 캐시 dict 는 건드리지 않는다(복사)."""
+    (prices[-1][0])와 값이 어긋나지 않게 한다. 원본 캐시 dict 는 건드리지 않는다(복사).
+
+    series 가 있으면 먼저 중간 거래일 구멍을 메운다(③). 마지막 1점만 갱신/append 하던
+    종전 동작은 그대로 남는다 — backfill 은 그 앞단에 얹히는 보강이다."""
     out = dict(payload)
     prices = list(out.get("prices") or [])
     ival = int(round(price))
+    if series:
+        prices = _merge_series(prices, series, asof)
     if prices and str(prices[-1][0]) == asof:
         prices[-1] = [asof, ival]
     elif not prices or asof > str(prices[-1][0]):
@@ -2058,7 +2348,8 @@ def _ensure_fresh_price(payload):
         with _PRICE_LOCK:
             ov = _PRICE_FRESH.get(code)
         if ov and ov["asof"] <= exp and (not asof or ov["asof"] >= asof):
-            payload = _apply_price(payload, ov["price"], ov["asof"], ov["source"])
+            payload = _apply_price(payload, ov["price"], ov["asof"], ov["source"],
+                                   ov.get("series"))
             asof = ov["asof"]
 
         if asof and asof >= exp:
@@ -2086,11 +2377,16 @@ def _ensure_fresh_price(payload):
             return payload
 
         # 2) 갱신 필요 → 단일비행 조회(대기 상한 내에서만 동기 반영)
-        res = _run_price_refresh(code, _PRICE_SYNC_WAIT)
+        #    저장 마지막 거래일과 기준일 사이에 평일이 남아 있으면 = 중간 거래일이
+        #    빠졌을 수 있다 → 같은 조회 기회에 구간까지 받아 메운다(③).
+        want_series = bool(payload.get("prices")) and _biz_days_between(asof, exp) > 0
+        res = _run_price_refresh(code, _PRICE_SYNC_WAIT, want_series)
         if res:
             price, new_asof, source = res
             if not asof or new_asof >= asof:
-                payload = _apply_price(payload, price, new_asof, source)
+                with _PRICE_LOCK:
+                    ser = (_PRICE_FRESH.get(code) or {}).get("series") or []
+                payload = _apply_price(payload, price, new_asof, source, ser)
                 _persist_price_async(payload)
         payload.setdefault("current_asof", asof or None)
         return payload

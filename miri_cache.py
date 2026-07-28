@@ -135,6 +135,31 @@ def select_all(table, order=None, limit=None):
         return False, []
 
 
+def select_columns(table, cols, order=None, limit=None):
+    """지정 컬럼만 select. (ok, rows). 실패 시 (False, []).
+
+    select_all 은 prices/reports(jsonb, 종목당 수 KB)까지 끌어온다. 신선도 감시처럼
+    updated_at 만 필요한 경로가 그걸 쓰면 100종목 수 MB 를 매번 받는다 — 컬럼을
+    좁혀 감시 비용을 상수로 만든다."""
+    base, headers = _rest_conf()
+    if not base:
+        return False, []
+    try:
+        cols = ",".join(c.strip() for c in str(cols).split(",") if c.strip())
+        url = base + "/" + table + "?select=" + (cols or "*")
+        if order:
+            url += "&order=" + order
+        if limit:
+            url += "&limit=" + str(int(limit))
+        r = requests.get(url, headers=headers, timeout=_HTTP_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        return True, (data if isinstance(data, list) else [])
+    except Exception as e:  # noqa: BLE001
+        _log("select_columns(" + table + ")", e)
+        return False, []
+
+
 def select_one(table, code):
     """단일 code 행 조회. (ok, row|None). 실패 시 (False, None)."""
     base, headers = _rest_conf()
