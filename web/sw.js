@@ -1,7 +1,8 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v28';   // v27→v28: 랭킹 화면 파란 세로선 결함 4건 수정(①body/html 포커스링 차단 ②탭전환 시 상세·애널·시트 오버레이 즉시 언마운트(잔상 겹침) ③터치 포커스 잔존 차단(mousedown preventDefault, 키보드 링은 유지) ④.rk-row:focus-visible 명시). SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
+const CACHE = 'miri-v29';   // v28→v29: ①파란 세로선 잔상 근본수정 — .card.watched·.brief.hero-am 의 outset box-shadow(레이아웃 박스 밖 1.5px 띠 = 랭킹탭에선 아무 엘리먼트도 점유 안 하는 죽은 영역 → iOS 재도색 주체 없음)를 inset 으로 전환 ②간격체계 Phase0~2 — --sp-1~6/--inset-x/--pad-x 토큰 도입(--stack-gap=--sp-3 별칭, 밀도 6/12/18 렌더 불변), #formmsg:empty 가드, 세로 마이크로 패딩 제거(.pushrow·.rk-seg·.valwrap·.chips·.wl-grouprow) → 알람켜기↔관심피드 34px→12px. SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
+// (이전) v27→v28: 랭킹 화면 파란 세로선 결함 4건 수정(①body/html 포커스링 차단 ②탭전환 시 상세·애널·시트 오버레이 즉시 언마운트(잔상 겹침) ③터치 포커스 잔존 차단(mousedown preventDefault, 키보드 링은 유지) ④.rk-row:focus-visible 명시). SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
 // (이전) v26→v27: 애널리스트 종가 표기에 기준일 병기('7/24 종가 249,500원' — 지표카드 라벨·차트 라벨·안내문구 3곳 통일, current_asof 기준·연도 다르면 YY/M/D). SHELL(index.html·shell.js) precache라 bump 필수(구셸 고착 방지)
 const DATA_CACHE = 'miri-data-v1';   // 읽기 API(/api/alerts·today·ranking·mezzanine) 응답 캐시(앱셸과 분리 → activate 정리에서 보존)
 /* 41-a iOS 스플래시(11종) — 재방문·오프라인 즉시 렌더용 precache */

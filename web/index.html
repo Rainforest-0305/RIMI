@@ -51,6 +51,17 @@
     --warn:#f59e0b; --warn-soft:#fdf0dd; --warn-ink:#b45309;
     --kr:"Pretendard","Pretendard Variable",-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
     --mono:ui-monospace,"SFMono-Regular","Consolas",monospace;
+    /* ===== 간격(spacing) 스케일 — 260727 President 지시 =====
+       세로 리듬은 이 6개만 쓴다. 새 값을 발명하지 말 것(현행 세로값 30종·4px그리드 준수 31%가 원인).
+       L1 붙임(요소↔부속) / L2 관련(같은 묶음의 별개 컨트롤) / L3 기본(형제 블록=카드 스택)
+       L4 그룹(컨테이너 내부 패딩) / L5 섹션(다른 영역 경계) / L6 페이지(면책·푸터)
+       --inset-x 는 '가로 전용' 광학 인셋(카드 radius 곡률 정렬) — 세로에 쓰면 위반이다.
+       원칙: 세로 간격은 컨테이너 gap 이 단독 소유, 자식은 세로 margin/padding 을 갖지 않는다. */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px;
+    --sp-4:16px; --sp-5:24px; --sp-6:32px;
+    --inset-x:2px; --pad-x:16px;
+    /* --stack-gap 은 --sp-3 의 별칭(기존 셀렉터 목록·주석·사고이력 무변경). 값 6/12/18 동일 → 렌더 불변 */
+    --stack-gap:var(--sp-3);
   }
   @media (prefers-color-scheme:dark){
     :root{--bg:#0e1116;--card:#171b21;--card-2:#1c212a;--t1:#e9edf2;--t2:#aab3bf;--t3:#7d8794;--t4:#565f6b;
@@ -121,15 +132,23 @@
   .live{flex:none;margin-left:auto;font-size:11px;font-weight:700;color:var(--up);display:inline-flex;align-items:center;gap:5px}
   /* 점멸 금지: iOS 스티키 헤더 안 opacity 애니메이션이 플리커 유발(President 리포트) */
   .live .d{width:6px;height:6px;border-radius:50%;background:var(--up)}
-  .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}
+  /* 세로 padding 제거 = 간격은 컨테이너 gap 단독 소유(260728 간격체계 Phase2). 가로만 --inset-x */
+  .chips{display:flex;gap:var(--sp-2);overflow-x:auto;scrollbar-width:none;padding:0 var(--inset-x)}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:999px;border:none;
     background:var(--card);color:var(--t2);cursor:pointer;transition:.15s;box-shadow:0 0 0 1px var(--line) inset;white-space:nowrap}
   .chip .code{color:var(--code);font-weight:500;font-size:11px;margin-left:6px}
   .chip.add{color:var(--blue);background:var(--blue-soft);box-shadow:none;font-weight:700}
   .formmsg{font-size:12.5px;padding:2px 6px;min-height:0;color:var(--t3)}
+  /* 빈 메시지 슬롯이 자기 높이 4px + flex gap 12px = 16px 을 먹어 '알람 켜기 ↔ 관심피드'를
+     34px 로 벌려놓던 문제(President 지적 260727). min-height:0 은 flex gap 을 못 없앤다 —
+     요소가 존재하는 한 gap 은 지불된다. 같은 가드가 #banner·#todayBrief·.search-mount·
+     .rk-cap·.sheet-target 에 이미 있고 여기만 빠져 있었다.
+     ⚠ .formmsg 가 아니라 #formmsg 로 한정한다: .formmsg 는 #searchmsg(검색창 내부)와 공유라
+     클래스로 접으면 .searchres 드롭다운이 4px 올라온다. 1차는 관심탭만 건드리는 무위험 안. */
+  #formmsg:empty{display:none}
   .formmsg.err{color:var(--up)} .formmsg.ok{color:var(--ok)}
-  .pushrow{display:flex;align-items:center;gap:8px;padding:2px 4px 4px;flex-wrap:wrap}
+  .pushrow{display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-1);flex-wrap:wrap}
   .pushrow[hidden]{display:none}   /* 항목55(hidden스캔): renderPushToggle이 row.hidden 토글(미지원/무키) — 빈 행 공간 제거 */
   .pushbtn{flex:none;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid var(--bd);
     background:var(--card);color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
@@ -188,7 +207,7 @@
   .feedmeta{display:none}
   #banner:empty{display:none}
 
-  .valwrap{display:flex;align-items:center;gap:9px;padding:2px 4px}
+  .valwrap{display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-1)}
   .valwrap[hidden]{display:none}   /* 항목55: display:flex가 UA hidden 무효화 → 알림함서 대표값 세그 숨김 복원 */
   .valwrap .vlab{font-size:11.5px;font-weight:700;color:var(--t3);flex:none}
   .valmode{display:flex;flex:1;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px}
@@ -225,7 +244,15 @@
   .feed-err .fe-retry:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
   .card{background:var(--card);border-radius:var(--radius);padding:16px 16px 13px;animation:rs .34s cubic-bezier(.22,1,.36,1) both;word-break:keep-all}   /* 항목50: 한글 어절·숫자+단위 mid-word 줄바꿈 방지(유상증/자·30/건) */
-  .card.watched{box-shadow:0 0 0 1.5px var(--blue)}
+  /* 260727 P0(잔상): outset 그림자는 레이아웃 박스 '밖' 1.5px 띠에 칠해진다. 그 띠는 다른 탭
+     (랭킹 등)에서 어떤 엘리먼트도 점유하지 않는 죽은 영역이라 display:none 으로 패널을 숨겨도
+     그 픽셀을 다시 칠할 주체가 없다 → iOS Safari 잔상(관심탭→랭킹탭, President 260727).
+     inset 이면 칠이 전부 레이아웃 박스 안(랭킹에선 .rank 가 덮어 그리는 영역)으로 들어와
+     잔상이 원천 불가능. 레이아웃·시각 불변(360×441, 1.5px 링 그대로).
+     ⚠ transform:translateZ(0)·will-change 로 고치지 말 것 — .tabbar{position:fixed} 의
+     컨테이닝 블록이 바뀌어 하단 탭바가 깨진다. 파란 링 box-shadow 10건 중 나머지 8건은
+     이미 전부 inset 이며 이 2건(.card.watched·.brief.hero-am)만 컨벤션 이탈이었다. */
+  .card.watched{box-shadow:0 0 0 1.5px var(--blue) inset}
   @keyframes rs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
   .tk{font-weight:800;font-size:15.5px} .cd{font-family:var(--mono);font-size:11px;color:var(--code);font-weight:600}
@@ -437,7 +464,7 @@
   @media (prefers-reduced-motion:reduce){.fab{transition:none}}
 
   /* ---------- 관심종목 그룹/칩 (토스식) ---------- */
-  .wl-grouprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;align-items:center}
+  .wl-grouprow{display:flex;gap:var(--sp-2);overflow-x:auto;scrollbar-width:none;padding:0 var(--inset-x);align-items:center}
   .wl-ghide{margin-left:auto;flex:none;display:inline-flex;align-items:center;min-height:34px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
     background:none;border:none;cursor:pointer;padding:4px 2px 4px 8px;white-space:nowrap}
   .wl-gshow{margin-left:auto;flex:none;display:inline-flex;align-items:center;min-height:34px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--t3);
@@ -990,9 +1017,12 @@
   .brief .bl{display:flex;gap:9px;font-size:13.5px;color:var(--t2);padding:5px 0;align-items:baseline}
   .brief .bl::before{content:"";flex:none;width:3px;height:3px;border-radius:50%;background:var(--t4);transform:translateY(-3px)}
   .brief .bl b{color:var(--t1);font-weight:700}
-  .brief.hero-am{box-shadow:0 0 0 1.5px var(--blue)}
+  /* 260727 P0(잔상) 동일 결함 — .card.watched 주석 참조. outset → inset */
+  .brief.hero-am{box-shadow:0 0 0 1.5px var(--blue) inset}
   /* 세그(관심 서브뷰 / 랭킹 종류) — 기존 slate-soft 톤 재사용 */
-  .rk-seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;margin:2px 2px 4px}
+  /* margin 세로 제거(260728 Phase2). #watchSeg·#rankSeg 공유라 랭킹 세그도 2px 상승 — 위계상
+     동일 컴포넌트이므로 통일이 맞다. 가로는 광학 인셋 --inset-x 유지. */
+  .rk-seg{display:flex;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px;margin:0 var(--inset-x)}
   .rk-seg button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:8px 0;border-radius:8px;cursor:pointer}
   .rk-seg button.on{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .rk-seg button:disabled,.rk-seg button[aria-disabled="true"]{opacity:.45;cursor:default}   /* 39-a: 딤(aria-disabled 탭→토스트는 shell.js) */
@@ -1138,10 +1168,12 @@
   /* 카드 스택 간격은 --stack-gap 하나로. 컨테이너별(.feed/.today-body/#ovWrap) 오버라이드를 쓰면
      새 컨테이너가 생길 때마다 누락된다(260726 #ovWrap 사고). html[data-density] = (0,1,1) 로
      :root = (0,1,0) 보다 특이도가 높아 오버라이드 성립. 셀렉터 정의는 상단 <style> 참조. */
-  html[data-density="compact"]{--stack-gap:6px}
   /* 버그F: roomy가 기본(md=12px)과 같은 값이라 "넉넉" 밀도가 카드 간격에 반영되지 않았다.
-     내부 padding(20/18/16)처럼 md 대비 뚜렷이 넓게 18px로. md=12px·compact=6px는 불변. */
-  html[data-density="roomy"]{--stack-gap:18px}
+     내부 padding(20/18/16)처럼 md 대비 뚜렷이 넓게 18px로. md=12px·compact=6px는 불변.
+     260728: --stack-gap 직접 지정 → 스케일(--sp-*) 통째 오버라이드로 승격. --sp-3 이 기존
+     --stack-gap 과 정확히 같은 6/12/18 이라 카드 간격 렌더는 1px도 바뀌지 않는다(무회귀 기준). */
+  html[data-density="compact"]{--sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:12px;--sp-5:16px;--sp-6:24px}
+  html[data-density="roomy"] {--sp-1:6px;--sp-2:12px;--sp-3:18px;--sp-4:20px;--sp-5:32px;--sp-6:40px}
 
   /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
   .tabpanel>*:first-child{margin-top:0}
