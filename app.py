@@ -648,6 +648,55 @@ def _prewarm():
         print(f"[prewarm] ranking price 실패(무시): {e}")
 
 
+# ---------------- 주기 리프레셔(2026-07-30 신설) ----------------
+# 왜 필요한가: 피드캐시는 TTL 로 만료되는데, 만료 후 첫 요청이 _build_feed 를
+#   **요청 경로 안에서** 돌아 ~8초가 걸린다(실측 8.3~8.6초, 최대 29.6초).
+#   트래픽이 성기면 사실상 모든 진입이 "만료 후 첫 요청"이라 유저가 매번 문다.
+#
+# 왜 keepalive 로는 안 되는가(실측):
+#   .github/workflows/keepalive.yml 은 `*/10 * * * *` 로 10분 주기를 선언하지만,
+#   GitHub Actions 무료 스케줄러는 이를 지키지 않는다. 실행 이력 실측(12회):
+#     간격 179 / 192 / 451 / 613 / 224 / 283 / 334 / 595 / 232 / 360 / 740 분
+#   즉 **3~12시간에 한 번**이며 2주 이상 이 상태였다. TTL 을 핑 주기에 맞춰
+#   조정하는 접근(60→600→900) 은 전제가 틀렸다 — TTL 900 배포 후에도 t+14분
+#   샘플에서 8.62초가 그대로 재발했다.
+#
+# 해법: 외부 스케줄러에 의존하지 않고 프로세스 안에서 주기 갱신한다.
+#   _prewarm 과 동일한 데몬 패턴. 요청 경로엔 절대 들어가지 않는다.
+#   TTL(900) 보다 짧은 주기(600)로 돌아 캐시가 콜드로 만료되는 창 자체를 없앤다.
+#   기존 keepalive 는 그대로 둔다 — Render 슬립 해제(깨우기) 역할은 여전히 유효하고,
+#   인스턴스가 잠들면 이 스레드도 같이 죽으므로 깨워줄 무언가가 필요하다.
+#
+# 부수효과(의도): _push_dispatch 는 _build_feed 안에서만 발화한다. 기존에는
+#   실유저 방문에만 의존했으나 이제 10분마다 확실히 발화한다.
+#
+# DART 비용: force=True 1회당 list.json 최대 10콜 + bullet 선추출 최대
+#   _BULLET_PREFETCH_CAP(12)콜. 144회/일 → 최대 3,168콜/일.
+#   bullet 비동기 워머는 별도 _WARM_DAILY_CAP(3000) 서킷브레이커로 이미 상한이 있다.
+#   합산 최악 ~6,200콜/일 = OpenDART 한도 20,000콜/일의 약 31%. 여유 있음.
+_REFRESH_SEC = float(os.getenv("GONGSI_FEED_REFRESH_SEC", "600"))
+_REFRESH_ENABLED = os.getenv("GONGSI_FEED_REFRESH", "1").strip().lower() not in ("0", "false", "no", "")
+
+
+def _feed_refresher():
+    """백그라운드 데몬: _REFRESH_SEC 마다 피드캐시를 선제 갱신한다.
+
+    - 첫 실행 전 한 번 sleep 한다(startup 프리웜과 겹쳐 이중 빌드하지 않기 위해).
+    - _get_feed 내부의 _BUILD_LOCK single-flight 가 유저 요청과의 동시 빌드를 막는다.
+    - 어떤 예외도 스레드를 죽이지 않는다(swallow+print 후 다음 주기 계속).
+    """
+    while True:
+        time.sleep(_REFRESH_SEC)
+        t0 = time.time()
+        try:
+            data = _get_feed(force=True)
+            print(f"[refresh] feed cache 갱신: alerts={data.get('count')} "
+                  f"in {(time.time() - t0) * 1000:.0f}ms")
+        except Exception as e:
+            # 다음 주기에 다시 시도한다. 스레드는 절대 종료시키지 않는다.
+            print(f"[refresh] 실패(무시, 다음 주기 재시도): {type(e).__name__}: {e}")
+
+
 @api.on_event("startup")
 def _startup_prewarm():
     """uvicorn 기동 직후 호출. 프리웜 스레드만 띄우고 즉시 반환(기동 무지연)."""
@@ -675,6 +724,15 @@ def _startup_prewarm():
         return
     threading.Thread(target=_prewarm, name="feed-prewarm", daemon=True).start()
     print("[prewarm] 백그라운드 프리웜 스레드 기동(startup 즉시 반환)")
+
+    # 주기 리프레셔. 프리웜과 독립적으로 띄운다 — 프리웜은 1회성이라 이게 없으면
+    # TTL 만료 후 첫 요청이 다시 8초를 문다(실측). 데몬이라 기동/종료 무지연.
+    if _REFRESH_ENABLED:
+        threading.Thread(target=_feed_refresher, name="feed-refresher",
+                         daemon=True).start()
+        print(f"[refresh] 주기 리프레셔 기동(주기 {_REFRESH_SEC:g}s, TTL {_FEED_TTL:g}s)")
+    else:
+        print("[refresh] 비활성(GONGSI_FEED_REFRESH=0)")
 
 
 # ---------------- 워치리스트 스냅샷 헬퍼 ----------------
