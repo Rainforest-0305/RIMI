@@ -74,7 +74,16 @@ def _json_cached(request: Request, payload, cache_control: str = _READ_CACHE_CC)
 
 # ---------------- 피드 캐시(노트북/DART 유량 배려) ----------------
 _FEED_CACHE = {"ts": 0.0, "data": None}
-_FEED_TTL = 60.0  # 초. /api/poll 은 이 캐시를 강제 무효화한다.
+# 초. /api/poll 은 이 캐시를 강제 무효화한다.
+# 2026-07-30 60→600 (President 승인). 근거: TTL 60초는 재빌드(~8초, DART 최대 10콜)를
+#   요청경로에서 유발했고, 트래픽이 성기면 사실상 모든 진입이 만료 후 첫 요청이라
+#   유저가 매번 8초를 물었다(실측: 60초 간격 샘플 7회 중 6회 8초대, 1회 29.6초).
+#   keepalive(.github/workflows/keepalive.yml)가 10분마다 /api/today 를 치도록 함께
+#   바꿨으므로, TTL 을 그 주기에 맞춰 600 으로 올리면 캐시가 콜드로 만료되지 않는다.
+#   부수효과(의도): _push_dispatch 는 _build_feed 안에서만 발화하는데, 기존에는
+#   실유저 방문에만 의존했다. 이제 10분마다 확실히 발화한다.
+#   DART 비용: 144회/일 × 최대 10콜 = 1,440콜/일 (한도 20,000콜/일의 7%).
+_FEED_TTL = 600.0
 _MARKET_DAYS = 7       # 최근 며칠 공시를 볼지(피드 창 확대: 3→7일)
 _MARKET_PAGE = 100     # DART 페이지당 최대건(list.json 상한). 페이지네이션으로 전건 수집.
 _MARKET_MAXPAGES = 5   # 시장별 최대 페이지(폭주 방어 상한: 시장당 최대 500건)

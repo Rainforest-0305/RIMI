@@ -1,6 +1,13 @@
 name: keepalive-ping
-# Render 무료 티어 콜드스타트 완화: 10분마다 헬스 엔드포인트 핑(WS-2, President 승인 2026-07-16).
+# Render 무료 티어 콜드스타트 완화: 10분마다 핑(WS-2, President 승인 2026-07-16).
 # GitHub Actions cron 은 수 분 지연될 수 있으나 Render 슬립 임계(15분 무접속)보다 짧아 충분.
+#
+# 2026-07-30 (President 승인) 핑 대상을 /api/health → /api/today 로 변경.
+#   /api/health 는 피드를 재빌드하지 않아 슬립만 막고 캐시는 식은 채로 뒀다.
+#   그 결과 (1) 실유저가 만료 후 첫 진입에서 매번 ~8초를 물었고
+#         (2) _push_dispatch 가 _build_feed 안에서만 돌아 웹푸시가 실유저 방문에만 의존했다.
+#   /api/today 를 치면 10분마다 피드가 갱신돼 둘 다 해소된다. app.py _FEED_TTL=600 과 짝.
+#   타임아웃은 30→60초: 재빌드가 보통 ~8초, 실측 최대 29.6초였다(30초면 잘릴 수 있음).
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -11,8 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: ping health endpoint
+      - name: ping feed endpoint (warms cache + fires push)
+        run: |
+          out=$(curl -s -o /dev/null -w "%{http_code} %{time_total}s" -m 60 https://rimi-s76t.onrender.com/api/today || true)
+          echo "today=$out"
+          # 콜드스타트 중 5xx/타임아웃이어도 실패로 처리하지 않음(깨우는 것 자체가 목적)
+      - name: ping health endpoint (observability only)
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 https://rimi-s76t.onrender.com/api/health || true)
           echo "health=$code"
-          # 콜드스타트 중 5xx/타임아웃이어도 실패로 처리하지 않음(깨우는 것 자체가 목적)
