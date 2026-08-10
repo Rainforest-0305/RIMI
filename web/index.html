@@ -203,6 +203,13 @@
   .soc-btn .txt .t{font-size:13.5px;font-weight:700;color:var(--t1);letter-spacing:-.01em}
   .soc-btn .txt .s{font-size:11.5px;font-weight:600;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+  /* 카카오 애드핏 슬롯(#adSlotToday) 은 «전용 CSS 를 두지 않는다».
+     ★실측으로 확인: display:flex 나 max-width:100% 를 주면 ins 가 flex 아이템/제약 대상이 되어
+       320px 화면에서 300px → 290px 로 «줄어들고» AdFit 이 넣는 고정 300px 크리에이티브가 잘린다.
+       기본 블록 흐름 그대로 둬야 300px 이 보존된다(320px에서 x=15~315, 가로스크롤 없음 — 실측).
+     ins 는 display:none 으로 «시작»하므로 NO-AD/로드실패여도 아무것도 안 그려진다(검은화면 유형 아님).
+     실패 시 onAdFitNoAdToday 가 래퍼를 display:none 처리해 .app 의 flex gap(11px)까지 회수한다. */
+
   .banner{background:var(--up-soft);color:var(--up);border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600}
   .feedmeta{display:none}
   #banner:empty{display:none}
@@ -681,6 +688,21 @@
         <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
         <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
       </div>
+    </div>
+    <!-- ===== 카카오 애드핏 배너(300x250) — 화면당 1개 =====
+         위치 근거: #todayBody(큐레이션+밤사이 공시 목록) 를 «전부 지난 뒤». 목록을 가리지 않는다.
+         ★ renderToday(shell.js)는 #todayBrief·#todayBody «두 컨테이너의 innerHTML만» 덮는다.
+           그 «형제»로 두어야 재렌더에도 슬롯이 파괴되지 않는다 — 목록 «안»에 넣으면 매 갱신마다 소실되고
+           AdFit 공식문서에 SPA 재호출 방법이 «없다». 위치를 옮길 거면 이 제약부터 확인할 것.
+         ★ data-ad-unit 은 AdFit 발급값. 한 글자도 바꾸지 말 것(변경 시 광고요청 실패 — 공식 가이드).
+         ★ 되돌리기: ①이 블록 ②</body> 직전의 «NO-AD 콜백 + ba.min.js» 블록 — «2곳»만 지우면 원복된다.
+           (슬롯 전용 CSS 는 «없다». .soc-btn 아래의 주석 한 덩어리뿐이라 지워도 되고 둬도 된다.) -->
+    <div class="adslot" id="adSlotToday">
+      <ins class="kakao_ad_area" style="display:none;"
+      data-ad-unit = "DAN-A7S2FVHoJYfOb2U2"
+      data-ad-width = "300"
+      data-ad-height = "250"
+      data-ad-onfail = "onAdFitNoAdToday"></ins>
     </div>
     <div class="social" role="group" aria-label="MIRI 소셜 채널">
       <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
@@ -3228,5 +3250,22 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
 </script>
 <!-- 5탭 셸 라우터: 인라인 스크립트 전역(STATE·renderFeed·loadMezz·cardHTML 등)과 같은 스코프 공유(classic script, 모듈 아님). 인라인 스크립트 뒤에 로드. -->
 <script src="/app/shell.js"></script>
+
+<!-- ===== 카카오 애드핏 — NO-AD 폴백 + 스크립트 로더 =====
+     ★ 폴백은 try/catch 가 «아니다». AdFit 공식 API(data-ad-onfail)를 쓴다.
+       「광고 요청이 실패하거나 노출할 광고가 없는 경우에 이를 제어하도록 NO-AD 콜백 함수를 설정할 수 있습니다.
+        Callback 함수 실행시 ins 태그 객체를 첫 번째 인자(arg1)로 전달 받습니다.」 (AdFit Web SDK 공식 가이드)
+     ★ 광고단위를 «2개 이상» 늘릴 거면 콜백 «이름을 달리» 해야 한다(공식 가이드 명시). 현재는 1개.
+     ★ ba.min.js 는 「페이지 맨 하단 </body> 바로 위」가 공식 권장 위치다. -->
+<script type="text/javascript">
+  /* NO-AD 시 슬롯 래퍼를 통째로 언마운트 → .app 의 flex gap(11px)까지 회수.
+     ins 는 애초에 display:none 이라 실패해도 «안 보일» 뿐이고, 이 콜백은 잔여 여백만 정리한다.
+     페이지의 다른 렌더 경로를 건드리지 않는다(광고 실패가 앱을 깨뜨릴 수 없는 구조). */
+  function onAdFitNoAdToday(ins){
+    var box = (ins && ins.closest) ? ins.closest('.adslot') : document.getElementById('adSlotToday');
+    if(box) box.style.display='none';
+  }
+</script>
+<script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 </body>
 </html>
