@@ -144,7 +144,9 @@
       if(_ovItems&&_ovItems.length){
         _ovShown=Math.min(Math.max(OV_CHUNK,savedShown||0),_ovItems.length);
         var w=document.getElementById('ovWrap');
-        if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
+        /* 260811: 15·20번째 슬롯은 #ovWrap «안»에 산다. 여기도 통째로 다시 그리므로 제자리 교체가 필요하다. */
+        if(w){ if(window.MIRI_ADS)MIRI_ADS.setOvHTML(w,_renderOvChunk()); else w.innerHTML=_renderOvChunk();
+               if(typeof attachSegToggle==='function')attachSegToggle(w); }
       }
       try{window.scrollTo(0,savedY);}catch(e){}
     });
@@ -216,11 +218,19 @@
       // _todayLoaded 유지 false → 엔드포인트 가동 시 다음 진입/폴에서 수렴
     }
     var briefHost=document.getElementById('todayBrief');
+    /* 260811 인피드 광고: host.innerHTML=body 는 #todayBody 안의 광고 ins 를 «파괴»한다.
+       MIRI_ADS.setHTML 은 같은 결과를 만들되 광고 노드와 #ovWrap 을 «떼지 않고» 제자리에 둔다.
+       ★왜 굳이: iframe 은 DOM 에서 뗐다 붙이면(같은 부모 안 순서변경 포함) 문서를 «재로드»한다.
+         광고가 깜빡이고 크리에이티브 노출픽셀이 재발화할 수 있다(실측: 재렌더당 safeframe 2회 재요청).
+       ★MIRI_ADS 가 없으면(구캐시·광고 미설정) 그냥 innerHTML 로 폴백 — 화면은 동일하다.
+       #todayBrief 는 광고가 없으므로 종전대로 둔다. */
     if(briefHost){
-      briefHost.innerHTML=brief; host.innerHTML=body;
+      briefHost.innerHTML=brief;
+      if(window.MIRI_ADS)MIRI_ADS.setHTML(host,body); else host.innerHTML=body;
       if(typeof attachSegToggle==='function'){ attachSegToggle(briefHost); attachSegToggle(host); } // 두 컨테이너 모두 후처리
     }else{
-      host.innerHTML=brief+body;   // 구캐시 graceful: #todayBrief 없으면 #todayBody 한 곳에 합쳐 주입(기존 순서)
+      // 구캐시 graceful: #todayBrief 없으면 #todayBody 한 곳에 합쳐 주입(기존 순서)
+      if(window.MIRI_ADS)MIRI_ADS.setHTML(host,brief+body); else host.innerHTML=brief+body;
       if(typeof attachSegToggle==='function')attachSegToggle(host);
     }
   }
@@ -812,7 +822,10 @@
     if(!e.target.closest('[data-ovmore]'))return;
     _ovShown=Math.min(_ovShown+OV_CHUNK,_ovItems.length);
     var w=document.getElementById('ovWrap');
-    if(w){ w.innerHTML=_renderOvChunk(); if(typeof attachSegToggle==='function')attachSegToggle(w); }
+    /* 260811: '더보기'도 #ovWrap 을 통째로 다시 그린다 → 제자리 교체 필요.
+       카드가 늘면 자리 조건을 새로 만족하는 슬롯이 «새로» 꽂힐 수 있다(이미 뜬 광고는 재요청 없음). */
+    if(w){ if(window.MIRI_ADS)MIRI_ADS.setOvHTML(w,_renderOvChunk()); else w.innerHTML=_renderOvChunk();
+           if(typeof attachSegToggle==='function')attachSegToggle(w); }
   });
 
   // 항목5: 밤사이 밴드(data-ov-jump) 탭 → 검색결과 클릭과 동일한 상세 오버레이/시트에 밤사이 공시만 담아 표시.
