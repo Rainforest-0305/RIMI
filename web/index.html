@@ -40,46 +40,6 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="미리 MIRI">
-
-<!-- ============================================================================
-     카카오 애드핏 인피드 광고 — «설정은 여기 한 곳뿐» (260811 President 지시)
-     ============================================================================
-     ★광고단위 ID 는 애드핏 콘솔 발급값이다. 아래 unit 4개가 «유일한» 정의처.
-       지금 값은 «자리표시자»다 — 실제 DAN-… 값을 받으면 이 4줄만 갈아끼운다.
-     ★자리표시자 상태에서는 엔진이 스스로 «작동을 멈춘다»(아래 PLACEHOLDER 가드).
-       가짜 ID 로 애드핏에 요청이 나가는 사고를 원천 차단한다.
-
-     ── 왜 «4개»인가 (임의 수치 아님. 둘 다 상한이 4다) ──────────────────────
-     ① AdFit 운영정책: 「"회사"의 광고가 한 페이지 당 4개를 초과하여 게재되어 있는 경우」= 위반
-     ② SDK(ba.min.js v4.41.0) 실코드: maxAdUnitCount = 4
-        (초과 시 콘솔 경고 「광고 data-ad-unit 은 페이지 당 4 개만 가능합니다.」+ 카카오로 에러 전송)
-     → 카드 30장에 「5개 주기」면 슬롯 6개가 필요하지만 «4개가 천장»이다. 5·10·15·20 에서 끊는다.
-
-     ── 왜 unit 을 «4개 다» 따로 발급받아야 하나 ────────────────────────────
-     같은 unit 을 한 페이지에 두 번 쓰면 SDK 가 «예외를 던진다».
-       checkDuplicatedAdUnit(): allowDuplicatedAdUnit 이 true 가 아니면 throw "AD unit is not unique"
-       allowDuplicatedAdUnit 은 kakao.com·daum.net 에서만 true → mirialert.com 은 false
-     실측(같은 unit ins 3개 동시 배치): 1번만 렌더, 2·3번은 경고 후 NO-AD 콜백 발화, HTTP 429 동반.
-
-     ── onfail 콜백 «이름이 전부 달라야» 한다 ───────────────────────────────
-     공식 가이드: 「한 페이지 내 2개 이상의 광고단위 설치 시 Callback 메서드 명을 달리 해야 합니다.」
-     ============================================================================ -->
-<script type="text/javascript">
-window.MIRI_AD_CONFIG = {
-  /* 카드 몇 장마다 광고를 끼울지. 5 = 5·10·15·20 번째 카드 «뒤» */
-  every: 5,
-  /* ★규격 근거는 </body> 직전 MIRI_ADS 블록의 「규격 선정」 주석 참조.
-     300x250 을 쓰지 않은 이유·320x100 을 고른 이유가 실측과 함께 적혀 있다.
-     ★단위 발급 시 이 width/height 와 «같은 규격»으로 발급해야 한다. 다르면 광고가 안 채워진다. */
-  width: 320, height: 100,
-  units: [
-    /* 5번째 카드 뒤  */ { unit: 'DAN-PLACEHOLDER-1', onfail: 'onAdFitNoAdFeed1' },
-    /* 10번째 카드 뒤 */ { unit: 'DAN-PLACEHOLDER-2', onfail: 'onAdFitNoAdFeed2' },
-    /* 15번째 카드 뒤 */ { unit: 'DAN-PLACEHOLDER-3', onfail: 'onAdFitNoAdFeed3' },
-    /* 20번째 카드 뒤 */ { unit: 'DAN-PLACEHOLDER-4', onfail: 'onAdFitNoAdFeed4' }
-  ]
-};
-</script>
 <style>
   :root{
     --bg:#f1f4f7; --card:#ffffff; --card-2:#f4f7fa;
@@ -243,21 +203,12 @@ window.MIRI_AD_CONFIG = {
   .soc-btn .txt .t{font-size:13.5px;font-weight:700;color:var(--t1);letter-spacing:-.01em}
   .soc-btn .txt .s{font-size:11.5px;font-weight:600;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-  /* ===== 카카오 애드핏 인피드 슬롯(.adslot) =====
-     ★래퍼에 «폭을 제약하는 CSS 를 절대 두지 마라».
-       display:flex 나 max-width:100% 를 주면 ins 가 flex 아이템/제약 대상이 되어
-       320px 화면에서 고정폭 크리에이티브가 «줄어들고 잘린다»(구 300x250 시절 실측).
-     text-align:center 만 예외로 허용한다 — AdFit 은 렌더 성공 시 ins 를 display:inline-block 으로
-       바꾸므로(실측) 이 한 줄이 «폭을 건드리지 않고» 가운데 정렬만 시킨다.
-       (좌측정렬로 두면 390px 화면에서 오른쪽에 40px 빈칸이 남아 깨져 보인다.)
+  /* 카카오 애드핏 슬롯(#adSlotToday) 은 «전용 CSS 를 두지 않는다».
+     ★실측으로 확인: display:flex 나 max-width:100% 를 주면 ins 가 flex 아이템/제약 대상이 되어
+       320px 화면에서 300px → 290px 로 «줄어들고» AdFit 이 넣는 고정 300px 크리에이티브가 잘린다.
+       기본 블록 흐름 그대로 둬야 300px 이 보존된다(320px에서 x=15~315, 가로스크롤 없음 — 실측).
      ins 는 display:none 으로 «시작»하므로 NO-AD/로드실패여도 아무것도 안 그려진다(검은화면 유형 아님).
-     실패 시 onAdFitNoAdFeedN 이 래퍼를 «DOM 에서 제거»해 #todayBody 의 flex gap 까지 회수한다.
-     ─ .adlabel: AdFit 운영정책 「콘텐츠의 UI를 광고와 구분되지 않게 조작하는 모든 행위」 금지 대응.
-       카드 사이에 끼우는 구조라 라벨 없이는 광고가 «콘텐츠 카드처럼» 보인다. 지우려면 이 줄과
-       MIRI_ADS.build() 의 label 생성 3줄만 제거하면 된다. */
-  .adslot{text-align:center}
-  .adslot .adlabel{display:block;text-align:left;padding:0 2px 4px;
-    font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--t4);line-height:1}
+     실패 시 onAdFitNoAdToday 가 래퍼를 display:none 처리해 .app 의 flex gap(11px)까지 회수한다. */
 
   .banner{background:var(--up-soft);color:var(--up);border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600}
   .feedmeta{display:none}
@@ -401,15 +352,12 @@ window.MIRI_AD_CONFIG = {
   .btn2:focus-visible,.chip:focus-visible,.f:focus-visible,.src:focus-visible,.seg button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .disc{font-size:11px;color:var(--t4);text-align:center;padding:8px 14px 2px;line-height:1.6}
   /* 41-d: 운영 주체 표기(애드핏 매체심사 대응). 강조 없이 고지 문구와 «같은 톤» — President 지시(2026-08-11) */
-  /* 41-e: 고지문(.disc.legal) ↔ 사업자정보(.disc.owner) 를 «한 덩어리»로 — President 지시(2026-08-11).
-     ★원인(실측): .disc 는 <p> 라 UA 기본 margin:1em 이 붙는데 font-size:11px 이므로 위아래 «11px».
-       부모 .tabpanel 은 display:flex 라 인접 margin 이 «상쇄되지 않고» flex gap(--sp-3=12px)에 그대로 «더해진다».
-       → 박스 간격 11+12+11 = «34px» (문단 내 줄간격 17.6px 의 1.9배. 남남처럼 떨어져 보인 진짜 이유).
-     ★수정: 이 쌍의 마주보는 margin만 0 → 남는 건 flex gap 12px 하나뿐.
-       대신 owner padding-top 을 2→4 로 올려 «한 문장»으로 읽히는 것은 막는다
-       (실측 글리프 간격 24.6px = 줄간격의 1.40배 — 한 덩어리이되 별개 줄).
-     ★margin 대신 gap 을 줄이지 않는 이유: .tabpanel gap 은 탭 전체 섹션 간격이라 건드리면 화면 전부가 흔들린다.
-     ★.disc 공통값은 손대지 않는다 — 랭킹탭/캘린더(#calDisc)/설정탭/renderToday 주입분 등 5곳이 같은 클래스를 쓴다. */
+  /* 41-e: 고지문↔운영주체 두 줄 간격 34px→12px — President 지시(2026-08-11).
+     원인: .disc 는 <p> 라 UA 기본 margin:1em 이 붙는데 font-size:11px 이므로 위아래 각 11px.
+           부모 .tabpanel 이 display:flex 라 «인접 margin 이 상쇄되지 않고» flex gap(12px)에 그대로
+           더해진다 → 11+12+11 = 34px. 줄간격(17.6px)의 1.9배라 두 줄이 남남처럼 보였다.
+     조치: 두 줄이 «마주보는» margin 만 0. 남는 간격은 flex gap 12px 하나.
+     ★.disc 공통값은 건드리지 않는다 — 랭킹탭·#calDisc·설정탭·renderToday 주입분 등 5곳이 공유한다. */
   .disc.legal{margin-bottom:0}
   .disc.owner{padding-top:4px;padding-bottom:6px;margin-top:0}
 
@@ -750,11 +698,21 @@ window.MIRI_AD_CONFIG = {
         <div class="skcard"><div class="sk-row"><span class="sk-b a"></span><span class="sk-b b"></span><span class="sk-b c"></span></div><div class="sk-b sk-ttl"></div><div class="sk-b sk-f1"></div><div class="sk-b sk-f2"></div><div class="sk-b sk-imp"></div></div>
       </div>
     </div>
-    <!-- ===== 카카오 애드핏 =====
-         260811 President 지시로 «하단 1개» → «인피드 4개»(카드 5·10·15·20 뒤)로 교체됐다.
-         하단 고정 슬롯(#adSlotToday)은 «제거». 슬롯은 이제 정적 마크업이 아니라
-         MIRI_ADS 엔진(</body> 직전 블록)이 renderToday 직후에 «DOM 노드로» 꽂는다.
-         광고단위 ID·규격·주기는 전부 <head> 의 MIRI_AD_CONFIG 한 곳에만 있다. -->
+    <!-- ===== 카카오 애드핏 배너(300x250) — 화면당 1개 =====
+         위치 근거: #todayBody(큐레이션+밤사이 공시 목록) 를 «전부 지난 뒤». 목록을 가리지 않는다.
+         ★ renderToday(shell.js)는 #todayBrief·#todayBody «두 컨테이너의 innerHTML만» 덮는다.
+           그 «형제»로 두어야 재렌더에도 슬롯이 파괴되지 않는다 — 목록 «안»에 넣으면 매 갱신마다 소실되고
+           AdFit 공식문서에 SPA 재호출 방법이 «없다». 위치를 옮길 거면 이 제약부터 확인할 것.
+         ★ data-ad-unit 은 AdFit 발급값. 한 글자도 바꾸지 말 것(변경 시 광고요청 실패 — 공식 가이드).
+         ★ 되돌리기: ①이 블록 ②</body> 직전의 «NO-AD 콜백 + ba.min.js» 블록 — «2곳»만 지우면 원복된다.
+           (슬롯 전용 CSS 는 «없다». .soc-btn 아래의 주석 한 덩어리뿐이라 지워도 되고 둬도 된다.) -->
+    <div class="adslot" id="adSlotToday">
+      <ins class="kakao_ad_area" style="display:none;"
+      data-ad-unit = "DAN-A7S2FVHoJYfOb2U2"
+      data-ad-width = "300"
+      data-ad-height = "250"
+      data-ad-onfail = "onAdFitNoAdToday"></ins>
+    </div>
     <div class="social" role="group" aria-label="MIRI 소셜 채널">
       <a class="soc-btn tg" href="https://t.me/rimismiri" target="_blank" rel="noopener noreferrer"
          aria-label="MIRI 텔레그램 채널 열기 (새 창)">
@@ -767,7 +725,6 @@ window.MIRI_AD_CONFIG = {
         <span class="txt"><span class="t">X(옛 트위터)</span><span class="s">공시 요약과 업데이트 소식</span></span>
       </a>
     </div>
-    <!-- 41-e: .legal 은 «바로 아래 .disc.owner 와 한 덩어리» 표시용 클래스(마주보는 margin 제거). 시각 규칙은 .disc 그대로. -->
     <p class="disc legal">과거 유사공시 표본 통계 · 투자 권유 아님 · 출처 DART</p>
     <!-- 41-d: 운영 주체 표기 — 카카오 애드핏 매체심사 «보류» 대응(2026-08-11 08:23).
          보류 사유 원문: 「해당 매체와 계정의 소유관계가 불명확하거나 서로 관계가 없는 것으로 판단되어
@@ -3323,256 +3280,20 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
 <!-- 5탭 셸 라우터: 인라인 스크립트 전역(STATE·renderFeed·loadMezz·cardHTML 등)과 같은 스코프 공유(classic script, 모듈 아님). 인라인 스크립트 뒤에 로드. -->
 <script src="/app/shell.js"></script>
 
-<!-- ============================================================================
-     카카오 애드핏 인피드 엔진 (MIRI_ADS) — 260811 President 지시
-     ============================================================================
-     ★해결한 문제: renderToday(shell.js)가 #todayBody 의 innerHTML 을 «통째로» 덮는다.
-       목록 «안»에 광고를 두면 갱신 때마다 ins 가 파괴된다. 종전엔 그래서 목록 «밖»(하단)에 뒀다.
-
-     ★실측으로 확인한 세 갈래 (ba.min.js v4.41.0-release 를 실제로 뜯고 실브라우저로 검증):
-       ㉠ 그냥 재주입          → 광고 «안 돌아옴». SDK 에 MutationObserver 가 없다(grep 0건)
-       ㉡ data-ad-preload="Y"  → SDK 의 setInterval(700ms){destroyAllUnused();preload();} 가 «자동으로» 주움
-       ㉢ window.adfit.render(ins) → 즉시 복구됨
-     ★㉡ 을 «쓰지 않는다». SDK 실코드에서 preload 는 레이지로딩을 «끈다»:
-         createAdContextBuilder: `n.preload ? void 0 : getLazyLoadingOptions(id)`
-       인피드는 대부분 화면 밖에서 시작하므로 preload 를 켜면 «안 보이는 광고까지 즉시 요청» →
-       뷰어빌리티(=단가)가 깎인다. 그래서 ㉢ 을 쓴다.
-
-     ★★그런데 ㉢ 조차 «매 갱신마다» 부르면 안 된다. renderToday 는 대표값 세그(평균/중앙/보정)
-       토글마다도 돈다. 매번 재요청하면 HTTP «429»(실측으로 관측함)를 맞고 광고가 죽는다.
-       → 이 엔진은 ins 를 «다시 만들지 않는다». adfit.render() 는 «슬롯당 평생 한 번»만 불린다.
-
-     ★★★그리고 «DOM 에서 떼었다 붙이는 것»조차 안 된다 (1차 구현을 이것 때문에 버렸다).
-       HTML 명세상 <iframe> 은 «문서에 삽입될 때» 문서를 다시 로드한다. 광고 크리에이티브는
-       iframe(safeframe.html) 안에 들어 있으므로, 보관함으로 대피시켰다 되꽂으면
-       «같은 노드인데도» 크리에이티브가 재로드된다. 같은 부모 안에서 순서만 바꿔도 마찬가지다
-       (insertBefore = remove + insert).
-       실측: 대피/복귀 방식은 재렌더 1회당 safeframe.html 을 «2회» 재요청했다(대피 1 + 복귀 1).
-       결과 → ① 광고가 깜빡인다 ② 크리에이티브 자체 노출픽셀이 재발화할 수 있다(부정 노출 위험).
-       ※ 부모측 SDK 는 재요청하지 않았다(AD-REQUEST 0건). 문제는 «iframe 내부»다.
-       → 그래서 innerHTML 통짜 교체를 «버리고» 제자리 교체(setHTML)로 바꿨다.
-         광고 노드와 #ovWrap 은 «앵커»로 고정하고, 새로 그려진 노드를 그 앞뒤로 끼워 넣는다.
-         광고 노드는 한 번 꽂히면 데이터가 바뀌어 «자리 자체»가 달라지지 않는 한 두 번 다시 안 움직인다.
-
-     ★ NO-AD 는 공식 API(data-ad-onfail). 콜백 «이름 4개가 전부 다르다»(공식 가이드 요구사항).
-     ★ ba.min.js 는 「페이지 맨 하단 </body> 바로 위」가 공식 권장 위치다.
-     ★ 되돌리기: ①<head> 의 MIRI_AD_CONFIG ②이 블록 ③.adslot CSS 2줄
-                 ④shell.js 의 MIRI_ADS 훅 4곳 — 이 4곳만 지우면 광고가 통째로 사라진다.
-
-     ── 규격 선정: 320x100 (300x250 아님) ──────────────────────────────────────
-     AdFit 지원 규격(공식 가이드 원문): 160x600 / 250x250 / 300x250 / 320x100 / 320x50 / 728x90
-       · 728x90·160x600 = 데스크톱 전용 비율. 본문 컬럼이 최대 460px 이라 애초에 못 넣는다.
-       · 300x250·250x250 = «높이 250px». 카드 평균 높이와 맞먹어 5장마다 넣으면 목록이 광고로 끊긴다.
-         4개면 세로 1000px 이 광고다 — 이탈 위험이 가장 큰 선택.
-       · 320x50 = 높이 50px 로 가장 얌전하나 인피드에서 존재감이 없어 단가가 낮다.
-       · 320x100 = 높이 100px. 300x250 의 «40%» 높이로 목록 흐름을 안 끊으면서 배너로서 유효.
-     ★가로 검증(실측): 본문 컬럼은 body padding 15px 좌우 → 320px 화면에서 «290px».
-       320px 크리에이티브는 컬럼보다 30px 넓지만 .adslot{text-align:center} 로 가운데 정렬되어
-       x=0~320 에 정확히 들어앉는다 → 320px 화면 가로스크롤 «0» (아래 검증 참조).
-     ============================================================================ -->
+<!-- ===== 카카오 애드핏 — NO-AD 폴백 + 스크립트 로더 =====
+     ★ 폴백은 try/catch 가 «아니다». AdFit 공식 API(data-ad-onfail)를 쓴다.
+       「광고 요청이 실패하거나 노출할 광고가 없는 경우에 이를 제어하도록 NO-AD 콜백 함수를 설정할 수 있습니다.
+        Callback 함수 실행시 ins 태그 객체를 첫 번째 인자(arg1)로 전달 받습니다.」 (AdFit Web SDK 공식 가이드)
+     ★ 광고단위를 «2개 이상» 늘릴 거면 콜백 «이름을 달리» 해야 한다(공식 가이드 명시). 현재는 1개.
+     ★ ba.min.js 는 「페이지 맨 하단 </body> 바로 위」가 공식 권장 위치다. -->
 <script type="text/javascript">
-(function(){
-  'use strict';
-  var CFG = window.MIRI_AD_CONFIG;
-  if (!CFG || !CFG.units || !CFG.units.length) return;
-
-  /* ★자리표시자 가드 — 실 ID 를 받기 전에는 «아무 것도 하지 않는다».
-     가짜 unit 으로 애드핏에 요청이 나가면 잘못된 광고요청으로 집계된다(공식 가이드 경고). */
-  var LIVE = CFG.units.every(function(u){
-    return u && typeof u.unit === 'string' && u.unit.indexOf('PLACEHOLDER') < 0;
-  });
-
-  var slots = null;      // [{unit,wrap,ins,state}]  state: 'new' | 'live' | 'dead'
-  var waiting = false, tries = 0;
-
-  function build(i){
-    var u = CFG.units[i];
-    var wrap = document.createElement('div');
-    wrap.className = 'adslot infeed';
-    wrap.id = 'adSlotFeed' + (i + 1);
-    var label = document.createElement('span');           // ← 지우려면 이 3줄
-    label.className = 'adlabel';
-    label.textContent = '광고';
-    var ins = document.createElement('ins');
-    ins.className = 'kakao_ad_area';
-    ins.style.display = 'none';
-    ins.setAttribute('data-ad-unit', u.unit);
-    ins.setAttribute('data-ad-width', String(CFG.width));
-    ins.setAttribute('data-ad-height', String(CFG.height));
-    ins.setAttribute('data-ad-onfail', u.onfail);
-    wrap.appendChild(label);
-    wrap.appendChild(ins);
-    return { unit: u.unit, wrap: wrap, ins: ins, state: 'new' };
+  /* NO-AD 시 슬롯 래퍼를 통째로 언마운트 → .app 의 flex gap(11px)까지 회수.
+     ins 는 애초에 display:none 이라 실패해도 «안 보일» 뿐이고, 이 콜백은 잔여 여백만 정리한다.
+     페이지의 다른 렌더 경로를 건드리지 않는다(광고 실패가 앱을 깨뜨릴 수 없는 구조). */
+  function onAdFitNoAdToday(ins){
+    var box = (ins && ins.closest) ? ins.closest('.adslot') : document.getElementById('adSlotToday');
+    if(box) box.style.display='none';
   }
-
-  function init(){
-    if (slots) return slots;
-    slots = [];
-    for (var i = 0; i < CFG.units.length; i++) slots.push(build(i));
-    return slots;
-  }
-
-  function kill(s){
-    s.state = 'dead';
-    if (s.wrap && s.wrap.parentNode) s.wrap.parentNode.removeChild(s.wrap);
-  }
-
-  /* ★429 가드의 실체: state 가 'new' 일 때만 요청한다. 한 번 'live' 가 되면
-     이후로는 노드를 «옮기기만» 하고 adfit.render() 를 두 번 다시 부르지 않는다. */
-  function request(s){
-    if (s.state !== 'new') return;
-    if (!window.adfit || typeof window.adfit.render !== 'function') { waitForSdk(); return; }
-    try { window.adfit.render(s.ins); s.state = 'live'; }
-    catch (e) { kill(s); }        // 중복 unit 등 SDK 예외 → 조용히 접는다(앱은 안 깨진다)
-  }
-
-  /* ba.min.js 는 async 라 첫 renderToday 보다 늦을 수 있다. 12초까지만 기다린다.
-     늦게 온 경우 이미 DOM 에 꽂혀 있는 'new' 슬롯만 요청한다(자리 계산은 다시 안 한다). */
-  function waitForSdk(){
-    if (waiting) return;
-    waiting = true;
-    var t = setInterval(function(){
-      if (window.adfit && typeof window.adfit.render === 'function') {
-        clearInterval(t); waiting = false;
-        for (var i = 0; slots && i < slots.length; i++)
-          if (slots[i].state === 'new' && slots[i].wrap.parentNode) request(slots[i]);
-      } else if (++tries > 40) { clearInterval(t); waiting = false; }
-    }, 300);
-  }
-
-  /* ---------- 제자리 교체 엔진 ---------- */
-
-  function markUnplaced(node){
-    for (var i = 0; slots && i < slots.length; i++)
-      if (slots[i].wrap === node && slots[i].state === 'live') slots[i].state = 'new';
-  }
-
-  /* n 자신과 그 안에 든 .card 개수 */
-  function countCards(n){
-    if (!n || n.nodeType !== 1) return 0;
-    return (n.classList && n.classList.contains('card') ? 1 : 0) + n.querySelectorAll('.card').length;
-  }
-
-  /* ★핵심. host 의 자식을 seq 순서로 만들되 «이미 host 의 자식인 노드는 건드리지 않는다».
-     그 노드들이 앵커가 되고, 새 노드는 앵커 «앞»에 끼워 넣는다 → 앵커는 remove/insert 를
-     한 번도 겪지 않으므로 그 안의 iframe 이 재로드되지 않는다.
-     전제: seq 안의 «기존 자식»들의 상대 순서 = 현재 DOM 상대 순서. (광고 슬롯 순서 → #ovWrap 순서라 항상 성립) */
-  function applySeq(host, seq){
-    var keep = [], i;
-    for (i = 0; i < seq.length; i++) if (seq[i].parentNode === host) keep.push(seq[i]);
-    var kids = [].slice.call(host.childNodes);
-    for (i = 0; i < kids.length; i++) if (keep.indexOf(kids[i]) < 0) {
-      /* ★슬롯이 «화면에서 빠지는» 경우(카드가 줄어 맨 끝 규칙에 걸림) 상태를 new 로 되돌린다.
-         문서 밖에 700ms 이상 있으면 SDK 의 destroyAllUnused() 가 광고 컨텍스트를 회수한다.
-         그 뒤 다시 꽂아도 live 로 남아 있으면 재요청이 안 나가 «영영 빈칸»이 된다. */
-      markUnplaced(kids[i]);
-      host.removeChild(kids[i]);
-    }
-    var anchor = host.firstChild;
-    for (i = 0; i < seq.length; i++) {
-      if (seq[i] === anchor) { anchor = anchor.nextSibling; continue; }   // 앵커 통과 — 손대지 않는다
-      host.insertBefore(seq[i], anchor);
-    }
-  }
-
-  /* 새 노드 목록에 광고를 «카드 순번» 기준으로 끼워 넣은 최종 시퀀스를 만든다.
-     base = 이 컨테이너 앞에 이미 놓인 카드 수. total = 화면 전체 카드 수(맨 끝 배치 금지 판정용). */
-  function weave(newKids, base, total, owner){
-    var seq = [], count = base, i, k;
-    for (i = 0; i < newKids.length; i++) {
-      seq.push(newKids[i]);
-      count += countCards(newKids[i]);
-      for (k = 0; k < slots.length; k++) {
-        var s = slots[k], pos = CFG.every * (k + 1);
-        if (s.state === 'dead') continue;
-        /* ★목록 «맨 끝»에는 안 넣는다 — pos 번째 카드 뒤에 카드가 최소 1장은 더 남아야 한다.
-           카드 5장 미만이면 슬롯 0개, 20장 미만이면 있는 만큼만: 이 한 줄에서 전부 나온다. */
-        if (total <= pos) continue;
-        if (count === pos && owner[k]) seq.push(s.wrap);
-      }
-    }
-    return seq;
-  }
-
-  /* host.innerHTML = html 의 «제자리» 대체. #todayBody 전용. */
-  function setHTML(host, html){
-    if (!LIVE) { host.innerHTML = html; return; }
-    init();
-    var tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    var newKids = [].slice.call(tmp.childNodes);
-
-    /* #ovWrap 은 «노드를 재사용»한다 — 새로 만들면 그 안의 광고 iframe 이 통째로 날아간다. */
-    var oldOv = null, j;
-    for (j = 0; j < host.children.length; j++) if (host.children[j].id === 'ovWrap') oldOv = host.children[j];
-    var newOv = null;
-    for (j = 0; j < newKids.length; j++) if (newKids[j].id === 'ovWrap') newOv = newKids[j];
-
-    var curation = 0;   // #ovWrap 앞에 오는 카드 수
-    for (j = 0; j < newKids.length; j++) { if (newKids[j] === newOv) break; curation += countCards(newKids[j]); }
-    var total = curation + (newOv ? countCards(newOv) : 0);
-    for (; j < newKids.length; j++) if (newKids[j] !== newOv) total += countCards(newKids[j]);
-
-    /* 슬롯 귀속: pos 번째 카드가 큐레이션 구간이면 #todayBody, 밤사이 구간이면 #ovWrap */
-    var ownTop = [], ownOv = [], k;
-    for (k = 0; k < slots.length; k++) {
-      var pos = CFG.every * (k + 1);
-      ownOv[k]  = !!newOv && pos > curation;
-      ownTop[k] = !ownOv[k];
-    }
-
-    if (oldOv && newOv) {                        // 기존 #ovWrap 을 살려서 내용만 교체
-      applySeq(oldOv, weave([].slice.call(newOv.childNodes), curation, total, ownOv));
-      newKids[newKids.indexOf(newOv)] = oldOv;
-    } else if (newOv) {                          // 최초 렌더: 새 #ovWrap 안에 바로 짜 넣는다
-      applySeq(newOv, weave([].slice.call(newOv.childNodes), curation, total, ownOv));
-    }
-
-    applySeq(host, weave(newKids, 0, total, ownTop));
-    requestPlaced();
-  }
-
-  /* #ovWrap 만 다시 그리는 경로(더보기 / 자동갱신)용. */
-  function setOvHTML(ov, html){
-    if (!LIVE) { ov.innerHTML = html; return; }
-    init();
-    var host = document.getElementById('todayBody') || ov.parentNode;
-    var base = 0, n = host.firstChild;           // #ovWrap 앞에 놓인 카드 수를 라이브 DOM 에서 센다
-    while (n) { if (n === ov) break; base += countCards(n); n = n.nextSibling; }
-    var tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    var newKids = [].slice.call(tmp.childNodes);
-    var total = base, k;
-    for (k = 0; k < newKids.length; k++) total += countCards(newKids[k]);
-    var own = [];
-    for (k = 0; k < slots.length; k++) own[k] = (CFG.every * (k + 1)) > base;
-    applySeq(ov, weave(newKids, base, total, own));
-    requestPlaced();
-  }
-
-  /* DOM 에 «새로» 꽂힌 슬롯만 실제 광고 요청. 이미 live 면 아무 일도 안 한다(=429 가드). */
-  function requestPlaced(){
-    for (var i = 0; i < slots.length; i++)
-      if (slots[i].state === 'new' && slots[i].wrap.parentNode) request(slots[i]);
-  }
-
-  window.MIRI_ADS = { setHTML: setHTML, setOvHTML: setOvHTML,
-                      _slots: function(){ return slots; }, live: LIVE };
-
-  /* NO-AD 콜백 4개 — «이름이 전부 다르다»(공식 가이드: 2개 이상이면 콜백명을 달리할 것).
-     ins 는 애초에 display:none 이라 실패해도 «안 보일» 뿐이고, 콜백은 잔여 여백만 정리한다.
-     광고 실패가 앱 렌더 경로를 건드릴 수 없는 구조는 그대로 유지된다. */
-  function noad(i){
-    return function(){
-      var s = slots && slots[i];
-      if (s) kill(s);
-    };
-  }
-  window.onAdFitNoAdFeed1 = noad(0);
-  window.onAdFitNoAdFeed2 = noad(1);
-  window.onAdFitNoAdFeed3 = noad(2);
-  window.onAdFitNoAdFeed4 = noad(3);
-})();
 </script>
 <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 </body>
