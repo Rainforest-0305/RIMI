@@ -1,7 +1,11 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v41';   // v40→v41: 「새 공시 N건 보기」가 관심탭 이동 → 밤사이와 «같은 시트»로(President 지시).
+const CACHE = 'miri-v43';   // v42→v43: ★숨은 탭 NO-AD 가드 — 설치 PWA 콜드런치가 시작탭을 적용해 #p-today 가 숨은 채
+                            //          시작하면 AdFit 이 "Cannot visible ad on screen" 으로 NO-AD 를 부르고, 종전 콜백이 슬롯을 «영구 제거»했다.
+                            //          → 숨은 탭에서 온 NO-AD 는 제거하지 않고 보류했다가 탭이 보이면 재요청. + 진단 줄(AD_DIAG) 유지.
+                            //          규명 끝나면 AD_DIAG=false + 진단 블록·#adDiag 제거하고 다시 범프할 것.
+                            // v40→v41: 「새 공시 N건 보기」가 관심탭 이동 → 밤사이와 «같은 시트»로(President 지시).
                             //          + 가로스크롤 원인 2건(공백없는 긴 공시제목 keep-all / 글자크기 lg 의 zoom×고정폭 광고) 수정.
                             // v39→v40: 광고 4개 배치 — 최상단 띠 320x50 + 인피드 300x250(카드7)·320x100(카드14)·300x250(카드21).
                             //   하단 고정광고 제거. 페이지당 4개 상한(운영정책·SDK 둘 다) 정확히 충족 — President 최종안(2026-08-11).

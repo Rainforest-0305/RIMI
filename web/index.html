@@ -75,6 +75,27 @@
      4개 = onAdFitNoAdTop / onAdFitNoAdFeed1 / onAdFitNoAdFeed2 / onAdFitNoAdFeed3
      ============================================================================ -->
 <script type="text/javascript">
+/* ★★임시 진단 스위치 — 원인 규명용. 규명 끝나면 false 로 바꾸거나 이 줄과
+   </body> 직전의 «AD_DIAG 블록», 그리고 #adDiag 마크업 한 줄만 지우면 완전히 사라진다.
+   광고 배선·배치·ID 에는 «일절 관여하지 않는다»(읽기만 한다). */
+window.AD_DIAG = true;
+
+/* 광고 요청 수를 세려면 SDK 보다 «먼저» 관측을 걸어야 한다. */
+(function(){
+  if(!window.AD_DIAG) return;
+  window.__adDiag = { req:0, sdkJs:'pending', onfail:[], t0:Date.now() };
+  try{
+    var po = new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){
+        var u = e.name || '';
+        if(/ba\.min\.js/.test(u)) window.__adDiag.sdkJs = (e.transferSize===0 && e.decodedBodySize===0) ? 'cache?' : 'ok';
+        if(/display\.ad\.daum|adfit|kaat\.ds\.kakao|safeframe\.html/.test(u)) window.__adDiag.req++;
+      });
+    });
+    po.observe({ type:'resource', buffered:true });
+  }catch(e){ window.__adDiag.sdkJs = 'po-fail'; }
+})();
+
 window.MIRI_AD_CONFIG = {
   /* 카드 몇 장마다 인피드 광고를 끼울지. 7 = 7·14·21 번째 카드 «뒤» */
   every: 7,
@@ -804,6 +825,8 @@ window.MIRI_AD_CONFIG = {
       data-ad-height = "50"
       data-ad-onfail = "onAdFitNoAdTop"></ins>
     </div>
+    <!-- ★임시 진단 줄(AD_DIAG). 원인 규명 끝나면 이 한 줄 삭제. -->
+    <p class="disc" id="adDiag" style="display:none;text-align:left;word-break:break-all"></p>
     <div class="search-mount"></div>
     <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
     <div id="todayBrief"></div>
@@ -3517,6 +3540,55 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
     if (s.wrap && s.wrap.parentNode) s.wrap.parentNode.removeChild(s.wrap);
   }
 
+  /* ============================================================================
+     ★숨은 탭 가드 — 260811 「설치 PWA 에서만 광고 0」 사고의 근본 수정
+     ============================================================================
+     설치 PWA 콜드런치는 applyRoute(shell.js)가 저장 시작탭(miri-starttab)을 적용한다.
+     시작탭이 '오늘'이 아니면 #p-today 가 display:none 인 채로 SDK 부팅 스캔이 돈다.
+     AdFit load() 는 「부모가 안 보이면」 렌더를 건너뛰면서 «NO-AD 콜백을 부른다»
+     (SDK 문자열 "Cannot visible ad on screen").
+     종전 콜백은 그걸 「광고 없음」으로 알아듣고 슬롯을 «DOM 에서 영구 제거»했다.
+     → 나중에 메인 탭을 눌러도 자리가 이미 없어 영영 안 뜬다.
+     ★_isStandalone()이 navigator.standalone 을 보므로 «사파리에서는 구조적으로 재현 불가»다.
+       「브라우저는 되는데 설치 앱만 안 된다」는 증상과 정확히 일치한다.
+     ★NO-AD 의 «의도»는 「이번엔 광고가 없으니 빈 여백을 회수한다」이지
+       「이 자리를 앱 생애 동안 없앤다」가 아니다. 숨은 탭이면 «판정 자체가 무효»다.
+     → 숨은 탭에서 온 NO-AD 는 «제거하지 않고 보류»했다가, 그 탭이 보이면 다시 요청한다.
+       (인피드는 엔진이 재배치하며 스스로 복구되지만 — 실측 확인 — 정적 슬롯엔 그 경로가 없다.) */
+  function hiddenPanelOf(el){
+    var p = (el && el.closest) ? el.closest('.tabpanel') : null;
+    return (p && !p.classList.contains('on')) ? p : null;
+  }
+
+  var pendingStatic = [], visObs = null;
+  function watchPanels(){
+    if (visObs || typeof MutationObserver !== 'function') return;
+    visObs = new MutationObserver(function(){ flushHidden(); });
+    var ps = document.querySelectorAll('.tabpanel');
+    for (var i = 0; i < ps.length; i++) visObs.observe(ps[i], { attributes:true, attributeFilter:['class'] });
+  }
+  /* 탭이 보이게 되면: ①보류된 정적 슬롯 재요청 ②엔진 슬롯 중 아직 안 뜬 것 재요청 */
+  function flushHidden(){
+    for (var i = pendingStatic.length - 1; i >= 0; i--){
+      var el = document.getElementById(pendingStatic[i]);
+      if (!el) { pendingStatic.splice(i, 1); continue; }
+      if (hiddenPanelOf(el)) continue;                       // 아직 숨어 있으면 계속 보류
+      var ins = el.querySelector('ins');
+      pendingStatic.splice(i, 1);
+      if (ins && window.adfit && typeof window.adfit.render === 'function') {
+        try { window.adfit.render(ins); } catch(e){}
+      }
+    }
+    if (slots) requestPlaced();
+  }
+  /* 숨은 탭이라 못 띄운 «정적» 슬롯을 보류 목록에 넣는다(제거하지 않는다). */
+  function holdStatic(box){
+    if (!box || !box.id) return;
+    if (pendingStatic.indexOf(box.id) < 0) pendingStatic.push(box.id);
+    watchPanels();
+  }
+  window.MIRI_ADS_HOLD = function(){ return pendingStatic.slice(); };   // 진단용(읽기 전용)
+
   /* ★429 가드의 실체: state 가 'new' 일 때만 요청한다. 한 번 'live' 가 되면
      이후로는 노드를 «옮기기만» 하고 adfit.render() 를 두 번 다시 부르지 않는다. */
   function request(s){
@@ -3665,7 +3737,12 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
   function noad(i){
     return function(){
       var s = slots && slots[i];
-      if (s) kill(s);
+      if (!s) return;
+      /* ★숨은 탭에서 온 NO-AD 는 «광고 없음»이 아니라 «판정 불가»다. 죽이지 않고 되돌린다.
+         state 를 new 로 두면 탭이 보일 때 requestPlaced() 가 다시 요청한다
+         (슬롯이 화면에서 빠질 때 new 로 되돌리는 기존 markUnplaced 와 같은 계열). */
+      if (hiddenPanelOf(s.wrap)) { s.state = 'new'; watchPanels(); return; }
+      kill(s);
     };
   }
   window.onAdFitNoAdFeed1 = noad(0);   // 카드 7 뒤  300x250
@@ -3678,8 +3755,117 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
      ★이름을 Feed1~3 과 «달리» 둔 것이 공식 가이드 요구사항이다(콜백명 중복 금지). */
   window.onAdFitNoAdTop = function(ins){
     var box = (ins && ins.closest) ? ins.closest('.adslot') : document.getElementById('adSlotTop');
-    if (box && box.parentNode) box.parentNode.removeChild(box);
+    if (!box) return;
+    /* ★숨은 탭이면 «제거하지 않는다» — 위 '숨은 탭 가드' 주석 참조. 보류했다가 보이면 재요청. */
+    if (hiddenPanelOf(box)) { holdStatic(box); return; }
+    if (box.parentNode) box.parentNode.removeChild(box);
   };
+
+  /* 부팅 시점에 이미 숨은 탭일 수 있다. onfail 이 오기 전에도 감시를 걸어 둔다. */
+  watchPanels();
+})();
+</script>
+<!-- ============================================================================
+     ★★임시 진단 블록 (AD_DIAG) — 「설치 PWA 에서만 광고 0」 원인 규명용. 규명 끝나면 통째로 삭제.
+     ============================================================================
+     ★위치가 중요하다: MIRI_ADS 엔진 «뒤»(콜백이 이미 정의돼 있어야 감쌀 수 있다) +
+       ba.min.js «앞»(SDK 가 콜백을 부르기 «전»에 감싸야 호출 여부를 잡는다).
+     ★광고 배선을 바꾸지 않는다 — 콜백을 «감싸서 원본을 그대로 호출»하고 플래그만 남긴다.
+     ★개인정보 미수집: UA 는 브라우저/OS 계열로만 축약한다(버전·기기모델 미기록).
+     ── 지금까지 좁혀진 유력 원인(진단으로 확정할 대상) ────────────────────────
+       설치 PWA 콜드런치는 applyRoute(shell.js)가 저장 시작탭(miri-starttab)을 적용한다.
+       시작탭이 '오늘'이 아니면 #p-today 가 display:none 인 채로 SDK 가 부팅 스캔을 돈다.
+       AdFit load() 는 「부모가 안 보이면」 렌더를 건너뛰고 «NO-AD 콜백을 부른다»
+       (SDK 문자열 "Cannot visible ad on screen") → 정적 슬롯이 DOM 에서 제거되고,
+       SDK 에 재시도 경로가 없어 이후 오늘 탭으로 가도 «영영» 안 뜬다.
+       로컬 재현: starttab=watch → .adslot 0개·광고 0 / starttab 미설정 → 4개 전부 렌더.
+     ============================================================================ -->
+<script type="text/javascript">
+(function(){
+  if(!window.AD_DIAG) return;
+  var D = window.__adDiag || (window.__adDiag = { req:0, sdkJs:'?', onfail:[], t0:Date.now() });
+
+  /* NO-AD 콜백 감싸기 — «원본을 그대로» 호출하고 호출 사실만 기록한다(동작 불변). */
+  ['onAdFitNoAdTop','onAdFitNoAdFeed1','onAdFitNoAdFeed2','onAdFitNoAdFeed3'].forEach(function(n){
+    var orig = window[n];
+    if(typeof orig !== 'function') return;
+    window[n] = function(){ D.onfail.push(n.replace('onAdFitNoAd','')); return orig.apply(this, arguments); };
+  });
+
+  var notif = 'n/a';
+  try{
+    var perm = (typeof Notification !== 'undefined') ? Notification.permission : 'no-API';
+    notif = perm + '/…';
+    if(navigator.permissions && navigator.permissions.query){
+      navigator.permissions.query({name:'notifications'})
+        .then(function(s){ notif = perm + '/' + s.state; })
+        .catch(function(e){ notif = perm + '/throw'; });
+    } else notif = perm + '/no-query';
+  }catch(e){ notif = 'err'; }
+
+  function shortUA(){
+    var u = navigator.userAgent, os = /iPhone|iPad|iPod/.test(u) ? 'iOS'
+      : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Win'
+      : /Mac OS X/.test(u) ? 'macOS' : 'other';
+    var br = /CriOS/.test(u) ? 'Chrome-iOS' : /FxiOS/.test(u) ? 'FF-iOS'
+      : /Edg\//.test(u) ? 'Edge' : /Chrome\//.test(u) ? 'Chrome'
+      : /Safari\//.test(u) ? 'Safari' : 'other';
+    return os + '/' + br;   // 버전·기기모델은 «찍지 않는다»
+  }
+
+  function displayMode(){
+    try{
+      if(matchMedia('(display-mode: standalone)').matches) return 'standalone';
+      if(matchMedia('(display-mode: fullscreen)').matches) return 'fullscreen';
+      if(matchMedia('(display-mode: minimal-ui)').matches) return 'minimal-ui';
+    }catch(e){}
+    return 'browser';
+  }
+
+  function slotState(id){
+    var el = document.getElementById(id);
+    if(!el) return id.replace('adSlot','') + ':DOM없음';
+    var ins = el.querySelector('ins');
+    if(!ins) return id.replace('adSlot','') + ':ins없음';
+    var d = getComputedStyle(ins).display;
+    return id.replace('adSlot','') + ':' + (el.querySelectorAll('iframe').length ? 'IF' : '-') + '/' + d;
+  }
+
+  function render(){
+    var box = document.getElementById('adDiag');
+    if(!box) return;
+    var starttab = '';
+    try{ starttab = localStorage.getItem('miri-starttab') || '(미설정)'; }catch(e){ starttab = 'err'; }
+    var panel = document.querySelector('.tabpanel.on');
+    var pt = document.getElementById('p-today');
+    var eng = window.MIRI_ADS;
+    var slots = eng && eng._slots ? (eng._slots() || []) : null;
+
+    var parts = [
+      'sdk=' + (typeof window.kakaoAdFit),                 // ① SDK 초기화 성공 여부
+      'js=' + D.sdkJs,                                     // ⑦ ba.min.js 로드
+      'req=' + D.req,                                      // ② 광고 요청 건수
+      'mode=' + displayMode() + (navigator.standalone === true ? '+navSA' : ''),   // ③
+      'notif=' + notif,                                    // ④ 봇탐지 4번의 두 입력값
+      'tab=' + (panel ? panel.id.replace('p-','') : '?') + '/start=' + starttab,
+      'today=' + (pt ? getComputedStyle(pt).display : 'none') + '/card=' + document.querySelectorAll('#todayBody .card').length,
+      'eng=' + (eng ? (eng.live ? 'live' : 'off') : 'none') +
+        (slots ? '[' + slots.map(function(s){ return s.state[0] + (s.wrap.parentNode ? '+' : '-'); }).join('') + ']' : ''),
+      [slotState('adSlotTop'), slotState('adSlotFeed1'), slotState('adSlotFeed2'), slotState('adSlotFeed3')].join(' '),   // ⑤
+      'onfail=' + (D.onfail.length ? D.onfail.join(',') : 'none'),   // ⑥
+      'hold=' + (window.MIRI_ADS_HOLD ? (window.MIRI_ADS_HOLD().join(',') || 'none') : 'n/a'),   // 숨은탭 보류분
+      'ua=' + shortUA(),                                   // ⑧
+      't=' + Math.round((Date.now() - D.t0) / 1000) + 's'
+    ];
+    box.textContent = '[AD] ' + parts.join(' · ');
+    box.style.display = 'block';
+  }
+
+  /* 상태가 시간에 따라 변한다(SDK async·엔진 주입·NO-AD). 여러 번 갱신하고 멈춘다. */
+  [400, 1500, 3000, 6000, 10000, 16000, 25000].forEach(function(ms){ setTimeout(render, ms); });
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.id === 'adDiag') render();      // 탭하면 즉시 갱신
+  });
 })();
 </script>
 <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
