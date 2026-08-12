@@ -83,17 +83,80 @@ window.AD_DIAG = true;
 /* 광고 요청 수를 세려면 SDK 보다 «먼저» 관측을 걸어야 한다. */
 (function(){
   if(!window.AD_DIAG) return;
-  window.__adDiag = { req:0, sdkJs:'pending', onfail:[], t0:Date.now() };
+  window.__adDiag = { req:0, reqL:0, sdkJs:'pending', onfail:[], t0:Date.now(),
+                      susp0:undefined, suspAct:'skip' };
   try{
     var po = new PerformanceObserver(function(list){
       list.getEntries().forEach(function(e){
         var u = e.name || '';
         if(/ba\.min\.js/.test(u)) window.__adDiag.sdkJs = (e.transferSize===0 && e.decodedBodySize===0) ? 'cache?' : 'ok';
-        if(/display\.ad\.daum|adfit|kaat\.ds\.kakao|safeframe\.html/.test(u)) window.__adDiag.req++;
+        /* ★260812 수정 — 종전 목록엔 «실제 광고 요청 호스트가 빠져 있었다».
+           애드핏 4.41.0 의 광고 요청은 serv.ds.kakao.com/sdk/banner 로 나간다
+           (실측: Playwright+WebKit 로 mirialert.com 을 열어 슬롯당 1건, 총 4건 확인).
+           그래서 광고가 «정상으로 떠도» req=0 이 찍혔고 — 「요청조차 안 나갔다」로
+           오판하기 딱 좋았다. 신·구를 «따로» 센다:
+             req = 광고 «요청» 수      serv.ds.kakao.com/sdk/banner       (슬롯당 1)
+             L   = 종전 패턴 매치 수
+           ★L 은 「죽은 패턴」이 아니다 — 실측하니 t1.daumcdn.net/kas/static/safeframe.html
+             이 살아 있고 «크리에이티브가 렌더될 때마다» 잡힌다. 즉 사실상 렌더 성공 수다.
+             (display.ad.daum·kaat.ds.kakao 는 현재 안 잡힌다.)
+           → 정상 = req=4/L4.  req>0 인데 L=0 이면 «요청은 갔는데 렌더가 안 된» 것이고,
+             req=0 이면 요청 자체가 막힌 것(예: susp= 확인). 둘을 나눠야 구분이 된다. */
+        if(/serv\.ds\.kakao\.com\/sdk\/banner/.test(u)) window.__adDiag.req++;
+        else if(/display\.ad\.daum|adfit|kaat\.ds\.kakao|safeframe\.html/.test(u)) window.__adDiag.reqL++;
       });
     });
     po.observe({ type:'resource', buffered:true });
   }catch(e){ window.__adDiag.sdkJs = 'po-fail'; }
+})();
+
+/* ============================================================================
+   애드핏 unit «정지(suspend)» 기록 1회 정리 — 2026-08-12
+   ============================================================================
+   ★왜 남의 SDK 저장소를 지우나 (다음 사람이 반드시 묻는다):
+     · 정지 원인이 «매체심사 보류»(2026-08-11)로 추정되고, 그 심사는 «승인»됐다 [추정→확인 필요]
+     · 즉 정지의 «사유가 소멸»했는데 기록만 남아 사용자에게 광고가 영영 안 뜬다
+     · 1회성이고, 서버가 다시 거절하면 다시 정지된다 — 장치를 무력화하지 않는다
+
+   ── 무엇이 있었나 (SDK 원본 ba.min.js 4.41.0-release 실측) ──────────────
+     애드핏 서버가 HTTP 400 + 바디 {retryDelay:초} 를 주면 SDK 가
+       suspend(unitId, Date.now() + retryDelay*1000)
+     을 localStorage['adfit.ba.adUnitSuspendItems'] 에 적는다. retryDelay 에 «상한이 없다».
+     이후 매 요청의 «첫 줄»에서
+       if (!this.adUnitSuspendService.isSuspended(t.adUnit.id)) { ... }
+       throw new Qe("AD unit is suspended", { adUnitId: t.adUnit.id }, !1);
+     로 «네트워크를 타기 전에» 던진다 → 요청 0건 + NO-AD 콜백 즉시 발화.
+     이게 「req=0 인데 onfail 4개 전부 발화」를 만드는 SDK 내 «유일한» 분기다.
+     iOS 홈화면 설치 PWA 는 사파리와 localStorage 파티션이 분리돼 있어
+     PWA 쪽에만 기록이 남는다 → 사파리는 멀쩡한데 설치 앱만 죽는 비대칭이 이걸로 설명된다.
+
+   ★반드시 «1회성»이어야 한다. 매 부팅마다 지우면 SDK 의 정지 장치를 상시 무력화하는
+     것이고 그건 우회다. 서버가 다시 400 을 주면 «다시 정지되는 게 정상»이어야 한다.
+     → 버전 플래그로 잠근다. 다음에 또 필요하면 VER 을 올려라(그때도 1회만 돈다).
+   ★기록이 없으면 아무것도 하지 않는다(플래그만 찍고 끝).
+   ★지우기 «전» 값은 진단 줄(susp0=)에 남는다 — 실제로 그 기록이 있었다는 실측 증거.
+   ★AD_DIAG 와 «독립»이다. 진단 블록을 나중에 지워도 이 블록은 남아야 한다.
+   ============================================================================ */
+(function(){
+  var KEY  = 'adfit.ba.adUnitSuspendItems';   // SDK 상수: h("adfit.ba.") + "adUnitSuspendItems"
+  var FLAG = 'miri-adfitSuspendCleared';
+  var VER  = 'v44';
+  var d = window.__adDiag;                    // AD_DIAG 꺼져 있으면 undefined — 그래도 동작한다
+  try{
+    var raw = localStorage.getItem(KEY);
+    if(d) d.susp0 = raw;                                   // 지우기 «전» 값(증거) — 항상 기록
+    if(localStorage.getItem(FLAG) === VER){                // 이미 1회 수행함 → 두 번 다시 안 지운다
+      if(d) d.suspAct = 'done';
+      return;
+    }
+    if(raw && raw !== '[]'){
+      localStorage.removeItem(KEY);
+      if(d) d.suspAct = 'cleared';
+    }else{
+      if(d) d.suspAct = 'empty';                           // 기록 없음 → 아무것도 하지 않는다
+    }
+    localStorage.setItem(FLAG, VER);                       // 마지막에 잠근다(위가 throw 하면 다음 부팅에 재시도)
+  }catch(e){ if(d) d.suspAct = 'err'; }
 })();
 
 window.MIRI_AD_CONFIG = {
@@ -3831,6 +3894,36 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
     return id.replace('adSlot','') + ':' + (el.querySelectorAll('iframe').length ? 'IF' : '-') + '/' + d;
   }
 
+  /* ── unit «정지(suspend)» 상태 ────────────────────────────────────────────
+     재발하면 «즉시 보이게» 항상 찍는다. 이 앱은 재suspend 가능성이 남아 있다
+     (심사·정책 사유로 서버가 다시 HTTP 400 + retryDelay 를 줄 수 있다).
+     susp=  현재 값 / susp0= 부팅 시 1회 정리 «전» 값 + 취한 조치. */
+  var UNIT_LABEL = { 'DAN-bzCA5HcMRAZRWrpm':'Top' };
+  try{
+    ((window.MIRI_AD_CONFIG && window.MIRI_AD_CONFIG.units) || []).forEach(function(u,i){
+      UNIT_LABEL[u.unit] = 'Feed' + (i+1);
+    });
+  }catch(e){}
+
+  function fmtSusp(raw){
+    if(raw === null || raw === undefined) return 'none';
+    var arr; try{ arr = JSON.parse(raw); }catch(e){ return 'parse-err'; }
+    if(!Array.isArray(arr) || !arr.length) return 'none';
+    var now = Date.now();
+    return arr.length + '개:' + arr.map(function(it){
+      var lab = UNIT_LABEL[it.unitId] || String(it.unitId || '?').slice(-4);
+      var m = Math.round(((it.suspendUntil || 0) - now) / 60000);          // 남은 분
+      if(m <= 0) return lab + '만료';
+      return lab + '+' + (m >= 2880 ? Math.round(m/1440) + 'd'
+                        : m >= 120  ? Math.round(m/60)   + 'h'
+                                    : m + 'm');
+    }).join(',');
+  }
+  function suspNow(){
+    try{ return fmtSusp(localStorage.getItem('adfit.ba.adUnitSuspendItems')); }
+    catch(e){ return 'err'; }
+  }
+
   function render(){
     var box = document.getElementById('adDiag');
     if(!box) return;
@@ -3844,7 +3937,9 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
     var parts = [
       'sdk=' + (typeof window.kakaoAdFit),                 // ① SDK 초기화 성공 여부
       'js=' + D.sdkJs,                                     // ⑦ ba.min.js 로드
-      'req=' + D.req,                                      // ② 광고 요청 건수
+      'req=' + D.req + '/L' + D.reqL,                      // ② 광고 요청 건수(신 serv.ds/구 레거시)
+      'susp=' + suspNow(),                                 // ⑨ 현재 정지 상태(재발 감시)
+      'susp0=' + fmtSusp(D.susp0) + '/' + (D.suspAct || '?'),   // ⑩ 부팅 1회 정리 «전» 값 + 조치
       'mode=' + displayMode() + (navigator.standalone === true ? '+navSA' : ''),   // ③
       'notif=' + notif,                                    // ④ 봇탐지 4번의 두 입력값
       'tab=' + (panel ? panel.id.replace('p-','') : '?') + '/start=' + starttab,

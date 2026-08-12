@@ -1,7 +1,20 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v43';   // v42→v43: ★숨은 탭 NO-AD 가드 — 설치 PWA 콜드런치가 시작탭을 적용해 #p-today 가 숨은 채
+const CACHE = 'miri-v44';   // v43→v44: ★설치 PWA 광고 0 «진짜 원인» 규명 완료 + 수정 3건(2026-08-12).
+                            //          원인 = 애드핏 unit 이 «정지(suspend)» 상태로 localStorage['adfit.ba.adUnitSuspendItems']
+                            //          에 박혀 있었다. SDK(4.41.0)는 요청 «첫 줄»에서 isSuspended 면 네트워크 이전에
+                            //          throw Qe("AD unit is suspended") → 요청 0건 + NO-AD 콜백 즉시 발화. iOS 홈화면 설치
+                            //          PWA 는 사파리와 localStorage 파티션이 분리돼 PWA 쪽에만 기록이 남는다 → 사파리만 정상.
+                            //          ①suspend 기록 «1회» 정리(플래그 miri-adfitSuspendCleared=v44 로 잠금 — 상시 무력화 아님.
+                            //            서버가 다시 400 주면 다시 정지되는 게 정상) ②진단 req 카운터 호스트 수정 —
+                            //            실제 호스트는 serv.ds.kakao.com/sdk/banner 인데 종전 목록은 «아무것도 매치 안 돼»
+                            //            광고가 떠도 req=0 이 찍혔다(오판의 뿌리). 신/구를 따로 센다 ③진단 줄에 susp= 상시 표시.
+                            //          ★기각된 가설 2건(재현 실험으로 죽였다): UA 에서 Safari//Version/ 토큰이 빠져서가 «아니다»
+                            //            (PWA UA 로도 광고 4개 정상). v43 의 「숨은 탭」도 «아니다» — SDK 의 그 경로는 onfail 을
+                            //            아예 안 부르거나(load() 의 부모 비가시 스킵) 응답 이후라 req>0 이다. 증상과 불일치.
+                            //          index.html 이 SHELL precache 라 bump 필수.
+                            // (이전) v42→v43: ★숨은 탭 NO-AD 가드 — 설치 PWA 콜드런치가 시작탭을 적용해 #p-today 가 숨은 채
                             //          시작하면 AdFit 이 "Cannot visible ad on screen" 으로 NO-AD 를 부르고, 종전 콜백이 슬롯을 «영구 제거»했다.
                             //          → 숨은 탭에서 온 NO-AD 는 제거하지 않고 보류했다가 탭이 보이면 재요청. + 진단 줄(AD_DIAG) 유지.
                             //          규명 끝나면 AD_DIAG=false + 진단 블록·#adDiag 제거하고 다시 범프할 것.
