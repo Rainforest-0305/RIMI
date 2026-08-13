@@ -1,7 +1,27 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v45';   // v44→v45: 메인 탭 상단 개편 3건 + 진단 줄 제거(President 지시 2026-08-14).
+const CACHE = 'miri-v46';   // v45→v46: President «실기기» 확인 후 지적 2건 반영(2026-08-14 오후).
+                            //   원문 「최상단 얇은 띠 배너만 검색창 위쪽으로 올려줘. 그리고 광고와의 간격을 좁혀서 여백을 줄여줘.」
+                            //   ①#adSlotTop(320x50) 을 「밤사이 밴드 아래」 → 「헤더 아래 / 검색줄 위」로 되돌림.
+                            //     ★개수 무변경 4개(순증 아님). 정책상으로도 이쪽이 낫다 — 맞닿는 조작요소가
+                            //       구 자리 2개(위=밤사이 밴드 버튼 / 아래=카드 ★·DART·공유) → 새 자리 «1개»(아래=검색입력).
+                            //       위쪽은 헤더(로고·태그라인·실시간 배지)라 탭 대상이 없다. v40~v44 의 원래 자리와 동일.
+                            //     ★「최상단」이 아니라 «검색창 위»다 — 헤더와 검색줄 «사이». 헤더 위로 올리지 말 것.
+                            //   ②광고 주변 여백 축소. ★실측해 보니 보이던 빈 공간의 절반 이상이 margin 이 아니라
+                            //     «인라인 레이아웃 부산물»이었다 — margin 만 줄였으면 President 가 또 지적했을 건이다:
+                            //       · 라벨 위 8px  = .adlabel(inline-block) 줄상자에 .adslot 이 상속한 line-height 1.5 스트럿
+                            //       · 광고 아래 7px = AdFit 이 ins 를 display:inline-block 으로 바꿔(실측) 생기는 baseline 디센더
+                            //     → .adslot{line-height:0} 으로 줄상자를 접어 15px 을 «구조적으로» 제거.
+                            //       .adlabel 은 자기 line-height:1 이 있어 높이 10px 그대로(글자 안 잘림).
+                            //     + .adslot.band 의 위아래 8px 추가여백 제거(20px → .tabpanel gap 12px).
+                            //       그 8px 은 조작요소 2개와 맞닿던 자리의 오탭 완화용이라 자리가 바뀌며 불필요해졌다.
+                            //     ★실측: 광고 블록 81px→66px(-15), 위아래 외부여백 40px→24px(-16). 합계 −31px.
+                            //     ★12px 아래로는 «내리지 않는다» — 검색입력과 붙으면 오탭·정책 소지. 폭/zoom/margin-inline
+                            //       규칙은 무접촉(가로 넘침 계산의 근거라 손대면 위험).
+                            //   광고 4개 유지 · 예비 ID 투입 0 · 진단줄 계속 없음 · suspend 1회 정리 블록 존치(VER='v44' 그대로).
+                            //   index.html·shell.js 가 SHELL precache 라 bump 필수.
+                            // (이전) v44→v45: 메인 탭 상단 개편 3건 + 진단 줄 제거(President 지시 2026-08-14).
                             //   ①대표값(평균/중앙/보정) 선택 UI 를 메인 탭 상단 → «설정 탭»(#setValmode)으로 이설.
                             //     기존 설정 관용구(.set-group/.set-row/.set-seg + data-key) 그대로 재사용. 진실원본은
                             //     여전히 전역 VALMODE + localStorage['miri-valmode2'] 하나. ★setValmode 가 이제

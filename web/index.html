@@ -314,8 +314,8 @@ window.MIRI_AD_CONFIG = {
      ─ .adlabel: AdFit 운영정책 「콘텐츠의 UI를 광고와 구분되지 않게 조작하는 모든 행위」 금지 대응.
        카드 사이에 끼우는 구조라 라벨 없이는 광고가 «콘텐츠 카드처럼» 보인다. 지우려면 이 줄과
        MIRI_ADS.build() 의 label 생성 3줄만 제거하면 된다.
-     ─ .adslot.band: 최상단·최하단 320x50 띠. 조작요소(검색바·베타폼)와 맞닿으므로
-       .tabpanel gap(12px) 위에 8px 을 더해 «20px» 로 벌린다 — 오탭 여지 축소(운영정책 대응). */
+     ─ .adslot.band: 320x50 띠 슬롯 표식. 260814(v46)부터 추가 여백 0 — .tabpanel gap 12px 만 쓴다
+       (President 「여백을 줄여줘」). 아래 규칙 주석에 되돌리는 법과 12px 하한 근거가 있다. */
   /* ★가로 넘침 방지 — «임계 화면폭을 박지 않는다». 슬롯마다 크리에이티브 폭이 다르기 때문이다
        (최상단 320 / 카드7 300 / 카드14 320 / 카드21 300). 미디어쿼리로 하면 규격마다 임계가
        달라져(300→화면 330 미만, 320→화면 350 미만) 규격을 바꿀 때마다 CSS 를 같이 고쳐야 한다.
@@ -345,13 +345,30 @@ window.MIRI_AD_CONFIG = {
          컬럼 < 광고 → 마진 «음수» = 좌우로 «균등하게» 빠져나가 화면폭에 딱 맞음(풀블리드)
        임계 화면폭을 박지 않는다 — 슬롯마다 --adw 가 300/320 으로 달라도 각자 알아서 맞는다.
      ★래퍼 폭 = 크리에이티브 폭이라 ins 가 «줄어들지» 않는다(구 실측의 잘림 사고와 무관). */
-  .adslot{zoom:calc(1 / var(--fs,1));
+  /* ★★★260814(v46) 여백 축소 — President 실기기 지적 「광고와의 간격을 좁혀서 여백을 줄여줘」.
+       실측해 보니 눈에 보이던 빈 공간의 «절반 이상이 CSS 여백이 아니라 인라인 레이아웃 부산물»이었다:
+         ① 라벨 «위» 8px  — .adlabel 이 inline-block 이라 줄상자가 생기고, .adslot 이 물려받은
+            line-height 1.5 의 «스트럿»(상속 폰트 기준 ≈22px)이 14px 짜리 라벨보다 커서 위로 남는다.
+         ② 크리에이티브 «아래» 7px — AdFit 이 렌더 성공 시 ins 를 display:inline-block 으로 바꾼다(실측).
+            inline-block 은 기본 baseline 정렬이라 폰트 «디센더» 공간이 아래에 남는다. 고전적인 함정이다.
+       margin 만 줄이면 이 15px 는 그대로 남는다 → line-height:0 으로 «줄상자 자체»를 접는다.
+       ★.adlabel 은 자기 line-height:1 을 갖고 있어 영향 없다(높이 10px 유지, 글자 안 잘림).
+       ★폭·zoom·margin-inline 규칙은 «1바이트도 안 건드린다» — 가로 넘침 계산의 근거라 손대면 위험하다. */
+  .adslot{zoom:calc(1 / var(--fs,1));line-height:0;
     width:var(--adw,320px);margin-inline:calc((100% - var(--adw,320px)) / 2)}
-  /* 라벨은 «크리에이티브 좌측선»에 맞춘다: 폭 --adw 인 inline-block 이라 광고와 «같이» 가운데 정렬된다. */
+  /* 라벨은 «크리에이티브 좌측선»에 맞춘다: 폭 --adw 인 inline-block 이라 광고와 «같이» 가운데 정렬된다.
+     padding-bottom 4px = 라벨과 크리에이티브의 «최소 분리». 여기는 더 줄이지 않는다 —
+     AdFit 운영정책 「콘텐츠의 UI를 광고와 구분되지 않게 조작하는 모든 행위」 금지 대응이 이 라벨의 존재 이유다. */
   .adslot .adlabel{display:inline-block;width:var(--adw,320px);max-width:100%;
     text-align:left;padding:0 2px 4px;box-sizing:border-box;
     font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--t4);line-height:1}
-  .adslot.band{margin-top:8px;margin-bottom:8px}
+  /* ★.adslot.band 의 «위아래 8px 추가»를 걷어낸다(20px → .tabpanel gap 12px 그대로).
+     그 8px 은 광고가 조작요소 2개와 맞닿던 자리에 있을 때의 «오탭 완화»용이었다. 260814 오후에
+     맞닿는 조작요소가 «1개»(아래=검색입력)인 자리로 되돌아왔으므로 완화가 덜 필요하다.
+     ★0 으로 두되 «규칙은 남긴다» — 다시 벌려야 할 때 여기 한 곳만 고치게 하려는 것이다.
+     ★12px 아래로는 내리지 않는다: 광고를 인접 요소와 «구분»시키는 최소 분리이고,
+       0 이면 검색입력과 붙어 오탭·정책 위반 소지가 생긴다. */
+  .adslot.band{margin-top:0;margin-bottom:0}
 
   .banner{background:var(--up-soft);color:var(--up);border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600}
   .feedmeta{display:none}
@@ -833,13 +850,40 @@ window.MIRI_AD_CONFIG = {
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="메인">
-    <!-- (1) 검색바+↻(항목24) → (2) 신규 CTA → (3) 밤사이 밴드 → (4) 띠광고 320x50 → (5) 큐레이션 -->
+    <!-- (0) 띠광고 320x50 → (1) 검색바+↻(항목24) → (2) 신규 CTA → (3) 밤사이 밴드 → (4) 큐레이션 -->
     <!-- ===== 검색줄 + 새로고침 (President 지시 260814) =====
          새로고침(#btnRefresh)이 «대표값 세그 우측» → «검색 입력줄 우측»으로 이동했다.
          ★#searchWrap 은 «단일 노드»다 — mountSearch(아래 인라인 스크립트)가 활성 탭(오늘/관심/캘린더)의
            .search-mount 로 «옮겨» 재사용한다. 그래서 버튼을 .searchwrap «안»에 넣으면 관심·캘린더 탭까지
            따라간다. 여기서는 .search-mount 의 «형제»로 둔다 → 새로고침은 종전대로 «메인 탭에만» 존재한다
            (기존 계약 유지: 히트영역 34x34 · 색 --t2 · busy 원호 스피너 · aria-label 전부 무변경). -->
+    <!-- ===== 띠 광고 320x50 (DAN-bzCA5HcMRAZRWrpm) — 「검색창 위」 =====
+         ★★개수는 «4개»다. 하나도 더 못 넣는다(운영정책 + SDK maxAdUnitCount=4). 이 슬롯은
+           «순증»이 아니라 자리만 옮겨 다녔다: 헤더아래 → (260814 오전) 밤사이밴드 아래 →
+           (260814 오후, President 실기기 확인) 다시 «헤더 아래 / 검색줄 위».
+         ★★왜 이 자리인가 — 운영정책 「링크, 재생 버튼, 다운로드 버튼, 이전/다음 버튼, 드롭다운 메뉴,
+           네비게이션 바 등을 광고 근처에 배치」 금지 조항 때문이다. 오늘탭 상단은 «전부 조작요소»라
+           어디에 둬도 뭔가와 붙는다. 그래서 «맞닿는 조작요소 수»로 고른다:
+             · 헤더 아래 / 검색줄 위      → 위=헤더(로고·태그라인·실시간 배지, 탭 불가)  아래=검색입력  … «1개»  ← 현재
+             · 밤사이 밴드 / 큐레이션 사이 → 위=밴드 «버튼»(data-ov-jump)  아래=카드(★·DART·공유)      … 2개
+           260814 오전에 대표값 세그가 빠진 자리(2개짜리)로 잠깐 내려갔었고, President 지시로
+           «1개»인 이 자리로 되돌아왔다. 정책상으로도 이쪽이 낫다.
+         ★★★「최상단」이 아니라 «검색창 위»다 — 헤더(로고·실시간 배지)와 검색줄 «사이». 헤더 위로 올리지 말 것.
+         ★「콘텐츠를 덮거나 가리는 영역 금지」 — 문서 흐름 안의 블록이라 무엇도 덮지 않는다.
+         ★첫 화면에 바로 보이므로 레이지로딩이 무의미하다. 정적 마크업이라 SDK 가 부팅 때 바로 요청한다.
+         ★renderToday 는 #todayBrief·#todayBody 만 덮는다. 이 슬롯은 그 «형제»라 재렌더에 안 죽는다
+           (인피드 3개와 달리 제자리 교체 엔진이 필요 없는 이유).
+         ★글자크기 확대(zoom) 대응은 위치와 무관하다: .adslot{zoom:calc(1/var(--fs,1))} 는 «클래스» 규칙이라
+           문서 어디에 있든 걸린다(--adw 는 아래 style 속성이 그대로 들고 온다).
+         ★여백은 CSS 의 .adslot / .adslot.band 규칙이 소유한다 — 여기에 인라인 margin 을 쓰지 마라. -->
+    <div class="adslot band" id="adSlotTop" style="--adw:320px">
+      <span class="adlabel">광고</span>
+      <ins class="kakao_ad_area" style="display:none;"
+      data-ad-unit = "DAN-bzCA5HcMRAZRWrpm"
+      data-ad-width = "320"
+      data-ad-height = "50"
+      data-ad-onfail = "onAdFitNoAdTop"></ins>
+    </div>
     <div class="searchrow">
       <div class="search-mount"></div>
       <!-- President 지시(2026-07-30): 화살표 글리프 회전 폐기(비대칭이라 돌면 흔들려 어지럽다).
@@ -850,31 +894,6 @@ window.MIRI_AD_CONFIG = {
     </div>
     <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
     <div id="todayBrief"></div>
-    <!-- ===== 띠 광고 320x50 (DAN-bzCA5HcMRAZRWrpm) — 260814 «이동»(순증 아님) =====
-         ★★개수는 «4개 그대로»다. 이 슬롯은 원래 «헤더 아래 / 검색바 위»에 있었고, 위치만
-           «밤사이 밴드 아래 / 큐레이션 목록 위»(= 대표값 세그가 있던 자리)로 내려왔다.
-           5번째를 새로 넣으면 페이지당 4개 상한(운영정책 + SDK maxAdUnitCount=4)을 «조용히» 넘는다
-           — SDK 는 warn 만 하고 넘어가므로 위반이 화면에 드러나지 않는다. 그래서 순증이 아니라 이동이다.
-         ★★★알고 있으면서 감수한 것 — 운영정책 「링크, 재생 버튼, … 네비게이션 바 등을 광고 근처에 배치」:
-           구 위치의 맞닿는 조작요소는 «1개»(아래=검색입력)였다. 새 위치는 «2개»다
-             위 = #todayBrief 의 밤사이 밴드 «버튼»(data-ov-jump)
-             아래 = 카드(★ 관심토글 · DART · 공유)
-           구 주석이 최상단을 고른 근거가 바로 이 개수였다. President 지시로 자리를 내줬으므로
-           완화책만 명시한다: .adslot.band 가 위아래로 8px 씩 더해 «12px → 20px»로 벌린다.
-           ★이 판단은 Partner 를 거쳐 President 확인 대상이다(보고서에 명시).
-         ★「콘텐츠를 덮거나 가리는 영역 금지」 — 문서 흐름 안의 블록이라 무엇도 덮지 않는다(무변경).
-         ★renderToday 는 #todayBrief·#todayBody 만 덮는다. 이 슬롯은 여전히 그 «형제»라 재렌더에 안 죽는다
-           (인피드 3개와 달리 제자리 교체 엔진이 필요 없는 이유 — 이동해도 그대로 성립한다).
-         ★글자크기 확대(zoom) 대응은 위치와 무관하다: .adslot{zoom:calc(1/var(--fs,1))} 는 «클래스» 규칙이라
-           문서 어디에 있든 걸린다(--adw 는 아래 style 속성이 그대로 들고 온다). -->
-    <div class="adslot band" id="adSlotTop" style="--adw:320px">
-      <span class="adlabel">광고</span>
-      <ins class="kakao_ad_area" style="display:none;"
-      data-ad-unit = "DAN-bzCA5HcMRAZRWrpm"
-      data-ad-width = "320"
-      data-ad-height = "50"
-      data-ad-onfail = "onAdFitNoAdTop"></ins>
-    </div>
     <div id="todayBody" class="today-body">
       <!-- 41-b: 오늘탭 로딩 스켈레톤(watch .skfeed shimmer 재사용). renderToday가 덮어씀 -->
       <div class="skfeed" aria-hidden="true">
