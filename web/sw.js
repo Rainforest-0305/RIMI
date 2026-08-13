@@ -1,7 +1,30 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v44';   // v43→v44: ★설치 PWA 광고 0 «진짜 원인» 규명 완료 + 수정 3건(2026-08-12).
+const CACHE = 'miri-v45';   // v44→v45: 메인 탭 상단 개편 3건 + 진단 줄 제거(President 지시 2026-08-14).
+                            //   ①대표값(평균/중앙/보정) 선택 UI 를 메인 탭 상단 → «설정 탭»(#setValmode)으로 이설.
+                            //     기존 설정 관용구(.set-group/.set-row/.set-seg + data-key) 그대로 재사용. 진실원본은
+                            //     여전히 전역 VALMODE + localStorage['miri-valmode2'] 하나. ★setValmode 가 이제
+                            //     __miriRenderToday() 를 «조건 없이» 부른다 — 종전엔 「오늘 탭이 활성일 때만」이었는데
+                            //     선택 UI 가 설정 탭으로 간 순간 그 조건은 «영원히 거짓»이 되고, 나중에 메인 탭에 가도
+                            //     loadToday(false) 가 _todayLoaded 가드로 조기 return 해 옛 수치가 그대로 남는다.
+                            //   ②새로고침(#btnRefresh) 을 대표값 세그 우측 → 「종목명·코드 검색」 입력줄 «우측»으로.
+                            //     .searchrow(flex) 안에 .search-mount(flex:1;min-width:0) + 버튼(34px 고정). 버튼은
+                            //     .searchwrap «밖»에 둔다 — #searchWrap 은 단일 노드를 mountSearch 가 탭 사이로 «옮기는»
+                            //     구조라 안에 넣으면 관심·캘린더 탭까지 따라간다(메인 탭 전용 계약 유지).
+                            //   ③비워진 자리(대표값 세그 자리)에 띠 광고 320x50 — ★«순증이 아니라 이동»이다.
+                            //     이미 4개(최상단 320x50 · 카드7 300x250 · 카드14 320x100 · 카드21 300x250)라
+                            //     5번째를 넣으면 페이지당 4개 상한(운영정책 + SDK maxAdUnitCount=4)을 넘는다.
+                            //     SDK 는 warn 만 하고 넘어가 «조용히» 위반되므로 코드로 지켜야 한다. → #adSlotTop 을
+                            //     헤더 아래에서 「밤사이 밴드 아래 / 큐레이션 위」로 내렸다. 총 4개 그대로.
+                            //     ★맞닿는 조작요소가 1개(검색입력) → 2개(밤사이 밴드 버튼 / 카드 ★·DART·공유)로 늘었다.
+                            //       .adslot.band 의 ±8px 로 12px→20px 만 벌려 완화. President 확인 대상.
+                            //   ④진단 줄(AD_DIAG · #adDiag · PerformanceObserver 계측 · NO-AD 콜백 래핑) «전량 삭제».
+                            //     원인 규명 완료 — 우리 코드·계정 문제가 아니다(같은 폰에서 크롬 4개 정상/사파리·PWA 0,
+                            //     요청은 셋 다 4건). ★<head> 의 «정지(suspend) 1회 정리» 블록은 진단과 독립이라 «존치»
+                            //     (VER='v44' 도 그대로 — 올리면 정리가 한 번 더 돌아 정당한 정지까지 지운다).
+                            //   index.html·shell.js 가 SHELL precache 라 bump 필수(안 올리면 구셸 영구 고착).
+                            // (이전) v43→v44: ★설치 PWA 광고 0 «진짜 원인» 규명 완료 + 수정 3건(2026-08-12).
                             //          원인 = 애드핏 unit 이 «정지(suspend)» 상태로 localStorage['adfit.ba.adUnitSuspendItems']
                             //          에 박혀 있었다. SDK(4.41.0)는 요청 «첫 줄»에서 isSuspended 면 네트워크 이전에
                             //          throw Qe("AD unit is suspended") → 요청 0건 + NO-AD 콜백 즉시 발화. iOS 홈화면 설치

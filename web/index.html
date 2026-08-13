@@ -75,40 +75,14 @@
      4개 = onAdFitNoAdTop / onAdFitNoAdFeed1 / onAdFitNoAdFeed2 / onAdFitNoAdFeed3
      ============================================================================ -->
 <script type="text/javascript">
-/* ★★임시 진단 스위치 — 원인 규명용. 규명 끝나면 false 로 바꾸거나 이 줄과
-   </body> 직전의 «AD_DIAG 블록», 그리고 #adDiag 마크업 한 줄만 지우면 완전히 사라진다.
-   광고 배선·배치·ID 에는 «일절 관여하지 않는다»(읽기만 한다). */
-window.AD_DIAG = true;
-
-/* 광고 요청 수를 세려면 SDK 보다 «먼저» 관측을 걸어야 한다. */
-(function(){
-  if(!window.AD_DIAG) return;
-  window.__adDiag = { req:0, reqL:0, sdkJs:'pending', onfail:[], t0:Date.now(),
-                      susp0:undefined, suspAct:'skip' };
-  try{
-    var po = new PerformanceObserver(function(list){
-      list.getEntries().forEach(function(e){
-        var u = e.name || '';
-        if(/ba\.min\.js/.test(u)) window.__adDiag.sdkJs = (e.transferSize===0 && e.decodedBodySize===0) ? 'cache?' : 'ok';
-        /* ★260812 수정 — 종전 목록엔 «실제 광고 요청 호스트가 빠져 있었다».
-           애드핏 4.41.0 의 광고 요청은 serv.ds.kakao.com/sdk/banner 로 나간다
-           (실측: Playwright+WebKit 로 mirialert.com 을 열어 슬롯당 1건, 총 4건 확인).
-           그래서 광고가 «정상으로 떠도» req=0 이 찍혔고 — 「요청조차 안 나갔다」로
-           오판하기 딱 좋았다. 신·구를 «따로» 센다:
-             req = 광고 «요청» 수      serv.ds.kakao.com/sdk/banner       (슬롯당 1)
-             L   = 종전 패턴 매치 수
-           ★L 은 「죽은 패턴」이 아니다 — 실측하니 t1.daumcdn.net/kas/static/safeframe.html
-             이 살아 있고 «크리에이티브가 렌더될 때마다» 잡힌다. 즉 사실상 렌더 성공 수다.
-             (display.ad.daum·kaat.ds.kakao 는 현재 안 잡힌다.)
-           → 정상 = req=4/L4.  req>0 인데 L=0 이면 «요청은 갔는데 렌더가 안 된» 것이고,
-             req=0 이면 요청 자체가 막힌 것(예: susp= 확인). 둘을 나눠야 구분이 된다. */
-        if(/serv\.ds\.kakao\.com\/sdk\/banner/.test(u)) window.__adDiag.req++;
-        else if(/display\.ad\.daum|adfit|kaat\.ds\.kakao|safeframe\.html/.test(u)) window.__adDiag.reqL++;
-      });
-    });
-    po.observe({ type:'resource', buffered:true });
-  }catch(e){ window.__adDiag.sdkJs = 'po-fail'; }
-})();
+/* ============================================================================
+   ※ 260814(v45): 임시 진단 줄(AD_DIAG · #adDiag · PerformanceObserver 계측 ·
+     NO-AD 콜백 래핑)을 «전부 제거»했다. 원인 규명이 끝났기 때문이다.
+     결론(실측): 우리 코드·계정 문제가 «아니다». 같은 폰에서 크롬은 광고 4개 정상
+     렌더(onfail=none), 사파리·설치 PWA 는 0. 요청은 셋 다 4건씩 나간다
+     → 사파리 쪽 설정(콘텐츠 차단기/추적 방지)이 유력. 우리 쪽에서 고칠 대상이 아니다.
+     ★아래 «정지(suspend) 1회 정리» 블록은 진단과 «독립»이라 그대로 남긴다.
+   ============================================================================ */
 
 /* ============================================================================
    애드핏 unit «정지(suspend)» 기록 1회 정리 — 2026-08-12
@@ -134,29 +108,22 @@ window.AD_DIAG = true;
      것이고 그건 우회다. 서버가 다시 400 을 주면 «다시 정지되는 게 정상»이어야 한다.
      → 버전 플래그로 잠근다. 다음에 또 필요하면 VER 을 올려라(그때도 1회만 돈다).
    ★기록이 없으면 아무것도 하지 않는다(플래그만 찍고 끝).
-   ★지우기 «전» 값은 진단 줄(susp0=)에 남는다 — 실제로 그 기록이 있었다는 실측 증거.
-   ★AD_DIAG 와 «독립»이다. 진단 블록을 나중에 지워도 이 블록은 남아야 한다.
+   ★AD_DIAG 와 «독립»이다 — 260814(v45)에 진단 블록을 통째로 지웠지만 이 블록은 «남는다».
+     같이 지워진 것은 진단 줄에 값을 넘기던 `window.__adDiag` 기록 3줄뿐이고(진단 전용),
+     정지 기록을 1회 정리하는 «동작 자체»는 1바이트도 바뀌지 않았다.
+   ★VER 을 «v44 그대로» 둔다. v45 로 올리면 정리가 «한 번 더» 돌아 서버가 정당하게 건
+     정지까지 지워버린다(= 정지 장치 무력화). 다시 정리가 필요할 때만 올린다.
    ============================================================================ */
 (function(){
   var KEY  = 'adfit.ba.adUnitSuspendItems';   // SDK 상수: h("adfit.ba.") + "adUnitSuspendItems"
   var FLAG = 'miri-adfitSuspendCleared';
-  var VER  = 'v44';
-  var d = window.__adDiag;                    // AD_DIAG 꺼져 있으면 undefined — 그래도 동작한다
+  var VER  = 'v44';                           // ★sw CACHE 버전과 «무관». 임의로 올리지 말 것(위 주석)
   try{
     var raw = localStorage.getItem(KEY);
-    if(d) d.susp0 = raw;                                   // 지우기 «전» 값(증거) — 항상 기록
-    if(localStorage.getItem(FLAG) === VER){                // 이미 1회 수행함 → 두 번 다시 안 지운다
-      if(d) d.suspAct = 'done';
-      return;
-    }
-    if(raw && raw !== '[]'){
-      localStorage.removeItem(KEY);
-      if(d) d.suspAct = 'cleared';
-    }else{
-      if(d) d.suspAct = 'empty';                           // 기록 없음 → 아무것도 하지 않는다
-    }
-    localStorage.setItem(FLAG, VER);                       // 마지막에 잠근다(위가 throw 하면 다음 부팅에 재시도)
-  }catch(e){ if(d) d.suspAct = 'err'; }
+    if(localStorage.getItem(FLAG) === VER) return;   // 이미 1회 수행함 → 두 번 다시 안 지운다
+    if(raw && raw !== '[]') localStorage.removeItem(KEY);
+    localStorage.setItem(FLAG, VER);                 // 마지막에 잠근다(위가 throw 하면 다음 부팅에 재시도)
+  }catch(e){}
 })();
 
 window.MIRI_AD_CONFIG = {
@@ -866,20 +833,40 @@ window.MIRI_AD_CONFIG = {
 
   <!-- ============ ① 오늘 (큐레이션 브리핑 · GET /api/today) ============ -->
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="메인">
-    <!-- (0) 최상단 띠광고 → (1) 검색바(항목24) → (2) 신규 CTA → (3) 밤사이 밴드(mobile) → (4) 대표값+↻ → (5) 큐레이션(mobile) -->
-    <!-- ===== 최상단 띠 광고 320x50 (DAN-bzCA5HcMRAZRWrpm) =====
-         ★왜 «헤더 바로 아래 / 검색바 위»인가 — 운영정책 「링크, 재생 버튼, 다운로드 버튼, 이전/다음 버튼,
-           드롭다운 메뉴, 네비게이션 바 등을 광고 근처에 배치」 금지 조항 때문이다.
-           오늘탭 상단은 «전부 조작요소»라 어디에 둬도 뭔가와 붙는다. 그래서 «맞닿는 조작요소 수»로 골랐다:
-             · 헤더 아래 / 검색바 위      → 위=헤더(로고·태그라인·실시간 배지, 탭 불가)  아래=검색입력  … «1개»
-             · 밤사이 배너 / 대표값세그 사이 → 위=밴드 «버튼»(data-ov-jump)  아래=세그탭 3개+새로고침  … 2개
-             · 대표값세그 / 카드목록 사이   → 위=세그탭+새로고침             아래=카드(★·DART·공유)      … 2개
-           → 맞닿는 조작요소가 «1개»뿐인 최상단을 택했다. 그 1개(검색바)와도 .adslot.band 의
-             추가 여백(아래 CSS)으로 12px→20px 로 벌려 오탭 여지를 줄였다.
-         ★「콘텐츠를 덮거나 가리는 영역 금지」 — 이 슬롯은 문서 흐름 안의 블록이라 무엇도 덮지 않는다.
-         ★최상단은 첫 화면에 바로 보이므로 레이지로딩이 무의미하다. 정적 마크업이라 SDK 가 부팅 때 바로 요청한다.
-         ★renderToday 는 #todayBrief·#todayBody 만 덮는다. 이 슬롯은 그 «형제»라 재렌더에 안 죽는다
-           (인피드 2개와 달리 제자리 교체 엔진이 필요 없는 이유). -->
+    <!-- (1) 검색바+↻(항목24) → (2) 신규 CTA → (3) 밤사이 밴드 → (4) 띠광고 320x50 → (5) 큐레이션 -->
+    <!-- ===== 검색줄 + 새로고침 (President 지시 260814) =====
+         새로고침(#btnRefresh)이 «대표값 세그 우측» → «검색 입력줄 우측»으로 이동했다.
+         ★#searchWrap 은 «단일 노드»다 — mountSearch(아래 인라인 스크립트)가 활성 탭(오늘/관심/캘린더)의
+           .search-mount 로 «옮겨» 재사용한다. 그래서 버튼을 .searchwrap «안»에 넣으면 관심·캘린더 탭까지
+           따라간다. 여기서는 .search-mount 의 «형제»로 둔다 → 새로고침은 종전대로 «메인 탭에만» 존재한다
+           (기존 계약 유지: 히트영역 34x34 · 색 --t2 · busy 원호 스피너 · aria-label 전부 무변경). -->
+    <div class="searchrow">
+      <div class="search-mount"></div>
+      <!-- President 지시(2026-07-30): 화살표 글리프 회전 폐기(비대칭이라 돌면 흔들려 어지럽다).
+           유휴 = SVG 원형 화살표(Feather rotate-cw, MIT) / 로딩 = 원호 스피너(.sp).
+           ★ 텍스트 글리프 ↻ 금지 — 폰트마다 다르게 그려진다.
+           ★ 미니앱 TodayScreen.tsx 와 같은 도형·같은 path(24x24, stroke 2, round). -->
+      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/><path d="M23 4v6h-6"/></svg></span><span class="sp" aria-hidden="true"></span></button>
+    </div>
+    <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
+    <div id="todayBrief"></div>
+    <!-- ===== 띠 광고 320x50 (DAN-bzCA5HcMRAZRWrpm) — 260814 «이동»(순증 아님) =====
+         ★★개수는 «4개 그대로»다. 이 슬롯은 원래 «헤더 아래 / 검색바 위»에 있었고, 위치만
+           «밤사이 밴드 아래 / 큐레이션 목록 위»(= 대표값 세그가 있던 자리)로 내려왔다.
+           5번째를 새로 넣으면 페이지당 4개 상한(운영정책 + SDK maxAdUnitCount=4)을 «조용히» 넘는다
+           — SDK 는 warn 만 하고 넘어가므로 위반이 화면에 드러나지 않는다. 그래서 순증이 아니라 이동이다.
+         ★★★알고 있으면서 감수한 것 — 운영정책 「링크, 재생 버튼, … 네비게이션 바 등을 광고 근처에 배치」:
+           구 위치의 맞닿는 조작요소는 «1개»(아래=검색입력)였다. 새 위치는 «2개»다
+             위 = #todayBrief 의 밤사이 밴드 «버튼»(data-ov-jump)
+             아래 = 카드(★ 관심토글 · DART · 공유)
+           구 주석이 최상단을 고른 근거가 바로 이 개수였다. President 지시로 자리를 내줬으므로
+           완화책만 명시한다: .adslot.band 가 위아래로 8px 씩 더해 «12px → 20px»로 벌린다.
+           ★이 판단은 Partner 를 거쳐 President 확인 대상이다(보고서에 명시).
+         ★「콘텐츠를 덮거나 가리는 영역 금지」 — 문서 흐름 안의 블록이라 무엇도 덮지 않는다(무변경).
+         ★renderToday 는 #todayBrief·#todayBody 만 덮는다. 이 슬롯은 여전히 그 «형제»라 재렌더에 안 죽는다
+           (인피드 3개와 달리 제자리 교체 엔진이 필요 없는 이유 — 이동해도 그대로 성립한다).
+         ★글자크기 확대(zoom) 대응은 위치와 무관하다: .adslot{zoom:calc(1/var(--fs,1))} 는 «클래스» 규칙이라
+           문서 어디에 있든 걸린다(--adw 는 아래 style 속성이 그대로 들고 온다). -->
     <div class="adslot band" id="adSlotTop" style="--adw:320px">
       <span class="adlabel">광고</span>
       <ins class="kakao_ad_area" style="display:none;"
@@ -887,24 +874,6 @@ window.MIRI_AD_CONFIG = {
       data-ad-width = "320"
       data-ad-height = "50"
       data-ad-onfail = "onAdFitNoAdTop"></ins>
-    </div>
-    <!-- ★임시 진단 줄(AD_DIAG). 원인 규명 끝나면 이 한 줄 삭제. -->
-    <p class="disc" id="adDiag" style="display:none;text-align:left;word-break:break-all"></p>
-    <div class="search-mount"></div>
-    <button class="newfeedpill" id="newPill" type="button" hidden onclick="onNewPill()">새 공시 <b id="newPillN">0</b>건 보기</button>
-    <div id="todayBrief"></div>
-    <div class="valwrap">
-      <span class="vlab">대표값</span>
-      <div class="valmode" id="valmodeToday" role="tablist" aria-label="대표값 선택">
-        <button role="tab" data-v="avg" aria-selected="false">평균값</button>
-        <button role="tab" data-v="med" aria-selected="false">중앙값</button>
-        <button role="tab" data-v="car" aria-selected="true">보정값</button>
-      </div>
-      <!-- President 지시(2026-07-30): 화살표 글리프 회전 폐기(비대칭이라 돌면 흔들려 어지럽다).
-           유휴 = SVG 원형 화살표(Feather rotate-cw, MIT) / 로딩 = 원호 스피너(.sp).
-           ★ 텍스트 글리프 ↻ 금지 — 폰트마다 다르게 그려진다.
-           ★ 미니앱 TodayScreen.tsx 와 같은 도형·같은 path(24x24, stroke 2, round). -->
-      <button class="miniref" id="btnRefresh" type="button" onclick="refresh()" aria-label="새로고침" title="새로고침"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/><path d="M23 4v6h-6"/></svg></span><span class="sp" aria-hidden="true"></span></button>
     </div>
     <div id="todayBody" class="today-body">
       <!-- 41-b: 오늘탭 로딩 스켈레톤(watch .skfeed shimmer 재사용). renderToday가 덮어씀 -->
@@ -1042,6 +1011,18 @@ window.MIRI_AD_CONFIG = {
       <div class="set-row"><span class="set-lb">표시 밀도</span>
         <div class="set-seg" id="setDensity" data-key="density">
           <button data-v="roomy">넉넉</button><button data-v="md">기본</button><button data-v="compact">촘촘</button></div></div>
+    </div>
+    <!-- 대표값(평균/중앙/보정) — 260814 President 지시로 «메인 탭 상단»에서 여기로 이설.
+         ★상태·저장·기능은 그대로다. 진실원본은 전역 VALMODE + localStorage['miri-valmode2'] 하나뿐이고
+           관심 탭(#valmode)·밤사이 목록 오버레이의 세그와 «같은 값»을 공유한다. 여기서 바꾸면 그쪽도
+           같이 바뀌고(syncValmode), 메인 탭 큐레이션 수치도 즉시 재렌더된다(setValmode → __miriRenderToday).
+         ★기존 설정 항목 관용구 그대로: .set-group/.set-gh/.set-row/.set-lb/.set-seg + data-key.
+           새 스타일·새 컴포넌트를 만들지 않았다(선택 표시도 .set-seg 의 .on 클래스 그대로). -->
+    <div class="set-group">
+      <div class="set-gh">공시 수치</div>
+      <div class="set-row"><span class="set-lb">대표값</span>
+        <div class="set-seg" id="setValmode" data-key="valmode">
+          <button data-v="avg">평균값</button><button data-v="med">중앙값</button><button data-v="car">보정값</button></div></div>
     </div>
     <div class="set-group">
       <div class="set-gh">시작</div>
@@ -1440,6 +1421,14 @@ window.MIRI_AD_CONFIG = {
   /* 각 탭 첫 요소 상단 여백 0(쏠림 방지) */
   .tabpanel>*:first-child{margin-top:0}
   .search-mount:empty{display:none}   /* 항목24: 검색 컴포넌트 미탑재 탭에선 빈 마운트 gap 제거 */
+  /* ===== 검색줄 + 새로고침 한 줄(260814 President 지시) =====
+     새로고침이 대표값 세그 우측 → 검색 입력줄 우측으로 이동. 버튼은 .searchwrap «밖»(형제)이라
+     mountSearch 가 #searchWrap 을 다른 탭으로 옮겨도 따라가지 않는다(메인 탭 전용 유지).
+     ★.search-mount 는 flex:1 + min-width:0 — min-width 를 빼면 입력창 기본 폭(≈176px) 때문에
+       플렉스 아이템이 안 줄어들어 좁은 화면에서 가로로 밀린다.
+     ★버튼 폭은 .miniref 가 이미 34px 고정(flex:none)이라 여기서 다시 정하지 않는다. */
+  .searchrow{display:flex;align-items:center;gap:var(--sp-2)}
+  .searchrow .search-mount{flex:1;min-width:0}
 
   /* ===== 오늘 탭 상단 컨트롤(소형 새로고침 + 신규 필) — 구 거대버튼 대체 ===== */
   .today-ctl{display:flex;align-items:center;gap:8px;padding:0 2px}
@@ -1604,9 +1593,12 @@ function syncSettingsPush(){
 function initSettings(){
   document.querySelectorAll('#p-settings .set-seg').forEach(function(seg){
     const key=seg.dataset.key;
+    /* ★valmode 만 localStorage 를 직접 읽지 않는다 — 진실원본은 이미 부팅 때 읽어 둔 전역 VALMODE 다.
+       (localStorage 를 다시 읽으면 관심 탭에서 바꾼 뒤 설정에 들어왔을 때 두 값이 갈릴 수 있다.) */
     const cur = key==='theme' ? (localStorage.getItem('miri-theme')||'system')
       : key==='font' ? (localStorage.getItem('miri-fontscale')||'md')
       : key==='density' ? (localStorage.getItem('miri-density')||'md')
+      : key==='valmode' ? VALMODE
       : (localStorage.getItem('miri-starttab')||'today');
     seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===cur);});
     seg.addEventListener('click',function(e){
@@ -1617,6 +1609,9 @@ function initSettings(){
       if(key==='font'){ localStorage.setItem('miri-fontscale',v); document.documentElement.setAttribute('data-fs',v); }
       if(key==='density'){ localStorage.setItem('miri-density',v); document.documentElement.setAttribute('data-density',v); }
       if(key==='start'){ localStorage.setItem('miri-starttab',v); }
+      /* 260814: 대표값 이설. 저장(miri-valmode2)·재렌더·다른 세그 동기화는 전부 setValmode 가 한다
+         — 여기서 localStorage 를 직접 쓰지 않는다(저장 경로가 둘로 갈리면 반드시 어긋난다). */
+      if(key==='valmode'){ setValmode(v); }
     });
   });
   const pr=document.getElementById('setPushRow');
@@ -2335,18 +2330,29 @@ function setFilter(f){STATE.filter=f;renderFilter();feedSwap(renderFeed);}
 
 /* ---------- 대표값 3-way 토글(전역) ---------- */
 function syncValmode(){
-  document.querySelectorAll('.valmode button').forEach(b=>   // 관심탭(#valmode)+오늘탭(#valmodeToday) 동시 하이라이트
+  document.querySelectorAll('.valmode button').forEach(b=>   // 관심탭(#valmode)+밤사이 목록 오버레이 세그 동시 하이라이트
     b.setAttribute('aria-selected', String(b.dataset.v===VALMODE)));
+  /* 260814: 대표값 선택 UI 가 설정 탭(#setValmode)으로 이설됐다. 설정 탭은 «다른 관용구»를 쓴다 —
+     .valmode 는 aria-selected, .set-seg 는 .on 클래스로 선택을 표시한다. 진실원본(VALMODE)이
+     하나이므로 여기서 «양쪽 다» 맞춘다. 그래야 관심 탭이나 밤사이 목록에서 바꾼 값이
+     설정 탭에도 반영된다(반대 방향은 initSettings 의 click 핸들러가 setValmode 를 부른다). */
+  const sv=document.getElementById('setValmode');
+  if(sv)sv.querySelectorAll('button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===VALMODE));
 }
 function setValmode(v){
   if(v===VALMODE)return;
   VALMODE=v;localStorage.setItem('miri-valmode2',v);
   syncValmode();feedSwap(renderFeed);   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
-  // 오늘 탭이 활성이면 큐레이션 카드도 새 대표값으로 재렌더(renderToday=shell.js 소유 → 노출 훅 경유).
-  // 주의: __miriActivateTab('today')는 _todayLoaded 가드로 재렌더 안 되고 scrollTo(0,0) 점프만 유발 →
-  //       정식 재렌더 훅(window.__miriRenderToday, mobile 노출요청)만 호출. 없으면 다음 today 로드에 수렴.
-  const pt=document.getElementById('p-today');
-  if(pt&&pt.classList.contains('on')&&typeof window.__miriRenderToday==='function')window.__miriRenderToday();
+  /* 오늘 탭 큐레이션 카드도 새 대표값으로 재렌더(renderToday=shell.js 소유 → 노출 훅 경유).
+     ★260814: 종전엔 «오늘 탭이 활성일 때만» 불렀다. 선택 UI 가 설정 탭으로 옮겨간 지금은
+       바꾸는 순간 오늘 탭이 «항상 비활성»이라 그 조건이면 영원히 안 불린다.
+       그리고 나중에 메인 탭으로 가도 activateTab→loadToday(false) 가 _todayLoaded 가드로
+       조기 return 하므로 «옛 대표값 화면이 그대로 남는다». → 조건 없이 부른다.
+     ★숨은 탭에서 불러도 안전하다(실측 근거):
+       ①renderToday 는 스크롤을 건드리지 않는다 ②배지는 markTodaySeen 이 이미 처리한 값과 동일
+       ③MIRI_ADS.setHTML 은 이미 붙어 있는 광고 노드를 «앵커»로 통과시켜 iframe 을 재로드하지 않고,
+         requestPlaced() 는 state==='new' 인 슬롯만 요청한다. 숨은 탭 NO-AD 는 기존 가드가 보류시킨다. */
+  if(typeof window.__miriRenderToday==='function')window.__miriRenderToday();
 }
 (function(){
   document.querySelectorAll('.valmode').forEach(el=>el.addEventListener('click',e=>{
@@ -3828,141 +3834,10 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
   watchPanels();
 })();
 </script>
-<!-- ============================================================================
-     ★★임시 진단 블록 (AD_DIAG) — 「설치 PWA 에서만 광고 0」 원인 규명용. 규명 끝나면 통째로 삭제.
-     ============================================================================
-     ★위치가 중요하다: MIRI_ADS 엔진 «뒤»(콜백이 이미 정의돼 있어야 감쌀 수 있다) +
-       ba.min.js «앞»(SDK 가 콜백을 부르기 «전»에 감싸야 호출 여부를 잡는다).
-     ★광고 배선을 바꾸지 않는다 — 콜백을 «감싸서 원본을 그대로 호출»하고 플래그만 남긴다.
-     ★개인정보 미수집: UA 는 브라우저/OS 계열로만 축약한다(버전·기기모델 미기록).
-     ── 지금까지 좁혀진 유력 원인(진단으로 확정할 대상) ────────────────────────
-       설치 PWA 콜드런치는 applyRoute(shell.js)가 저장 시작탭(miri-starttab)을 적용한다.
-       시작탭이 '오늘'이 아니면 #p-today 가 display:none 인 채로 SDK 가 부팅 스캔을 돈다.
-       AdFit load() 는 「부모가 안 보이면」 렌더를 건너뛰고 «NO-AD 콜백을 부른다»
-       (SDK 문자열 "Cannot visible ad on screen") → 정적 슬롯이 DOM 에서 제거되고,
-       SDK 에 재시도 경로가 없어 이후 오늘 탭으로 가도 «영영» 안 뜬다.
-       로컬 재현: starttab=watch → .adslot 0개·광고 0 / starttab 미설정 → 4개 전부 렌더.
-     ============================================================================ -->
-<script type="text/javascript">
-(function(){
-  if(!window.AD_DIAG) return;
-  var D = window.__adDiag || (window.__adDiag = { req:0, sdkJs:'?', onfail:[], t0:Date.now() });
-
-  /* NO-AD 콜백 감싸기 — «원본을 그대로» 호출하고 호출 사실만 기록한다(동작 불변). */
-  ['onAdFitNoAdTop','onAdFitNoAdFeed1','onAdFitNoAdFeed2','onAdFitNoAdFeed3'].forEach(function(n){
-    var orig = window[n];
-    if(typeof orig !== 'function') return;
-    window[n] = function(){ D.onfail.push(n.replace('onAdFitNoAd','')); return orig.apply(this, arguments); };
-  });
-
-  var notif = 'n/a';
-  try{
-    var perm = (typeof Notification !== 'undefined') ? Notification.permission : 'no-API';
-    notif = perm + '/…';
-    if(navigator.permissions && navigator.permissions.query){
-      navigator.permissions.query({name:'notifications'})
-        .then(function(s){ notif = perm + '/' + s.state; })
-        .catch(function(e){ notif = perm + '/throw'; });
-    } else notif = perm + '/no-query';
-  }catch(e){ notif = 'err'; }
-
-  function shortUA(){
-    var u = navigator.userAgent, os = /iPhone|iPad|iPod/.test(u) ? 'iOS'
-      : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Win'
-      : /Mac OS X/.test(u) ? 'macOS' : 'other';
-    var br = /CriOS/.test(u) ? 'Chrome-iOS' : /FxiOS/.test(u) ? 'FF-iOS'
-      : /Edg\//.test(u) ? 'Edge' : /Chrome\//.test(u) ? 'Chrome'
-      : /Safari\//.test(u) ? 'Safari' : 'other';
-    return os + '/' + br;   // 버전·기기모델은 «찍지 않는다»
-  }
-
-  function displayMode(){
-    try{
-      if(matchMedia('(display-mode: standalone)').matches) return 'standalone';
-      if(matchMedia('(display-mode: fullscreen)').matches) return 'fullscreen';
-      if(matchMedia('(display-mode: minimal-ui)').matches) return 'minimal-ui';
-    }catch(e){}
-    return 'browser';
-  }
-
-  function slotState(id){
-    var el = document.getElementById(id);
-    if(!el) return id.replace('adSlot','') + ':DOM없음';
-    var ins = el.querySelector('ins');
-    if(!ins) return id.replace('adSlot','') + ':ins없음';
-    var d = getComputedStyle(ins).display;
-    return id.replace('adSlot','') + ':' + (el.querySelectorAll('iframe').length ? 'IF' : '-') + '/' + d;
-  }
-
-  /* ── unit «정지(suspend)» 상태 ────────────────────────────────────────────
-     재발하면 «즉시 보이게» 항상 찍는다. 이 앱은 재suspend 가능성이 남아 있다
-     (심사·정책 사유로 서버가 다시 HTTP 400 + retryDelay 를 줄 수 있다).
-     susp=  현재 값 / susp0= 부팅 시 1회 정리 «전» 값 + 취한 조치. */
-  var UNIT_LABEL = { 'DAN-bzCA5HcMRAZRWrpm':'Top' };
-  try{
-    ((window.MIRI_AD_CONFIG && window.MIRI_AD_CONFIG.units) || []).forEach(function(u,i){
-      UNIT_LABEL[u.unit] = 'Feed' + (i+1);
-    });
-  }catch(e){}
-
-  function fmtSusp(raw){
-    if(raw === null || raw === undefined) return 'none';
-    var arr; try{ arr = JSON.parse(raw); }catch(e){ return 'parse-err'; }
-    if(!Array.isArray(arr) || !arr.length) return 'none';
-    var now = Date.now();
-    return arr.length + '개:' + arr.map(function(it){
-      var lab = UNIT_LABEL[it.unitId] || String(it.unitId || '?').slice(-4);
-      var m = Math.round(((it.suspendUntil || 0) - now) / 60000);          // 남은 분
-      if(m <= 0) return lab + '만료';
-      return lab + '+' + (m >= 2880 ? Math.round(m/1440) + 'd'
-                        : m >= 120  ? Math.round(m/60)   + 'h'
-                                    : m + 'm');
-    }).join(',');
-  }
-  function suspNow(){
-    try{ return fmtSusp(localStorage.getItem('adfit.ba.adUnitSuspendItems')); }
-    catch(e){ return 'err'; }
-  }
-
-  function render(){
-    var box = document.getElementById('adDiag');
-    if(!box) return;
-    var starttab = '';
-    try{ starttab = localStorage.getItem('miri-starttab') || '(미설정)'; }catch(e){ starttab = 'err'; }
-    var panel = document.querySelector('.tabpanel.on');
-    var pt = document.getElementById('p-today');
-    var eng = window.MIRI_ADS;
-    var slots = eng && eng._slots ? (eng._slots() || []) : null;
-
-    var parts = [
-      'sdk=' + (typeof window.kakaoAdFit),                 // ① SDK 초기화 성공 여부
-      'js=' + D.sdkJs,                                     // ⑦ ba.min.js 로드
-      'req=' + D.req + '/L' + D.reqL,                      // ② 광고 요청 건수(신 serv.ds/구 레거시)
-      'susp=' + suspNow(),                                 // ⑨ 현재 정지 상태(재발 감시)
-      'susp0=' + fmtSusp(D.susp0) + '/' + (D.suspAct || '?'),   // ⑩ 부팅 1회 정리 «전» 값 + 조치
-      'mode=' + displayMode() + (navigator.standalone === true ? '+navSA' : ''),   // ③
-      'notif=' + notif,                                    // ④ 봇탐지 4번의 두 입력값
-      'tab=' + (panel ? panel.id.replace('p-','') : '?') + '/start=' + starttab,
-      'today=' + (pt ? getComputedStyle(pt).display : 'none') + '/card=' + document.querySelectorAll('#todayBody .card').length,
-      'eng=' + (eng ? (eng.live ? 'live' : 'off') : 'none') +
-        (slots ? '[' + slots.map(function(s){ return s.state[0] + (s.wrap.parentNode ? '+' : '-'); }).join('') + ']' : ''),
-      [slotState('adSlotTop'), slotState('adSlotFeed1'), slotState('adSlotFeed2'), slotState('adSlotFeed3')].join(' '),   // ⑤
-      'onfail=' + (D.onfail.length ? D.onfail.join(',') : 'none'),   // ⑥
-      'hold=' + (window.MIRI_ADS_HOLD ? (window.MIRI_ADS_HOLD().join(',') || 'none') : 'n/a'),   // 숨은탭 보류분
-      'ua=' + shortUA(),                                   // ⑧
-      't=' + Math.round((Date.now() - D.t0) / 1000) + 's'
-    ];
-    box.textContent = '[AD] ' + parts.join(' · ');
-    box.style.display = 'block';
-  }
-
-  /* 상태가 시간에 따라 변한다(SDK async·엔진 주입·NO-AD). 여러 번 갱신하고 멈춘다. */
-  [400, 1500, 3000, 6000, 10000, 16000, 25000].forEach(function(ms){ setTimeout(render, ms); });
-  document.addEventListener('click', function(e){
-    if(e.target && e.target.id === 'adDiag') render();      // 탭하면 즉시 갱신
-  });
-})();
-</script>
+<!-- ★260814(v45): 임시 진단 블록(AD_DIAG)은 «여기»에 있었다. 원인 규명이 끝나 통째로 삭제했다.
+     결론(실측): 우리 코드·계정 문제가 아니다 — 같은 폰에서 크롬은 광고 4개 정상 렌더(onfail 없음),
+     사파리·설치 PWA 는 0. 요청은 셋 다 4건씩 나갔다 → 사파리 쪽 설정(콘텐츠 차단기/추적 방지)이 유력.
+     ★<head> 의 «정지(suspend) 1회 정리» 블록은 진단과 독립이라 그대로 살아 있다. 지우지 말 것. -->
 <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 </body>
 </html>

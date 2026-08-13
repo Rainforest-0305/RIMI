@@ -168,7 +168,10 @@
     return html;
   }
   /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
-     최종 화면순서 = #todayBrief(밴드) → 정적 대표값세그 → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful. */
+     최종 화면순서 = #todayBrief(밴드) → 띠광고(#adSlotTop) → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful.
+     ★260814: 그 사이에 있던 «정적 대표값 세그»는 설정 탭(#setValmode)으로 이설됐고, 그 자리를
+       띠광고 320x50 이 «이동»해 채웠다(순증 아님 — 페이지당 4개 상한 유지). 둘 다 이 두 컨테이너의
+       «형제»라 여기 주입 로직은 1바이트도 바뀌지 않는다. */
   /* keepState=true면 캐시 재렌더 경로(버그C: window.__miriRenderToday)로, 밤사이 '더보기'
      펼침 상태(_ovShown)를 보존한다. 진짜 새 fetch(loadToday)일 때는 keepState 없이 호출되어
      기존과 동일하게 OV_CHUNK로 리셋된다(새 데이터이므로 이전 펼침 위치가 무의미). */
