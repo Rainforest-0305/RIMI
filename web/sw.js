@@ -1,7 +1,28 @@
 /* 미리(MIRI) service worker — 앱셸 캐시 + 오프라인 폴백.
    전략: 정적 자산은 cache-first, API(/api/*)는 network-only(항상 실시간 공시).
    설치 가능 요건(manifest + fetch 핸들러 + HTTPS/localhost)을 충족한다. */
-const CACHE = 'miri-v46';   // v45→v46: President «실기기» 확인 후 지적 2건 반영(2026-08-14 오후).
+const CACHE = 'miri-v47';   // v46→v47: President 지시 2건(2026-08-14) — 「관심 탭 대푯값 선택도 설정으로 몰아 / 맞춤법 전수 수정해」.
+                            //   ①대푯값 «선택 UI» 를 «설정 탭 한 곳»(#setValmode)만 남기고 전부 제거.
+                            //     지운 곳 2개 = 관심 탭 세그(#valmode) · 밤사이 목록 오버레이 세그(openDetailList).
+                            //     ★둘 다 role=tablist + 클릭→setValmode 인 «선택 UI» 였다(표시 전용 라벨 아님) → 제거 대상.
+                            //     ★같이 지운 «죽은 코드»: .valwrap/.valmode/.vlab CSS 7줄 · 공유 셀렉터 3곳의
+                            //       `.valmode button` 조각 · syncValmode 의 .valmode 루프 · .valmode 클릭 바인딩 IIFE
+                            //       · openDetailList 의 재렌더용 renderList 클로저와 scrollTop 보존
+                            //       · shell.js applyWatchSeg 의 「알림함에서 세그 숨김」(항목55) 블록.
+                            //     ★«살려 둔 것»(여기가 중요하다): 전역 VALMODE · localStorage['miri-valmode2'] ·
+                            //       valPick/VALCAP/VALWORD · setValmode() · syncValmode() · initSettings 의 valmode 분기 ·
+                            //       setValmode 안의 feedSwap(renderFeed) 와 window.__miriRenderToday().
+                            //       = 값 계산과 «설정↔홈 양방향 반영»은 1바이트도 안 건드렸다. 사라진 건 선택 «UI» 뿐.
+                            //     ★localStorage 키 miri-valmode2 «불변» — 바꿨으면 기존 사용자 설정이 통째로 날아간다.
+                            //   ②맞춤법: 사이시옷은 «앞말이 모음으로 끝날 때만» 붙인다. 전부 붙이는 게 아니다.
+                            //     고침  대표(ㅛ)+값 → 대푯값  19건(index.html 14 · shell.js 2 · sw.js 3)
+                            //     그대로 평균(ㄴ)·중앙(ㅇ)·보정(ㅇ)·기본(ㄴ)·입력(ㄱ)·식별(ㄹ)+값 → 과잉교정 0건 실측
+                            //     최댓값·최솟값·근삿값은 web/ 에 «0건»(고칠 대상 없음).
+                            //     ★식별자는 «절대» 안 건드렸다: miri-valmode2 · #setValmode · data-key="valmode" ·
+                            //       VALMODE · track 페이로드 키 valmode.
+                            //   광고 위치·여백은 v46(President 승인분) 무접촉. 광고 4개 · 예비 ID 0 · 진단줄 0 ·
+                            //   suspend 1회 정리 블록 존치(VER='v44').  index.html·shell.js 가 SHELL precache 라 bump 필수.
+                            // (이전) v45→v46: President «실기기» 확인 후 지적 2건 반영(2026-08-14 오후).
                             //   원문 「최상단 얇은 띠 배너만 검색창 위쪽으로 올려줘. 그리고 광고와의 간격을 좁혀서 여백을 줄여줘.」
                             //   ①#adSlotTop(320x50) 을 「밤사이 밴드 아래」 → 「헤더 아래 / 검색줄 위」로 되돌림.
                             //     ★개수 무변경 4개(순증 아님). 정책상으로도 이쪽이 낫다 — 맞닿는 조작요소가
@@ -22,17 +43,17 @@ const CACHE = 'miri-v46';   // v45→v46: President «실기기» 확인 후 지
                             //   광고 4개 유지 · 예비 ID 투입 0 · 진단줄 계속 없음 · suspend 1회 정리 블록 존치(VER='v44' 그대로).
                             //   index.html·shell.js 가 SHELL precache 라 bump 필수.
                             // (이전) v44→v45: 메인 탭 상단 개편 3건 + 진단 줄 제거(President 지시 2026-08-14).
-                            //   ①대표값(평균/중앙/보정) 선택 UI 를 메인 탭 상단 → «설정 탭»(#setValmode)으로 이설.
+                            //   ①대푯값(평균/중앙/보정) 선택 UI 를 메인 탭 상단 → «설정 탭»(#setValmode)으로 이설.
                             //     기존 설정 관용구(.set-group/.set-row/.set-seg + data-key) 그대로 재사용. 진실원본은
                             //     여전히 전역 VALMODE + localStorage['miri-valmode2'] 하나. ★setValmode 가 이제
                             //     __miriRenderToday() 를 «조건 없이» 부른다 — 종전엔 「오늘 탭이 활성일 때만」이었는데
                             //     선택 UI 가 설정 탭으로 간 순간 그 조건은 «영원히 거짓»이 되고, 나중에 메인 탭에 가도
                             //     loadToday(false) 가 _todayLoaded 가드로 조기 return 해 옛 수치가 그대로 남는다.
-                            //   ②새로고침(#btnRefresh) 을 대표값 세그 우측 → 「종목명·코드 검색」 입력줄 «우측»으로.
+                            //   ②새로고침(#btnRefresh) 을 대푯값 세그 우측 → 「종목명·코드 검색」 입력줄 «우측»으로.
                             //     .searchrow(flex) 안에 .search-mount(flex:1;min-width:0) + 버튼(34px 고정). 버튼은
                             //     .searchwrap «밖»에 둔다 — #searchWrap 은 단일 노드를 mountSearch 가 탭 사이로 «옮기는»
                             //     구조라 안에 넣으면 관심·캘린더 탭까지 따라간다(메인 탭 전용 계약 유지).
-                            //   ③비워진 자리(대표값 세그 자리)에 띠 광고 320x50 — ★«순증이 아니라 이동»이다.
+                            //   ③비워진 자리(대푯값 세그 자리)에 띠 광고 320x50 — ★«순증이 아니라 이동»이다.
                             //     이미 4개(최상단 320x50 · 카드7 300x250 · 카드14 320x100 · 카드21 300x250)라
                             //     5번째를 넣으면 페이지당 4개 상한(운영정책 + SDK maxAdUnitCount=4)을 넘는다.
                             //     SDK 는 warn 만 하고 넘어가 «조용히» 위반되므로 코드로 지켜야 한다. → #adSlotTop 을

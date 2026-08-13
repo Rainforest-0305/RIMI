@@ -374,13 +374,13 @@ window.MIRI_AD_CONFIG = {
   .feedmeta{display:none}
   #banner:empty{display:none}
 
-  .valwrap{display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-1)}
-  .valwrap[hidden]{display:none}   /* 항목55: display:flex가 UA hidden 무효화 → 알림함서 대표값 세그 숨김 복원 */
-  .valwrap .vlab{font-size:11.5px;font-weight:700;color:var(--t3);flex:none}
-  .valmode{display:flex;flex:1;background:var(--slate-soft);border-radius:10px;padding:3px;gap:2px}
-  .valmode button{flex:1;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--t3);border:none;background:none;padding:8px 0;border-radius:8px;cursor:pointer;transition:.14s}
-  .valmode button[aria-selected="true"]{background:var(--card);color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-  .valmode button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  /* ★260814(v47): .valwrap / .valmode / .vlab 규칙 «전량 삭제». 대푯값 «선택 UI» 를 설정 탭
+     한 곳(#setValmode, .set-seg 관용구)으로 몰았기 때문이다(President 지시). 이 클래스를 쓰던
+     세 자리(오늘탭 상단 → v45 삭제 / 관심탭 → v47 삭제 / 밤사이 목록 오버레이 → v47 삭제)가
+     전부 사라져 «남은 사용처가 0» 이다. 되살릴 일이 있으면 설정 탭 관용구를 쓰고 이 클래스는
+     부활시키지 마라 — 같은 선택을 두 벌의 CSS 로 표현하던 것이 원래 문제였다.
+     ※ 전역 VALMODE · localStorage['miri-valmode2'] · valPick/VALCAP/VALWORD 는 «그대로 살아 있다».
+        사라진 것은 «선택 UI» 뿐이고 값 자체와 계산 경로는 무접촉이다. */
 
   /* ===== 카드 스택 세로 간격 단일 정의(--stack-gap) =====
      .card 자체에는 margin이 없어 간격이 100% 컨테이너 flex gap에 의존한다.
@@ -774,9 +774,9 @@ window.MIRI_AD_CONFIG = {
 
   /* ---------- 터치 피드백 통일(:active) — 80ms, scale/톤 ---------- */
   .chip,.wl-gtab,.wl-gmanage{transition:transform .09s ease,background-color .15s ease,color .15s ease,box-shadow .15s ease}
-  .f,.valmode button,.seg button,.pushbtn,.scaletog,.cardshare,.sheet-x,.detail-x,.chips-empty .ce-cta{transition:transform .08s ease,background-color .14s ease,color .14s ease,box-shadow .15s ease}
+  .f,.seg button,.pushbtn,.scaletog,.cardshare,.sheet-x,.detail-x,.chips-empty .ce-cta{transition:transform .08s ease,background-color .14s ease,color .14s ease,box-shadow .15s ease}
   .chip:active,.wl-gtab:active,.wl-gmanage:active{transform:scale(.97)}
-  .f:active,.valmode button:active,.seg button:active,.pushbtn:active,.scaletog:active,.cardshare:active,.sheet-x:active,.detail-x:active{transform:scale(.95)}
+  .f:active,.seg button:active,.pushbtn:active,.scaletog:active,.cardshare:active,.sheet-x:active,.detail-x:active{transform:scale(.95)}
   .tk[data-detail]:active{opacity:.6}
 
   /* ---------- 스켈레톤 로딩(shimmer, 다크/라이트 자동) ---------- */
@@ -802,7 +802,7 @@ window.MIRI_AD_CONFIG = {
   @media (prefers-reduced-motion:reduce){
     *{animation:none!important}
     .sheet-panel,.sheet-back,.detail-panel,.detail-back,.feed,.card,.chip,.f,.seg button,
-    .valmode button,.btn2,.star,.soc-btn,.wl-gtab,.wl-gmanage,.scaletog,.cardshare,.sheet-x,.detail-x,
+    .btn2,.star,.soc-btn,.wl-gtab,.wl-gmanage,.scaletog,.cardshare,.sheet-x,.detail-x,
     .cal-ev,.cal-cell,.cal-nav button,.set-sw,.set-sw::after{transition:none!important}
   }
 </style>
@@ -852,7 +852,7 @@ window.MIRI_AD_CONFIG = {
   <section class="tabpanel on" id="p-today" role="tabpanel" aria-label="메인">
     <!-- (0) 띠광고 320x50 → (1) 검색바+↻(항목24) → (2) 신규 CTA → (3) 밤사이 밴드 → (4) 큐레이션 -->
     <!-- ===== 검색줄 + 새로고침 (President 지시 260814) =====
-         새로고침(#btnRefresh)이 «대표값 세그 우측» → «검색 입력줄 우측»으로 이동했다.
+         새로고침(#btnRefresh)이 «대푯값 세그 우측» → «검색 입력줄 우측»으로 이동했다.
          ★#searchWrap 은 «단일 노드»다 — mountSearch(아래 인라인 스크립트)가 활성 탭(오늘/관심/캘린더)의
            .search-mount 로 «옮겨» 재사용한다. 그래서 버튼을 .searchwrap «안»에 넣으면 관심·캘린더 탭까지
            따라간다. 여기서는 .search-mount 의 «형제»로 둔다 → 새로고침은 종전대로 «메인 탭에만» 존재한다
@@ -866,7 +866,7 @@ window.MIRI_AD_CONFIG = {
            어디에 둬도 뭔가와 붙는다. 그래서 «맞닿는 조작요소 수»로 고른다:
              · 헤더 아래 / 검색줄 위      → 위=헤더(로고·태그라인·실시간 배지, 탭 불가)  아래=검색입력  … «1개»  ← 현재
              · 밤사이 밴드 / 큐레이션 사이 → 위=밴드 «버튼»(data-ov-jump)  아래=카드(★·DART·공유)      … 2개
-           260814 오전에 대표값 세그가 빠진 자리(2개짜리)로 잠깐 내려갔었고, President 지시로
+           260814 오전에 대푯값 세그가 빠진 자리(2개짜리)로 잠깐 내려갔었고, President 지시로
            «1개»인 이 자리로 되돌아왔다. 정책상으로도 이쪽이 낫다.
          ★★★「최상단」이 아니라 «검색창 위»다 — 헤더(로고·실시간 배지)와 검색줄 «사이». 헤더 위로 올리지 말 것.
          ★「콘텐츠를 덮거나 가리는 영역 금지」 — 문서 흐름 안의 블록이라 무엇도 덮지 않는다.
@@ -965,14 +965,11 @@ window.MIRI_AD_CONFIG = {
     </div>
     <!-- #filter: renderFilter 대상(무변경). 관심 탭에선 세그가 필터를 대신하므로 숨김. -->
     <div class="filter" id="filter" role="tablist" aria-label="필터" hidden></div>
-    <div class="valwrap">
-      <span class="vlab">대표값</span>
-      <div class="valmode" id="valmode" role="tablist" aria-label="대표값 선택">
-        <button role="tab" data-v="avg" aria-selected="false">평균값</button>
-        <button role="tab" data-v="med" aria-selected="false">중앙값</button>
-        <button role="tab" data-v="car" aria-selected="true">보정값</button>
-      </div>
-    </div>
+    <!-- ★260814(v47): 관심 탭의 대푯값 선택 세그(#valmode) «제거» — President 지시로 선택 UI 를
+         설정 탭(#setValmode) 한 곳에만 둔다. 값(전역 VALMODE)은 그대로라 이 탭 카드의 수치 표기도
+         그대로 따라간다. 세그가 차지하던 .tabpanel gap 1칸도 함께 회수된다.
+         ※ 이 삭제와 짝인 죽은 코드도 같이 지웠다: .valwrap/.valmode CSS · syncValmode 의 .valmode
+            루프 · .valmode 클릭 바인딩 IIFE · shell.js applyWatchSeg 의 알림함 숨김 블록. -->
     <!-- 항목8: 관심종목 상시 행(최근 공시 없어도 표시). 탭 → 컨센서스 그래프(shell.js renderWatchRows) -->
     <div id="watchRows" hidden></div>
     <div id="banner"></div>
@@ -1031,7 +1028,7 @@ window.MIRI_AD_CONFIG = {
         <div class="set-seg" id="setDensity" data-key="density">
           <button data-v="roomy">넉넉</button><button data-v="md">기본</button><button data-v="compact">촘촘</button></div></div>
     </div>
-    <!-- 대표값(평균/중앙/보정) — 260814 President 지시로 «메인 탭 상단»에서 여기로 이설.
+    <!-- 대푯값(평균/중앙/보정) — 260814 President 지시로 «메인 탭 상단»에서 여기로 이설.
          ★상태·저장·기능은 그대로다. 진실원본은 전역 VALMODE + localStorage['miri-valmode2'] 하나뿐이고
            관심 탭(#valmode)·밤사이 목록 오버레이의 세그와 «같은 값»을 공유한다. 여기서 바꾸면 그쪽도
            같이 바뀌고(syncValmode), 메인 탭 큐레이션 수치도 즉시 재렌더된다(setValmode → __miriRenderToday).
@@ -1039,7 +1036,7 @@ window.MIRI_AD_CONFIG = {
            새 스타일·새 컴포넌트를 만들지 않았다(선택 표시도 .set-seg 의 .on 클래스 그대로). -->
     <div class="set-group">
       <div class="set-gh">공시 수치</div>
-      <div class="set-row"><span class="set-lb">대표값</span>
+      <div class="set-row"><span class="set-lb">대푯값</span>
         <div class="set-seg" id="setValmode" data-key="valmode">
           <button data-v="avg">평균값</button><button data-v="med">중앙값</button><button data-v="car">보정값</button></div></div>
     </div>
@@ -1441,7 +1438,7 @@ window.MIRI_AD_CONFIG = {
   .tabpanel>*:first-child{margin-top:0}
   .search-mount:empty{display:none}   /* 항목24: 검색 컴포넌트 미탑재 탭에선 빈 마운트 gap 제거 */
   /* ===== 검색줄 + 새로고침 한 줄(260814 President 지시) =====
-     새로고침이 대표값 세그 우측 → 검색 입력줄 우측으로 이동. 버튼은 .searchwrap «밖»(형제)이라
+     새로고침이 대푯값 세그 우측 → 검색 입력줄 우측으로 이동. 버튼은 .searchwrap «밖»(형제)이라
      mountSearch 가 #searchWrap 을 다른 탭으로 옮겨도 따라가지 않는다(메인 탭 전용 유지).
      ★.search-mount 는 flex:1 + min-width:0 — min-width 를 빼면 입력창 기본 폭(≈176px) 때문에
        플렉스 아이템이 안 줄어들어 좁은 화면에서 가로로 밀린다.
@@ -1506,11 +1503,11 @@ const FILTERS=[['all','전체'],['up','상승우위'],['down','하락우위'],['
 let STATE={items:[],stocks:[],meta:'',filter:'all'};
 const WINSEL={};   // rcept_no -> 'd1'|'w1'|'m1'
 const DEFWIN='m1'; // 프로토타입 기본 = 1개월
-// 대표값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본=보정값.
+// 대푯값 3-way: 평균값(raw_avg)/중앙값(raw_med)/보정값(car_avg, 시장대비 초과). 기본=보정값.
 let VALMODE=(localStorage.getItem('miri-valmode2')||'avg'); // 기본=평균값(President 재확정 2026-07-23; 기존 선택자는 localStorage 유지)
 const VALCAP={avg:'평균 등락',med:'중앙값 등락',car:'시장대비 초과등락'};
 const VALWORD={avg:'평균',med:'중앙값',car:'시장대비'};
-function valPick(w){ // 창 객체 -> {val, up} (선택 대표값 + 해당 상승확률). 폴백 안전.
+function valPick(w){ // 창 객체 -> {val, up} (선택 대푯값 + 해당 상승확률). 폴백 안전.
   if(VALMODE==='car'){
     const up=(typeof w.car_up_prob==='number')?w.car_up_prob:
              (typeof w.up_prob==='number'?w.up_prob:null);
@@ -1628,7 +1625,7 @@ function initSettings(){
       if(key==='font'){ localStorage.setItem('miri-fontscale',v); document.documentElement.setAttribute('data-fs',v); }
       if(key==='density'){ localStorage.setItem('miri-density',v); document.documentElement.setAttribute('data-density',v); }
       if(key==='start'){ localStorage.setItem('miri-starttab',v); }
-      /* 260814: 대표값 이설. 저장(miri-valmode2)·재렌더·다른 세그 동기화는 전부 setValmode 가 한다
+      /* 260814: 대푯값 이설. 저장(miri-valmode2)·재렌더·다른 세그 동기화는 전부 setValmode 가 한다
          — 여기서 localStorage 를 직접 쓰지 않는다(저장 경로가 둘로 갈리면 반드시 어긋난다). */
       if(key==='valmode'){ setValmode(v); }
     });
@@ -2333,7 +2330,7 @@ function renderFilter(){
       `onclick="setFilter('${k}')">${lab}<b class="num">${cnt}</b></button>`;
   }).join('');
 }
-/* 필터/대표값 전환 시 피드 컨테이너를 120ms 페이드로 스왑(내용 교체가 튀지 않게). */
+/* 필터/대푯값 전환 시 피드 컨테이너를 120ms 페이드로 스왑(내용 교체가 튀지 않게). */
 function feedSwap(fn){
   const el=document.getElementById('feed');
   if(!el||prefersReduce()){fn();return;}
@@ -2347,14 +2344,11 @@ function feedSwap(fn){
 }
 function setFilter(f){STATE.filter=f;renderFilter();feedSwap(renderFeed);}
 
-/* ---------- 대표값 3-way 토글(전역) ---------- */
+/* ---------- 대푯값 3-way 토글(전역) ---------- */
+/* 선택 UI 는 이제 «설정 탭 한 곳»(#setValmode)뿐이다(v47). 그래도 이 함수는 남긴다 —
+   VALMODE 를 바꾸는 «모든» 경로가 여기를 지나 화면 표시를 맞추게 하는 단일 지점이기 때문이다.
+   ★.set-seg 관용구는 aria-selected 가 아니라 «.on 클래스»로 선택을 표시한다(기존 설정 항목과 동일). */
 function syncValmode(){
-  document.querySelectorAll('.valmode button').forEach(b=>   // 관심탭(#valmode)+밤사이 목록 오버레이 세그 동시 하이라이트
-    b.setAttribute('aria-selected', String(b.dataset.v===VALMODE)));
-  /* 260814: 대표값 선택 UI 가 설정 탭(#setValmode)으로 이설됐다. 설정 탭은 «다른 관용구»를 쓴다 —
-     .valmode 는 aria-selected, .set-seg 는 .on 클래스로 선택을 표시한다. 진실원본(VALMODE)이
-     하나이므로 여기서 «양쪽 다» 맞춘다. 그래야 관심 탭이나 밤사이 목록에서 바꾼 값이
-     설정 탭에도 반영된다(반대 방향은 initSettings 의 click 핸들러가 setValmode 를 부른다). */
   const sv=document.getElementById('setValmode');
   if(sv)sv.querySelectorAll('button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===VALMODE));
 }
@@ -2362,23 +2356,22 @@ function setValmode(v){
   if(v===VALMODE)return;
   VALMODE=v;localStorage.setItem('miri-valmode2',v);
   syncValmode();feedSwap(renderFeed);   // 전 카드 즉시 갱신(WINSEL 창선택은 유지)
-  /* 오늘 탭 큐레이션 카드도 새 대표값으로 재렌더(renderToday=shell.js 소유 → 노출 훅 경유).
+  /* 오늘 탭 큐레이션 카드도 새 대푯값으로 재렌더(renderToday=shell.js 소유 → 노출 훅 경유).
      ★260814: 종전엔 «오늘 탭이 활성일 때만» 불렀다. 선택 UI 가 설정 탭으로 옮겨간 지금은
        바꾸는 순간 오늘 탭이 «항상 비활성»이라 그 조건이면 영원히 안 불린다.
        그리고 나중에 메인 탭으로 가도 activateTab→loadToday(false) 가 _todayLoaded 가드로
-       조기 return 하므로 «옛 대표값 화면이 그대로 남는다». → 조건 없이 부른다.
+       조기 return 하므로 «옛 대푯값 화면이 그대로 남는다». → 조건 없이 부른다.
      ★숨은 탭에서 불러도 안전하다(실측 근거):
        ①renderToday 는 스크롤을 건드리지 않는다 ②배지는 markTodaySeen 이 이미 처리한 값과 동일
        ③MIRI_ADS.setHTML 은 이미 붙어 있는 광고 노드를 «앵커»로 통과시켜 iframe 을 재로드하지 않고,
          requestPlaced() 는 state==='new' 인 슬롯만 요청한다. 숨은 탭 NO-AD 는 기존 가드가 보류시킨다. */
   if(typeof window.__miriRenderToday==='function')window.__miriRenderToday();
 }
-(function(){
-  document.querySelectorAll('.valmode').forEach(el=>el.addEventListener('click',e=>{
-    const b=e.target.closest('button[data-v]');if(b)setValmode(b.dataset.v);
-  }));
-  syncValmode();
-})();
+/* ★260814(v47): 여기 있던 «.valmode 클릭 바인딩 IIFE» 를 삭제했다. .valmode 세그가 문서에
+   0개라 querySelectorAll 이 항상 빈 목록을 도는 죽은 코드가 됐기 때문이다.
+   ─ 클릭 → setValmode 는 이제 initSettings() 의 .set-seg 핸들러가 «유일하게» 담당한다.
+   ─ 부팅 시 초기 하이라이트도 initSettings() 가 한다(cur = 전역 VALMODE 로 .on 을 칠한다).
+     그래서 여기서 syncValmode() 를 한 번 더 부를 이유가 없다. */
 
 /* ---------- feed ---------- */
 /* 카드 1장 HTML 생성 (피드·상세뷰 공용). pfx='' 피드 / pfx='d' 상세뷰 → ID 충돌 방지.
@@ -2446,7 +2439,7 @@ function attachSegToggle(container){
 /* 점진 렌더(페이지네이션): 필터결과를 20장씩 렌더하고, 하단 센티널이 뷰포트에
    근접하면 IntersectionObserver 가 다음 20장을 이어붙인다. fetch 는 기존 1회 그대로
    (서버 무변경) — DOM 노드만 점진 생성해 초기 렌더 부하를 줄인다.
-   renderFeed() 는 항상 1페이지로 리셋되므로 필터/대표값/새로고침/관심변경 정합. */
+   renderFeed() 는 항상 1페이지로 리셋되므로 필터/대푯값/새로고침/관심변경 정합. */
 const FEED_PAGE_SIZE=20;
 let FEED_FILTERED=[];   // 현재 필터 적용된 렌더대상
 let FEED_SHOWN=0;       // 지금까지 붙인 카드 수
@@ -2557,21 +2550,13 @@ function openDetailList(title,items){
   if(!items||!items.length){
     body.innerHTML=`<div class="detail-empty">표시할 공시가 없습니다.</div>`;
   }else{
-    // 대표값(평균/중앙/보정) 세그를 목록 상단에 제공 — 전역 VALMODE 공유, 선택 시 목록 재렌더
-    const renderList=()=>{
-      const seg='<div class="valwrap" style="margin:0 0 10px"><span class="vlab">대표값</span>'+
-        '<div class="valmode" role="tablist" aria-label="대표값 선택">'+
-        [['avg','평균값'],['med','중앙값'],['car','보정값']].map(([v,l])=>
-          '<button role="tab" data-v="'+v+'" aria-selected="'+String(VALMODE===v)+'">'+l+'</button>').join('')+'</div></div>';
-      const st=body.scrollTop;
-      body.innerHTML=seg+items.map(a=>cardHTML(a,'')).join('');   // 피드와 동일한 풀카드(별 토글·규모보기 유지)
-      attachSegToggle(body);
-      body.scrollTop=st;
-      const vm=body.querySelector('.valmode');
-      if(vm)vm.addEventListener('click',e=>{const b=e.target.closest('button[data-v]');
-        if(!b||b.dataset.v===VALMODE)return;setValmode(b.dataset.v);renderList();});
-    };
-    renderList();
+    /* ★260814(v47): 목록 상단의 대푯값 선택 세그를 «제거»했다(President 지시 — 선택 UI 는 설정 탭 한 곳).
+       ★이건 «표시 전용 라벨»이 아니라 role=tablist + 클릭 → setValmode 인 «선택 UI» 였다. 그래서 제거 대상.
+       카드는 전역 VALMODE 를 그대로 따르므로 «보이는 수치는 무변경»이다.
+       같이 사라진 죽은 코드: 재렌더용 renderList 클로저 · 그 안의 scrollTop 보존(재렌더가 없으니 불필요)
+       · .valmode 클릭 핸들러. 세그가 쓰던 상단 여백 10px 도 함께 회수된다. */
+    body.innerHTML=items.map(a=>cardHTML(a,'')).join('');   // 피드와 동일한 풀카드(별 토글·규모보기 유지)
+    attachSegToggle(body);
   }
   body.scrollTop=0;
   const ov=document.getElementById('detail');
@@ -3544,7 +3529,7 @@ if(CLAIM_APPLIED){setTimeout(()=>{try{showToast('이 기기를 기존 관심목�
        인피드는 대부분 화면 밖에서 시작하므로 preload 를 켜면 «안 보이는 광고까지 즉시 요청» →
        뷰어빌리티(=단가)가 깎인다. 그래서 ㉢ 을 쓴다.
 
-     ★★그런데 ㉢ 조차 «매 갱신마다» 부르면 안 된다. renderToday 는 대표값 세그(평균/중앙/보정)
+     ★★그런데 ㉢ 조차 «매 갱신마다» 부르면 안 된다. renderToday 는 대푯값 세그(평균/중앙/보정)
        토글마다도 돈다. 매번 재요청하면 HTTP «429»(실측으로 관측함)를 맞고 광고가 죽는다.
        → 이 엔진은 ins 를 «다시 만들지 않는다». adfit.render() 는 «슬롯당 평생 한 번»만 불린다.
 

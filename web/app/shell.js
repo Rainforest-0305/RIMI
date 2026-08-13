@@ -94,7 +94,7 @@
     if(window.CUR_TAB==='today'&&!_todayLoaded)loadToday(true);
   }
   window.updateTabBadges=updateTabBadges;
-  /* 버그C 근본수정: 대표값(평균/중앙/보정) 세그 변경은 이미 받아둔 데이터를 다른 값으로
+  /* 버그C 근본수정: 대푯값(평균/중앙/보정) 세그 변경은 이미 받아둔 데이터를 다른 값으로
      다시 그리는 것뿐인데, 종전엔 loadToday(true)로 매번 /api/today(실측 8.4초)를 재요청해
      반응이 8초 지연되고 renderToday가 밤사이 '더보기' 펼침(_ovShown)을 초기화해버렸다.
      캐시(_todayData)가 있으면 네트워크 없이 즉시 재렌더(keepState=true로 펼침 보존),
@@ -169,7 +169,7 @@
   }
   /* 항목37: 밴드(brief hero-am)는 #todayBrief 로, 섹션(큐레이션+밤사이/폴백목록)은 #todayBody(host) 로 분리 주입.
      최종 화면순서 = 띠광고(#adSlotTop) → 검색줄 → #todayBrief(밴드) → #todayBody(섹션). #todayBrief 없으면 구캐시 graceful.
-     ★260814: 그 사이에 있던 «정적 대표값 세그»는 설정 탭(#setValmode)으로 이설됐다. 띠광고 320x50 은
+     ★260814: 그 사이에 있던 «정적 대푯값 세그»는 설정 탭(#setValmode)으로 이설됐다. 띠광고 320x50 은
        President 실기기 확인 후 «검색줄 위»로 올라갔다(순증 아님 — 페이지당 4개 상한 유지).
        둘 다 이 두 컨테이너의 «형제»라 여기 주입 로직은 1바이트도 바뀌지 않는다. */
   /* keepState=true면 캐시 재렌더 경로(버그C: window.__miriRenderToday)로, 밤사이 '더보기'
@@ -246,10 +246,9 @@
     });
     STATE.filter=(WATCH_SEG==='inbox')?'inbox':'watch';
     renderWatchRows();   // 항목8: 관심종목 상시 행(관심피드에서만 노출)
-    // 항목55: 대표값 세그(관심탭 #valmode)는 관심피드에서만 노출. 알림함(inbox)에선 숨김(대표값 무관 뷰).
-    var _vm=document.getElementById('valmode');
-    var _vw=(_vm&&_vm.closest)?_vm.closest('.valwrap'):null;
-    if(_vw)_vw.hidden=(WATCH_SEG==='inbox');
+    /* ★260814(v47): 여기 있던 «항목55 — 알림함에서 대푯값 세그 숨김» 블록을 삭제했다.
+       관심 탭의 선택 세그(#valmode)가 통째로 사라져(President 지시: 선택 UI 는 설정 탭 한 곳)
+       getElementById 가 «항상 null» 인 죽은 코드가 됐기 때문이다. 숨길 대상 자체가 없다. */
     // 알림함 진입 = 신규 이슈 확인 → seen 처리 후 관심 빨간점 갱신(소멸)
     if(WATCH_SEG==='inbox'&&markSeenWatchedNew())updateTabBadges();
     if(typeof renderFilter==='function')renderFilter();
