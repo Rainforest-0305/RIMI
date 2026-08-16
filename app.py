@@ -47,6 +47,36 @@ api = FastAPI(title="미리(MIRI) 공시앱 API", version="2.0")
 from fastapi.middleware.gzip import GZipMiddleware
 api.add_middleware(GZipMiddleware, minimum_size=1500)
 
+# ---------------- 종목 단축코드 형식(단일 정의) ----------------
+# KRX 는 2024-01 코드체계 개편으로 주권 «단축코드 한 자리에 영문 대문자»를 혼용한다
+# (발급여력 5만→16.5만건). 실제 라이브 사례: `0126Z0` 삼성에피스홀딩스 — KOSPI 시총 68위.
+# 숫자 6자리만 허용하면 이런 종목이 컨센서스·규모·관심종목 전 경로에서 조회 불가가 된다.
+#
+# ★ 이 게이트는 «보안 장치»다. code 는 파일명·캐시키·경로로 흘러가므로 임의 .json
+#   읽기·존재 오라클(`../` 경로순회)을 막아야 한다. 아래는 «완화»가 아니라
+#   «문자집합 확장»이다 — `.` `/` `\` `..` 공백·제어문자는 여전히 «전부» 차단된다.
+# ★ 오히려 종전보다 «좁다»: `\d` 는 파이썬에서 «유니코드» 숫자까지 매칭해
+#   `٠١٢٣٤٥`(아랍-인도 숫자) 같은 비ASCII 문자열이 게이트를 통과했다(실측).
+#   `[0-9A-Z]` 는 ASCII 한정이라 그 구멍이 닫힌다.
+_STOCK_CODE_RE = re.compile(r"[0-9A-Z]{6}")
+
+
+def norm_stock_code(code):
+    """종목코드 입력 → 정규화(대문자) 코드. 형식 위반이면 "" 반환(예외 없음).
+
+    ★ 소문자를 «거부»하지 않고 «대문자로 정규화»하는 근거(실측):
+      - DART corp_map 3,976 종목 전수에서 소문자 코드 0건. 영문 포함 53건은 «전부 대문자».
+        즉 정본 표기는 대문자 하나뿐이다.
+      - 같은 저장소의 build_corp_index.py 도 이미 `^[0-9A-Z]{6}$` 로 파싱한다.
+      - corp_map 조회(dict.get)·Supabase upsert(on_conflict="code")·메모리 캐시가 모두
+        코드 «문자열»을 키로 쓴다. 소문자를 그대로 통과시키면 키가 어긋나 «조용한»
+        조회 미스와 캐시 분열이 생긴다. 그래서 거부보다 정규화가 안전하다.
+      - 정규화는 검증 «앞»에서 일어나므로, 하류로 나가는 값은 항상 [0-9A-Z]{6} 이다.
+    """
+    c = (code or "").strip().upper()
+    return c if _STOCK_CODE_RE.fullmatch(c) else ""
+
+
 # ---------------- [42] 읽기 API 캐시(CDN/프록시 + ETag/304) ----------------
 # 가드레일: s-maxage 는 폴링주기(85s)보다 신선해야 함 → 30s(+SWR 60s). 개인화
 # /api/watchlist 는 공유캐시 금지(private, no-store). 응답 본문/스키마 불변(헤더만).
@@ -906,13 +936,20 @@ def get_scale(rcept: str, code: str = "", report_nm: str = "",
     code = (code or "").strip()
     corp = (corp or "").strip()
     dt = (dt or "").strip()
-    if not re.fullmatch(r"\d{14}", rcept):
+    # ★ [0-9] 로 «ASCII 한정». `\d` 는 파이썬에서 유니코드 숫자(아랍-인도 ٠١٢٣٤٥ ·
+    #   전각 ０１２３ · 데바나가리 ०१२३)까지 매칭해 게이트를 그대로 통과시켰다(실측).
+    #   그 값이 DART API 파라미터·캐시 파일명으로 흘러 쓰레기 호출과 비ASCII 파일명을 만든다.
+    #   (int("٠١٢٣٤٥") == 12345 로 «숫자처럼 해석»되기까지 한다.)
+    if not re.fullmatch(r"[0-9]{14}", rcept):
         raise HTTPException(status_code=400, detail="rcept 형식 오류(14자리 숫자)")
-    if code and not re.fullmatch(r"\d{6}", code):
-        raise HTTPException(status_code=400, detail="code 형식 오류(6자리 숫자)")
-    if corp and not re.fullmatch(r"\d{8}", corp):
+    if code:
+        code = norm_stock_code(code)     # 대문자 정규화 + 형식검증(경로문자 전면차단 유지)
+        if not code:
+            raise HTTPException(status_code=400,
+                                detail="code 형식 오류(6자리 영숫자)")
+    if corp and not re.fullmatch(r"[0-9]{8}", corp):     # ★ ASCII 한정(위 주석 참조)
         raise HTTPException(status_code=400, detail="corp 형식 오류(8자리 숫자)")
-    if dt and not re.fullmatch(r"\d{8}", dt):
+    if dt and not re.fullmatch(r"[0-9]{8}", dt):         # ★ ASCII 한정(위 주석 참조)
         raise HTTPException(status_code=400, detail="dt 형식 오류(8자리 숫자)")
     corp_code = corp
     if not corp_code and code:
@@ -1074,15 +1111,18 @@ def add_watchlist(body: WatchAdd, request: Request):
     if len(stocks) >= 300:                    # 기기당 관심종목 상한
         raise HTTPException(status_code=400,
                             detail="관심종목은 최대 300개까지 담을 수 있습니다.")
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if len(digits) == 6:
-        code = digits
-        if not name or name == raw:
-            name = raw if raw != digits else ""
-    else:
+    # 1순위: 입력 그대로 코드 형식인가(영문 혼용 신형식 0126Z0 포함, 소문자는 대문자 정규화).
+    code = norm_stock_code(raw)
+    if not code:
+        # 2순위(하위호환): 구분자 섞인 숫자 입력(예: "005-930", "종목 005930")에서 숫자만 추출.
+        # ch.isdigit() 는 유니코드 숫자도 참이지만, norm_stock_code 가 ASCII 로 한 번 더 거른다.
+        code = norm_stock_code("".join(ch for ch in raw if ch.isdigit()))
+    if not code:
         raise HTTPException(
             status_code=400,
             detail="6자리 종목코드로 등록하세요. 예: 005930 (삼성전자)")
+    if not name or name == raw:
+        name = raw if raw.upper() != code else ""
 
     # corp_code 로 실제 유효성 검증(코스피/코스닥 무관 존재 확인)
     corp = dart_poll.resolve_corp(code)
@@ -2407,8 +2447,8 @@ def _ensure_fresh_price(payload):
     """저장값이 최신 거래일 종가가 아니면 서버가 그 자리에서 갱신한다.
     최신이면 외부 호출 0. 실패·지연 시에도 기존 값으로 정상 응답한다(화면 안 멈춤)."""
     try:
-        code = str(payload.get("code") or "")
-        if not re.fullmatch(r"\d{6}", code):
+        code = norm_stock_code(payload.get("code"))
+        if not code:
             return payload
         exp = _expected_trade_day()
         payload = _drop_unconfirmed(payload, exp)     # ★ 저장된 장중값 무력화(응답 경로 방어)
@@ -2508,9 +2548,10 @@ def get_analyst(request: Request, code: str = ""):
     **종가만** 서버가 신선도를 판정해 필요할 때 갱신한다(최신이면 외부 호출 0).
 
     미수집/미존재 코드는 200 graceful(cached:false, 빈 reports/prices)."""
-    code = (code or "").strip()
-    if not re.fullmatch(r"\d{6}", code):
-        return _json_cached(request, _empty_analyst(code or "", None))
+    raw_code = (code or "").strip()
+    code = norm_stock_code(raw_code)      # 대문자 정규화(0126z0 → 0126Z0)
+    if not code:
+        return _json_cached(request, _empty_analyst(raw_code, None))
     now = time.time()
     try:
         with _MIRI_LOCK:
