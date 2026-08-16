@@ -481,16 +481,30 @@
     var up=(d.avg_tp!=null&&d.current)?((d.avg_tp-d.current)/d.current*100):null;
     var showToggle=nTp>=5;   // ③ 토글은 리포트 N>=5일 때만 노출
     var noRep=(nTp===0);     // 항목8: 목표가 리포트 없음 → 종가 추이만 표시(리포트 없음 상태 명시)
+    /* ★2026-08-16 President 지시 「레포트별로 나타나게 해줘」.
+       구동작은 avg_tp 를 무조건 「평균 목표가」로 찍었다. 그런데 코웨이는 리포트 13건인데
+       목표가를 낸 증권사가 «1곳»(한화투자, 2건)이다 — 그걸 '평균'이라 부르면 사용자는
+       여러 증권사의 컨센서스로 «믿는다». 표기 문제가 아니라 사실 문제다.
+       → 증권사 수(n_brokers, API 신규)로 1곳이면 '평균'이라는 말을 쓰지 않고 증권사
+         이름을 그대로 쓴다. 구버전 응답이 캐시에 남아 있어도 reports 에서 폴백 유도. */
+    var nBr=(typeof d.n_brokers==='number'&&d.n_brokers>0)?d.n_brokers:_anBrokerNames(reps).length;
+    var brNames=(d.brokers&&d.brokers.length)?d.brokers:_anBrokerNames(reps);
+    var solo=(!noRep&&nBr===1);
+    var soloShort=solo?_anBrokerShort(brNames[0]||(reps[0]&&reps[0].broker)||''):'';
+    /* 1곳 & 리포트 2건 이상이면 avg_tp 는 «그 증권사 안에서의» 평균이다. 값은 그대로 두되
+       (avg_tp 의미 불변) 라벨이 그 사실을 말한다 — '한화투자 2건 평균'. */
+    var tpLabel=noRep?'목표가':(solo?(soloShort+(nTp>1?(' '+nTp+'건 평균'):' 목표가')):'평균 목표가');
+    _anState.solo=solo; _anState.soloShort=soloShort; _anState.tpLabel=tpLabel; _anState.nBr=nBr;
     var asofMD=_anAsOfMD(d), asofKo=_anAsOf(d);   // President 지시: 값 옆 기준일 병기('7/24 종가'). 없으면 ''(날짜 생략)
     host.innerHTML=
       '<div class="an-sub">'+(noRep?'아직 증권사 목표주가 리포트가 없어요 · 종가 추이만 표시'
-                                    :('증권사 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건'))+'</div>'+
+                                    :('증권사 '+nBr+'곳 · 리포트 '+nTot+'건 중 목표주가 제시 '+nTp+'건'))+'</div>'+
       '<div class="an-metrics">'+
         /* 지시: 기준일을 값 옆에 병기. 라벨(.k)에 붙인다 — 값(.v)은 nowrap+자동축소(_anFitMetrics)
            대상이라 날짜를 넣으면 폰트만 쪼그라들고 360px에서 잘린다. .k/.v 세로 스택이라
            화면에선 '7/24 종가 / 249,500원'으로 붙어 읽힌다. */
         '<div class="an-metric"><div class="k">'+(asofMD?esc(asofMD)+' 종가':'종가')+'</div><div class="v">'+_anFmt(d.current)+'원</div></div>'+
-        '<div class="an-metric"><div class="k">평균 목표가</div><div class="v">'+(noRep?'—':(_anFmt(d.avg_tp)+'원'))+'</div></div>'+
+        '<div class="an-metric"><div class="k">'+esc(tpLabel)+'</div><div class="v">'+(noRep?'—':(_anFmt(d.avg_tp)+'원'))+'</div></div>'+
         '<div class="an-metric"><div class="k">상승여력</div><div class="v '+(up==null?'':(up>=0?'up':'down'))+'">'+(up==null?'—':((up>=0?'+':'')+up.toFixed(1)+'%'))+'</div></div>'+
       '</div>'+
       /* 결함1: 값의 성격을 정확히 — 실시간가가 아니라 수집 기준일의 종가. 상승여력도 같은 기준.
@@ -504,9 +518,10 @@
         '<div class="an-card-t"><span>'+(noRep?'실제 종가 추이':'목표주가 · 실제주가')+'</span><span class="cnt">'+(noRep?'최근 5개월':('리포트 '+nTp+'개 · 최근 5개월'))+'</span></div>'+
         '<div id="anChart"></div>'+
         '<div class="an-legend" id="anLegend"></div>'+
-        '<button type="button" class="an-more" id="anMore" aria-expanded="false">자세히 보기 ›</button>'+
       '</div>'+
-      '<div class="an-card an-list" id="anList" hidden></div>'+
+      /* ★레포트별 목록은 «항상» 편다(구동작: '자세히 보기' 뒤에 접혀 있어 아무도 못 봤다).
+         평균 하나가 아니라 «어느 증권사가 언제 얼마를» 냈는지가 화면에 드러나야 한다. */
+      (noRep?'':'<div class="an-card an-list" id="anList"></div>')+
       '<div class="an-disc">※ 증권사 전망을 정리한 참고 자료이며<br>투자 권유가 아닙니다. 목표주가는 각 증권사 리포트 기준.</div>';
     _anDrawChart(); _anDrawList(); _anFitMetrics();
   }
@@ -556,10 +571,13 @@
         xlab+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" fill="var(--t3)" font-size="11" text-anchor="middle">'+(dt.getMonth()+1)+'월</text>'; } });
     var path=prices.map(function(p,ix){return (ix?'L':'M')+X(_anParseD(p[0]).getTime()).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join(' ');
     // ② 평균 목표 점선 — 라벨을 좌측(text-anchor start, x=PL+4)에 배치해 우측 '현재…' 라벨/그리드와 겹침 회피
+    // ★증권사 1곳이면 이 점선은 「평균」이 아니라 그 증권사 «한 곳»의 목표가다. 라벨도 그렇게 쓴다.
+    //   1곳 & 2건 이상이면 그 증권사 «안에서의» 평균이므로 '평균'을 붙여야 리포트 점과 구분된다.
+    var tpTag=st.solo?((st.soloShort||'단독')+(reports.length>1?' 평균':'')):'평균';
     var avg='';
     if(d.avg_tp!=null){ var ay=Y(d.avg_tp);
       avg='<line x1="'+PL+'" y1="'+ay.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+ay.toFixed(1)+'" stroke="#ff5b64" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>'+
-        '<text x="'+(PL+4)+'" y="'+(ay-6).toFixed(1)+'" fill="#ff5b64" font-size="11" text-anchor="start" font-weight="700">평균 '+_anWon(d.avg_tp)+'</text>'; }
+        '<text x="'+(PL+4)+'" y="'+(ay-6).toFixed(1)+'" fill="#ff5b64" font-size="11" text-anchor="start" font-weight="700">'+esc(tpTag)+' '+_anWon(d.avg_tp)+'</text>'; }
     var trend='';
     if(st.reg){ var rl=_anRegLine(reports); if(rl)trend+='<line x1="'+X(rl.x0).toFixed(1)+'" y1="'+Y(rl.y0).toFixed(1)+'" x2="'+X(rl.x1).toFixed(1)+'" y2="'+Y(rl.y1).toFixed(1)+'" stroke="#2dd48a" stroke-width="2" opacity="0.9"/>'; }
     if(st.cons){ var cl=_anConsLine(reports); if(cl.length>1)trend+='<path d="'+cl.map(function(p,ix){return (ix?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1);}).join(' ')+'" fill="none" stroke="#4d94ff" stroke-width="2" stroke-dasharray="2 3" opacity="0.9"/>'; }
@@ -585,7 +603,7 @@
       avgY:(d.avg_tp!=null?Y(d.avg_tp):null)});
     var leg=(reports.length?'<span><i style="width:9px;height:9px;border-radius:50%;background:#fbbf24"></i>증권사 목표가</span>':'')+
       '<span><i style="width:16px;height:0;border-top:2px solid var(--t1)"></i>실제 종가</span>'+
-      (d.avg_tp!=null?'<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>평균 목표가</span>':'');
+      (d.avg_tp!=null?('<span><i style="width:16px;height:0;border-top:2px dashed var(--up)"></i>'+esc(st.tpLabel||'평균 목표가')+'</span>'):'');
     if(st.reg)leg+='<span><i style="width:16px;height:0;border-top:2px solid #2dd48a"></i>회귀 추세선</span>';
     if(st.cons)leg+='<span><i style="width:16px;height:0;border-top:2px dashed #4d94ff"></i>컨센서스 추세선</span>';
     var lg=document.getElementById('anLegend'); if(lg)lg.innerHTML=leg;
@@ -724,14 +742,38 @@
       elp.addEventListener('mouseenter',show); elp.addEventListener('click',show); elp.addEventListener('mouseleave',hide);
     });
   }
+  /* 목표가가 있는 리포트에서 «고유 증권사명» 목록. 정규화는 배치(analyst_collect._broker_key)와
+     같은 규칙 — 공백 정리 + 대문자화까지만. '증권'·'투자증권' 접미사를 떼는 적극 정규화는
+     금지(서로 다른 법인이 합쳐져 증권사 수가 과소계상되면 대표성이 실제보다 좋아 보인다). */
+  function _anBrokerKey(b){ return String(b==null?'':b).split(/\s+/).join(' ').trim().toUpperCase(); }
+  function _anBrokerNames(reps){
+    var seen={},out=[];
+    (reps||[]).forEach(function(r){ if(!r||!(r.target_price>0))return;
+      var k=_anBrokerKey(r.broker); if(seen[k])return; seen[k]=1; out.push(String(r.broker||'').trim()); });
+    return out;
+  }
+  /* 지표 라벨·차트 라벨 «표시용» 축약(집계엔 절대 쓰지 않는다). '한화투자증권'→'한화투자'.
+     목록에는 축약하지 않은 «전체 이름»을 쓴다 — 어느 법인인지가 사실 자체이므로. */
+  function _anBrokerShort(b){
+    var s=String(b==null?'':b).replace(/\s+/g,'');
+    s=s.replace(/투자증권$/,'투자').replace(/금융투자$/,'').replace(/증권$/,'');
+    return s||String(b||'');
+  }
   function _anDrawList(){
     var st=_anState; if(!st)return; var listEl=document.getElementById('anList'); if(!listEl)return;
     var rows=(st.data.reports||[]).slice().sort(function(a,b){return (String(b.date||''))<(String(a.date||''))?-1:1;});
-    listEl.innerHTML=rows.map(function(r){ var op=_anOpinion(r.opinion);
+    // ★같은 증권사 중복은 «보이게» 한다. avg_tp 는 건수 가중이라 2건 낸 증권사가 2표를 갖는다
+    //   (실측 괴리 평균 4.88% · 최대 30.5%). 사용자가 스스로 판단하려면 중복이 드러나야 한다.
+    var cnt={}; rows.forEach(function(r){ var k=_anBrokerKey(r.broker); cnt[k]=(cnt[k]||0)+1; });
+    listEl.innerHTML=
+      '<div class="an-card-t"><span>증권사 리포트</span><span class="cnt">최신순 · '+rows.length+'건</span></div>'+
+      rows.map(function(r){ var op=_anOpinion(r.opinion), n=cnt[_anBrokerKey(r.broker)]||1;
       return '<div class="an-row"><span class="dt">'+esc(String(r.date||'').slice(2))+'</span>'+
         '<span class="br">'+esc(r.broker||'')+'</span>'+
+        (n>1?('<i class="an-dup">'+n+'건</i>'):'')+
         '<span class="an-op '+op.c+'">'+esc(op.t)+'</span>'+
-        '<span class="an-tpv">'+_anWon(r.target_price)+'</span></div>'; }).join('');
+        // 목록은 «레포트 그 자체»라 반올림하지 않는다(_anWon 은 155,000 도 160,000 도 '16만').
+        '<span class="an-tpv">'+_anFmt(r.target_price)+'</span></div>'; }).join('');
   }
 
   /* ---------- 탭 전환 ---------- */
@@ -860,11 +902,7 @@
       if(tg&&_anState){ var k=tg.getAttribute('data-an-toggle'); _anState[k]=!_anState[k];
         try{localStorage.setItem('miri-antrend-'+k,_anState[k]?'1':'0');}catch(err){}   // 상태 영속(다른 종목에도 유지)
         tg.classList.toggle('on',_anState[k]); tg.setAttribute('aria-pressed',String(_anState[k])); _anDrawChart(); return; }
-      var mb=e.target.closest('#anMore');
-      if(mb&&_anState){ _anState.listOpen=!_anState.listOpen;
-        var lst=document.getElementById('anList'); if(lst)lst.hidden=!_anState.listOpen;
-        mb.setAttribute('aria-expanded',String(_anState.listOpen));
-        mb.textContent=_anState.listOpen?'접기 ‹':'자세히 보기 ›'; return; }
+      // (#anMore '자세히 보기' 토글 제거 — 리포트 목록은 이제 항상 펼쳐져 있다)
     });
     document.addEventListener('keydown',function(e){ if(e.key==='Escape'){var a=document.getElementById('analyst'); if(a&&!a.hidden)closeAnalyst();} });
     window.addEventListener('popstate',function(){   // 뒤로가기=오버레이만 닫기(앱 종료 아님). detail popstate와 독립(서로 hidden 가드)

@@ -1179,10 +1179,11 @@ window.MIRI_AD_CONFIG = {
   .an-card svg{display:block;width:100%;height:auto;overflow:visible}
   .an-legend{display:flex;gap:13px;flex-wrap:wrap;padding:8px 4px 2px;font-size:11.5px;color:var(--t2)}
   .an-legend i{display:inline-block;vertical-align:middle;margin-right:5px}
-  .an-more{margin:8px 2px 2px auto;display:block;font-size:12.5px;font-weight:700;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:6px 2px}
-  .an-list{padding:2px 2px 6px}
+  /* (.an-more '자세히 보기' 버튼 제거 — 리포트 목록은 상시 노출이라 토글 자체가 없어졌다) */
+  .an-list{padding:13px 2px 6px}   /* 레포트별 목록이 상시 노출 = 카드 제목줄이 생겨 상단 여백 필요 */
   .an-list .an-row{display:flex;align-items:center;gap:10px;padding:11px 2px;border-top:1px solid var(--line-2)}
-  .an-list .an-row:first-child{border-top:none}
+  /* ★같은 증권사가 2건 이상 낸 경우의 표식. avg_tp 는 건수 가중이라 그 증권사가 2표를 갖는다 */
+  .an-dup{font-size:10px;font-weight:800;font-style:normal;color:var(--t3);background:var(--slate-soft);border-radius:5px;padding:2px 5px;flex:none}
   .an-list .dt{font-size:11.5px;color:var(--t3);font-family:var(--mono);width:52px;flex:none}
   .an-list .br{flex:1;font-size:13px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .an-op{font-size:10.5px;padding:2px 7px;border-radius:6px;font-weight:800;flex:none}
@@ -1190,7 +1191,7 @@ window.MIRI_AD_CONFIG = {
   .an-op.hold{background:var(--warn-soft);color:var(--warn-ink)}
   .an-op.sell{background:var(--down-soft);color:var(--down)}
   .an-op.na{background:var(--slate-soft);color:var(--t3)}
-  .an-tpv{font-size:13px;font-weight:800;font-family:var(--mono);color:var(--t1);width:66px;text-align:right;flex:none}
+  .an-tpv{font-size:12.5px;font-weight:800;font-family:var(--mono);color:var(--t1);width:74px;text-align:right;flex:none}   /* 반올림 없이 원 단위 표기(1,980,000 까지 수용) */
   .an-disc{color:var(--t3);font-size:11.5px;line-height:1.6;padding:4px 6px 20px;text-align:center}
   .an-tip{position:fixed;pointer-events:none;background:var(--card-2);box-shadow:0 0 0 1px var(--line) inset,0 6px 20px rgba(0,0,0,.32);border-radius:10px;padding:9px 11px;font-size:12px;opacity:0;transition:opacity .12s;z-index:60;min-width:120px}
   .an-tip .tb{font-weight:700;margin-bottom:3px;color:var(--t1)}

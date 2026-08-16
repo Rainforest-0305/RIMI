@@ -2002,7 +2002,8 @@ def _corp_name(code):
 
 def _empty_analyst(code, name=None):
     return {"code": code, "name": name, "cached": False, "current": None,
-            "avg_tp": None, "n_total": 0, "n_tp": 0, "window_start": None,
+            "avg_tp": None, "n_total": 0, "n_tp": 0, "n_brokers": 0, "brokers": [],
+            "window_start": None,
             "updated_at": None, "prices": [], "reports": [],
             "disclaimer": _ANALYST_DISCLAIMER}
 
@@ -2794,7 +2795,11 @@ def _persist_price(payload):
     동작하므로 실패는 무시한다(조용한 실패가 아니라 로그로 드러냄)."""
     try:
         row = dict(payload)
-        for k in ("disclaimer", "cached", "current_asof", "current_source"):
+        # ★n_brokers·brokers 는 «응답 전용 파생값»이다(reports 에서 유도). 저장행에 섞어
+        #   보내면 Supabase 에 해당 컬럼이 없을 때 PostgREST 400 → 종가 영속이 통째로
+        #   죽는다. 파생값은 여기서 반드시 떨어뜨린다(배치가 컬럼을 채우는 것과 별개).
+        for k in ("disclaimer", "cached", "current_asof", "current_source",
+                  "n_brokers", "brokers"):
             row.pop(k, None)
         miri_cache.upsert("analyst_consensus", [row], on_conflict="code")
     except Exception as e:  # noqa: BLE001
@@ -2843,6 +2848,35 @@ def get_analyst(request: Request, code: str = ""):
         return _json_cached(request, _empty_analyst(code, None))
 
 
+def _broker_key(name):
+    """증권사명 정규화 키. 배치(analyst_collect._broker_key)와 «같은 규칙»이어야 한다.
+
+    공백 정리 + 대문자화까지만('iM증권'/'IM 증권' 표기 흔들림 흡수). '증권'·'투자증권'
+    접미사 제거 같은 «적극 정규화»는 금지 — 서로 다른 법인을 합치면 고유 증권사 수가
+    «과소»계상돼 대표성이 실제보다 좋아 보인다. 그 방향의 오차가 가장 위험하다."""
+    return " ".join(str(name or "").split()).upper()
+
+
+def _broker_labels(reports):
+    """목표가 리포트 → (고유 증권사 수, 표시용 증권사명 목록).
+
+    목표가가 «있는» 리포트만 센다(avg_tp 를 만든 모집단과 같은 분모여야 하므로).
+    저장 컬럼(n_brokers)이 아직 없어도 reports(jsonb)만으로 유도된다 = 마이그레이션 불요.
+    [실측 2026-08-16] 100종목 전수에서 reports 재계산 == 배치 계산값, 불일치 0건."""
+    label = {}
+    for r in reports:
+        if not isinstance(r, dict):
+            continue
+        try:
+            tp = int(r.get("target_price") or 0)
+        except (TypeError, ValueError):
+            continue
+        if tp <= 0:
+            continue
+        label.setdefault(_broker_key(r.get("broker")), str(r.get("broker") or "").strip())
+    return len(label), sorted(v for v in label.values())
+
+
 def _analyst_from_row(row):
     """저장행(Supabase/로컬) → 응답 payload(계약 준수). 결측은 안전 기본값."""
     prices = row.get("prices") or []
@@ -2851,6 +2885,18 @@ def _analyst_from_row(row):
         prices = []
     if not isinstance(reports, list):
         reports = []
+    # ★추가(2026-08-16 President 지시 「레포트별로 나타나게 해줘」의 데이터 근거).
+    #   avg_tp 는 「컨센서스」로 읽히는데 그 값을 «몇 곳»이 만들었는지 화면에서 볼 수 없었다.
+    #   n_total 로는 판별 불가 — 코웨이는 n_total=13 인데 증권사는 «1곳»이다.
+    #   기존 필드(avg_tp·n_total·n_tp)의 «의미는 불변». 추가만 한다.
+    nb = row.get("n_brokers")
+    brokers = row.get("brokers")
+    if nb is None or not isinstance(brokers, list) or not brokers:
+        nb_calc, brokers_calc = _broker_labels(reports)
+        if nb is None:
+            nb = nb_calc
+        if not isinstance(brokers, list) or not brokers:
+            brokers = brokers_calc
     return {
         "code": str(row.get("code") or ""),
         "name": row.get("name"),
@@ -2859,6 +2905,8 @@ def _analyst_from_row(row):
         "avg_tp": row.get("avg_tp"),
         "n_total": int(row.get("n_total") or 0),
         "n_tp": int(row.get("n_tp") or 0),
+        "n_brokers": int(nb or 0),
+        "brokers": [str(b) for b in brokers],
         "window_start": row.get("window_start"),
         "updated_at": row.get("updated_at"),
         "prices": prices,
