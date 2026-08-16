@@ -749,6 +749,15 @@ def _startup_prewarm():
     else:
         print("[freshness] 워치독 비활성(GONGSI_ANALYST_WATCH=0)")
 
+    # 층2: 배치 «미실행» 감시(달력 데드라인). stale 임계(8일)와 «다른 축»이라 같이 띄운다 —
+    # 임계로는 1회 미실행을 8일보다 빨리 잡을 수 없다(12일 사고의 구조적 원인).
+    if _SLOT_WATCH_ENABLED:
+        threading.Thread(target=_batch_slot_watchdog, name="batch-slot-watch",
+                         daemon=True).start()
+        print(f"[slot] 미실행 워치독 기동(주기 {_SLOT_CHECK_SEC:g}s, 유예 4h)")
+    else:
+        print("[slot] 미실행 워치독 비활성(GONGSI_SLOT_WATCH=0)")
+
     if not _PREWARM_ENABLED:
         print("[prewarm] 비활성(GONGSI_PREWARM=0) — 콜드빌드 경로 유지")
         return
@@ -823,6 +832,16 @@ def health():
         out.update(_analyst_freshness_view())
     except Exception as e:  # noqa: BLE001
         out["analyst_freshness_error"] = type(e).__name__
+    # 층1(R3/D3): top100 은 analyst 의 «입력»이라, 이게 죽으면 analyst 감시가 무력화된다.
+    try:
+        out.update(_top100_freshness_view())
+    except Exception as e:  # noqa: BLE001
+        out["top100_freshness_error"] = type(e).__name__
+    # 층2(R3): 슬롯 데드라인 기반 «미실행» 판정. stale 임계(8일)와 독립된 축.
+    try:
+        out.update(_batch_slot_view())
+    except Exception as e:  # noqa: BLE001
+        out["batch_slot_error"] = type(e).__name__
     return out
 
 
@@ -2173,6 +2192,246 @@ def _analyst_freshness_view():
         "analyst_checked_age_sec": age,
         "analyst_stale_alerted_at": st.get("alerted_at"),
     }
+
+
+# ================= 층1: top100 신선도 감시 (2026-08-16 R3/D3) =================
+# 왜 필요한가: [실측] analyst_collect.target_codes() 가 top100.json 을 «입력»으로 읽는다
+#   (analyst_collect.py:661-662, :681). 그래서 top100 이 조용히 죽으면 analyst 는
+#   «낡은 대상 집합»으로 정상 완주하며 updated_at 을 갱신하고, analyst stale 감시는
+#   False 를 유지한다 → ★아무 경보도 안 난다.
+#   같은 계열 사고가 이미 한 번 있었다(analyst_collect.py 주석: 「상한을 두는 것 자체가
+#   커버리지를 «조용히» 갉아먹는 구조」). 추정이 아니라 관측이다.
+# 임계 근거: top100_collect 도 주 1회(토 05:00)라 정상 운영에서 최대 7일까지 커진다.
+#   8일이면 '토요일 실행이 통째로 누락된 뒤'에 처음 걸린다 — analyst 와 동일 근거.
+_TOP100_STALE_DAYS = float(os.getenv("GONGSI_TOP100_STALE_DAYS", "8"))
+
+_TOP100_FRESH_STATE = {
+    "updated_at": None, "age_days": None, "stale": None,
+    "rows": None, "source": None, "checked_ts": 0.0, "error": None,
+}
+
+
+def _top100_probe():
+    """market_cap_top100 의 updated_at 을 읽어 신선도 상태를 만든다(읽기 전용).
+
+    Supabase 우선 → 로컬 top100.json 폴백. 어느 쪽도 못 읽으면 source='none' 으로
+    남기고 **stale 로 단정하지 않는다** — 조회 실패를 정체로 오인하면 경보 신뢰가 죽는다
+    (_analyst_probe 와 동일 원칙).
+    ★updated_at 은 rank 1 행 하나가 아니라 «최댓값»으로 잡는다. 부분 갱신 시 선두 행만
+      보면 신선해 보이는 함정이 있다(_top100_from_rows 는 첫 행만 본다).
+    """
+    today = datetime.now(_KST).date()
+    ups, rows, src, err = [], 0, "none", None
+    try:
+        ok, data = miri_cache.select_columns("market_cap_top100", "code,updated_at")
+        if ok and data:
+            ups = [str(r.get("updated_at") or "") for r in data if isinstance(r, dict)]
+            rows, src = len(data), "supabase"
+    except Exception as e:  # noqa: BLE001
+        err = type(e).__name__
+    if not ups:
+        try:
+            snap = miri_cache.load_json(_TOP100_FILE, default=None)
+            if isinstance(snap, dict) and snap.get("updated_at"):
+                ups = [str(snap.get("updated_at"))]
+                rows = len(snap.get("items") or [])
+                src = "local"
+        except Exception as e:  # noqa: BLE001
+            err = err or type(e).__name__
+    ups = [u for u in ups if len(u) == 10]
+    st = {"rows": rows, "source": src, "error": err, "checked_ts": time.time(),
+          "updated_at": None, "age_days": None, "stale": None}
+    if not ups:
+        return st
+    st["updated_at"] = max(ups)
+    try:
+        st["age_days"] = (today - datetime.strptime(st["updated_at"], "%Y-%m-%d").date()).days
+    except ValueError:
+        return st
+    st["stale"] = st["age_days"] > _TOP100_STALE_DAYS
+    return st
+
+
+def _top100_freshness_check():
+    """1회 점검(경보 없음 — 판정은 층2 소관). 예외를 던지지 않는다."""
+    try:
+        st = _top100_probe()
+    except Exception as e:  # noqa: BLE001
+        print(f"[top100fresh] 점검 예외(무시): {type(e).__name__}")
+        return
+    for k, v in st.items():
+        _TOP100_FRESH_STATE[k] = v
+    print(f"[top100fresh] updated_at={st.get('updated_at')} age={st.get('age_days')}d "
+          f"stale={st.get('stale')} rows={st.get('rows')} src={st.get('source')}")
+
+
+def _top100_freshness_view():
+    """/api/health 노출용 스냅샷.
+
+    ★층1 은 층2(슬롯 데몬)와 «독립»이어야 한다 — 층2 를 GONGSI_SLOT_WATCH=0 으로 꺼도
+      top100 신선도는 계속 보여야 한다(전달 복구 전에도 «관측 가능성»을 만드는 게 층1의 존재
+      이유다). 그래서 스냅샷이 비었거나 낡았으면 여기서 백그라운드 점검을 1회 띄운다 —
+      _analyst_freshness_view 의 adhoc 패턴과 동형. 요청 경로는 «기다리지 않는다».
+    """
+    st = dict(_TOP100_FRESH_STATE)
+    ts = st.get("checked_ts") or 0.0
+    if (not ts) or (time.time() - ts) > max(3600.0, _SLOT_CHECK_SEC * 2):
+        if not any(t.name == "top100-freshness-adhoc" and t.is_alive()
+                   for t in threading.enumerate()):
+            threading.Thread(target=_top100_freshness_check,
+                             name="top100-freshness-adhoc", daemon=True).start()
+    return {
+        "top100_updated_at": st.get("updated_at"),
+        "top100_age_days": st.get("age_days"),
+        "top100_stale": st.get("stale"),
+        "top100_stale_threshold_days": _TOP100_STALE_DAYS,
+        "top100_rows": st.get("rows"),
+        "top100_freshness_source": st.get("source"),
+        "top100_checked_age_sec": (round(time.time() - ts, 1) if ts else None),
+    }
+
+
+# ================= 층2: 배치 «미실행» 감시 (달력 데드라인) =================
+# stale 임계(8일)와 «다른 축»이다. 임계는 「무엇을 이상으로 볼까」, 이건 「예정된 회차가
+# 실제로 돌았나」다. 주 1회 배치라 6~7일 무갱신이 «정상»이므로, stale 임계로는 1회
+# 미실행을 8일보다 빨리 잡을 수 «없다» — 12일 사고가 12일 걸린 구조적 이유가 그것이다.
+# 유예 4h 근거: [실측] 2026-08-04 catch-up 이 슬롯(05:30) 대비 «3시간 04분» 늦게 시작했다.
+#   그보다 짧으면 정상 catch-up 을 미실행으로 오경보한다. 여유 1시간을 더해 4시간.
+# 휴장일 예외 «없음»(의도): 슬롯이 토요일(비거래일)이고 updated_at 이 «실행일»이라
+#   (top100_collect.py:205 / analyst_collect.py:630 date.today()) 휴장과 무관하다.
+#   「정당하게 안 도는 날」이 존재하지 않으므로 예외를 두면 진짜 미실행 경보를 억제한다.
+_SLOT_SPECS = {
+    "analyst": {"task": "MIRI_AnalystCollect_Sat", "weekday": 5, "hour": 5, "minute": 30,
+                "grace_h": 4.0, "label": "애널리스트 컨센서스"},
+    "top100": {"task": "MIRI_Top100Collect_Sat", "weekday": 5, "hour": 5, "minute": 0,
+               "grace_h": 4.0, "label": "시총 Top100"},
+}
+_SLOT_CHECK_SEC = float(os.getenv("GONGSI_SLOT_CHECK_SEC", "1800"))     # 30분
+_SLOT_ALERT_COOLDOWN = float(os.getenv("GONGSI_SLOT_ALERT_COOLDOWN", "86400"))
+_SLOT_WATCH_ENABLED = os.getenv("GONGSI_SLOT_WATCH", "1").strip().lower() \
+    not in ("0", "false", "no")
+_SLOT_STATE = {}
+
+
+def _last_slot(spec, now):
+    """now 이전(포함) 가장 최근의 예정 실행 시각(KST)."""
+    d = now.date()
+    back = (d.weekday() - spec["weekday"]) % 7
+    cand = datetime.combine(d - _td(days=back), datetime.min.time(),
+                            tzinfo=_KST).replace(hour=spec["hour"], minute=spec["minute"])
+    if cand > now:
+        cand -= _td(days=7)
+    return cand
+
+
+def _slot_verdict(job, updated_at, now):
+    """(verdict, why, slot). verdict ∈ OK | NONRUN | UNKNOWN.
+    ★조회 실패(updated_at=None)를 미실행으로 «단정하지 않는다»."""
+    spec = _SLOT_SPECS[job]
+    slot = _last_slot(spec, now)
+    deadline = slot + _td(hours=spec["grace_h"])
+    if now < deadline:
+        return "OK", f"유예 안(마감까지 {(deadline - now).total_seconds() / 3600:.1f}h)", slot
+    if not updated_at:
+        return "UNKNOWN", "갱신일 미확보 — 판정 보류", slot
+    try:
+        upd = datetime.strptime(str(updated_at)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return "UNKNOWN", f"갱신일 파싱 실패({updated_at!r})", slot
+    if upd >= slot.date():
+        return "OK", f"슬롯({slot.date()}) 이후 갱신됨({upd})", slot
+    return ("NONRUN",
+            f"슬롯 {slot:%Y-%m-%d %H:%M} 이 유예 {spec['grace_h']:.0f}h 를 넘겼는데 "
+            f"데이터 갱신일은 {upd} — 실행되지 않았다", slot)
+
+
+def _slot_alert(job, why, slot):
+    """미실행 경보. _stale_alert 와 «같은 채널»(notify_alert._tg_send = 운영자 개인).
+    실유저 공시채널(TG_CHANNEL_ID)은 이 경로를 쓰지 않으므로 구조적으로 도달 불가."""
+    spec = _SLOT_SPECS[job]
+    msg = (f"[MIRI 배치 미실행] {spec['label']}\n"
+           f"작업 {spec['task']}\n"
+           f"{why}\n"
+           "조치: schtasks /query /tn <작업> /v 로 LastRunTime·LastTaskResult 확인")
+    print("[slot][ALERT] " + msg.replace("\n", " | "))
+    sent = False
+    if _ANALYST_ALERT_TG:
+        try:
+            from notify_alert import _tg_send
+            sent = bool(_tg_send(msg))
+        except Exception as e:  # noqa: BLE001
+            print(f"[slot] 경보 발송 실패: {type(e).__name__}")
+    _SLOT_STATE.setdefault(job, {}).update(
+        alerted_ts=time.time(),
+        alerted_at=datetime.now(_KST).isoformat(timespec="seconds"),
+        alert_sent=sent)
+    return sent
+
+
+def _slot_check_once():
+    """1회 점검. 예외를 던지지 않는다. 반환: {job: verdict}
+
+    ★입력을 «직접 probe» 한다 — /api/health 스냅샷(6h)을 읽지 않으므로 관측지연이 0 이다.
+    """
+    now = datetime.now(_KST)
+    out = {}
+    for job in _SLOT_SPECS:
+        try:
+            if job == "analyst":
+                st = _analyst_probe()
+                for k, v in st.items():
+                    _ANALYST_FRESH_STATE[k] = v
+            else:
+                st = _top100_probe()
+                for k, v in st.items():
+                    _TOP100_FRESH_STATE[k] = v
+            verdict, why, slot = _slot_verdict(job, st.get("updated_at"), now)
+        except Exception as e:  # noqa: BLE001
+            print(f"[slot] {job} 점검 예외(무시): {type(e).__name__}: {e}")
+            continue
+        prev = _SLOT_STATE.setdefault(job, {})
+        prev.update(verdict=verdict, why=why, slot=slot.isoformat(timespec="minutes"),
+                    checked_ts=time.time())
+        out[job] = verdict
+        print(f"[slot] {job} {verdict} · {why}")
+        if verdict == "NONRUN":
+            last = prev.get("alerted_ts") or 0.0
+            if (time.time() - last) >= _SLOT_ALERT_COOLDOWN:
+                _slot_alert(job, why, slot)
+    return out
+
+
+def _batch_slot_watchdog():
+    """데몬: 기동 후 잠시 뒤 1회 + 이후 _SLOT_CHECK_SEC 마다.
+    ★배치와 독립된 경로다 — 배치가 안 도는 것을 배치가 감지할 수는 없다.
+    ★그리고 stale 임계와도 «독립»이다 — 임계 8일로는 1회 미실행을 8일 전에 못 잡는다.
+    ★어떤 예외에도 스레드를 죽이지 않는다. 감시자가 조용히 죽는 게 우리가 고치려는 병이다."""
+    time.sleep(max(0.0, _ANALYST_FIRST_DELAY))
+    while True:
+        try:
+            _slot_check_once()
+        except Exception as e:  # noqa: BLE001
+            # ★여기까지 온 예외는 «반드시» 로그에 남긴다. 조용히 죽으면 감시가 사라진다.
+            print(f"[slot][THREAD-ERR] 점검 루프 예외(계속 진행): {type(e).__name__}: {e}")
+        time.sleep(max(60.0, _SLOT_CHECK_SEC))
+
+
+def _batch_slot_view():
+    """/api/health 노출용. 외부 호출 0.
+    ★slot_*_checked_age_sec 가 커지면 «데몬이 조용히 죽은 것»이다 — 그걸 보라고 낸다."""
+    out = {}
+    for job in _SLOT_SPECS:
+        s = _SLOT_STATE.get(job) or {}
+        ts = s.get("checked_ts") or 0.0
+        out[f"slot_{job}_verdict"] = s.get("verdict")
+        out[f"slot_{job}_why"] = s.get("why")
+        out[f"slot_{job}_last_slot"] = s.get("slot")
+        out[f"slot_{job}_checked_age_sec"] = (round(time.time() - ts, 1) if ts else None)
+        out[f"slot_{job}_alerted_at"] = s.get("alerted_at")
+        out[f"slot_{job}_alert_sent"] = s.get("alert_sent")
+    out["slot_watch_enabled"] = _SLOT_WATCH_ENABLED
+    out["slot_check_sec"] = _SLOT_CHECK_SEC
+    return out
 
 
 # ---------------- 종가 신선도 자동 갱신(서버 자체 · 배치/VM/노트북 불요) ----------------

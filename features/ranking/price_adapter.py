@@ -6,11 +6,11 @@
 
 ★안전 규칙 (이 파일이 지키는 게이트):
 - read-only GET(/prices, /candles)만 구현. 주문/계좌 변경 엔드포인트 없음.
-- kis-trading 레포의 어떤 파일도 **수정하지 않는다**. TOSS 키(.env)와 토큰
-  캐시(.toss_token.json)는 그쪽 것을 **읽기만** 한다. 토큰을 새로 받아야 하면
-  kis-trading 이 아니라 **이 폴더의 로컬 캐시**(.toss_token.local.json)에 쓴다.
-- 키 우선순위: gongsi-alert/.env 에 TOSS 키가 있으면 그걸 우선, 없으면
-  kis-trading/.env 를 폴백으로 읽는다.
+- kis-trading 레포를 **읽지도 쓰지도 않는다**(U7-3 이후). 키는 gongsi-alert/.env
+  **단일 소스**, 토큰 캐시는 이 폴더의 .toss_token.local.json 뿐이다.
+  ★U7-3 이전 주석은 「수정하지 않는다」만 말해서 독자가 「분리됐다」로 읽었다.
+    실제로는 .env·토큰캐시를 **읽는** 폴백이 3곳 있었다 — 「수정 안 함」은 참이지만
+    **불완전**했고, 그래서 거짓보다 잡기 어려웠다. 회귀는 ops_env_guard.py 가 잡는다.
 - 토큰 값은 로그/출력에 절대 찍지 않는다(조용한 실패 금지 = 상태코드/사유만).
 """
 import json
@@ -25,10 +25,10 @@ BASE = "https://openapi.tossinvest.com"
 _EXP_MARGIN = 120  # 만료 여유(초)
 
 _HERE = Path(__file__).resolve().parent
-_GONGSI_ENV = _HERE.parent.parent / ".env"                 # gongsi-alert/.env (우선)
-_KIS_DIR = Path(r"C:\Users\urimk\kis-trading")
-_KIS_ENV = _KIS_DIR / ".env"                                # kis-trading/.env (폴백)
-_KIS_TOKF = _KIS_DIR / ".toss_token.json"                   # 읽기 전용(재사용)
+_GONGSI_ENV = _HERE.parent.parent / ".env"                 # gongsi-alert/.env (단일 소스)
+# ★U7-3: kis-trading 폴백 3곳 제거(실계좌 경계 위반). 키·토큰은 이 레포 것만 쓴다.
+#   제거 전에는 _KIS_DIR/".env" 와 _KIS_DIR/".toss_token.json" 을 직접 읽었고,
+#   특히 토큰 캐시는 «키 부재와 무관하게» get_token() 에서 항상 먼저 시도됐다.
 _LOCAL_TOKF = _HERE / ".toss_token.local.json"             # 우리가 쓸 로컬 캐시
 
 # 관측용 외부호출 카운터(demo 가 콜예산 실측에 사용). 토큰 발급콜과 GET콜 분리.
@@ -57,9 +57,11 @@ def _read_env_key(path: Path, key: str):
 
 
 def _creds():
-    """(app_key, secret). gongsi-alert/.env 우선, 없으면 kis-trading/.env."""
-    ak = _read_env_key(_GONGSI_ENV, "TOSS_APP_KEY") or _read_env_key(_KIS_ENV, "TOSS_APP_KEY")
-    sk = _read_env_key(_GONGSI_ENV, "TOSS_SECRET") or _read_env_key(_KIS_ENV, "TOSS_SECRET")
+    """(app_key, secret). gongsi-alert/.env ★단일 소스.
+    kis-trading/.env 폴백 제거(U7-3) — 실계좌 레포 참조는 경계 위반이다.
+    [실측 2026-08-16] gongsi-alert/.env 에 TOSS_APP_KEY·TOSS_SECRET «있음» → 기능 영향 0."""
+    ak = _read_env_key(_GONGSI_ENV, "TOSS_APP_KEY")
+    sk = _read_env_key(_GONGSI_ENV, "TOSS_SECRET")
     return ak, sk
 
 
@@ -77,15 +79,18 @@ def _read_cache(path: Path):
 
 
 def get_token(force=False):
-    """유효 토큰 반환. 순서: 로컬캐시 → kis 캐시(read-only) → 신규발급(로컬에만 저장).
+    """유효 토큰 반환. 순서: 로컬캐시 → 신규발급(로컬에만 저장).
+    ★U7-3: kis-trading/.toss_token.json 직독 제거. 그건 «실계좌의 유효 토큰»이라
+      .env 폴백보다 직접적인 경계 위반이었고, 키 부재와 «무관하게» 항상 먼저 탔다.
+      제거 비용은 로컬 캐시가 빌 때 «신규 발급 1회» 추가뿐이고 이후 캐시로 수렴한다.
     force=True 면 캐시 무시하고 신규발급(401/403 후 재시도용). 토큰 값은 출력 안 함."""
     if not force:
-        tok = _read_cache(_LOCAL_TOKF) or _read_cache(_KIS_TOKF)
+        tok = _read_cache(_LOCAL_TOKF)
         if tok:
             return tok
     ak, sk = _creds()
     if not ak or not sk:
-        raise RuntimeError("TOSS_APP_KEY/TOSS_SECRET missing (gongsi-alert/.env, kis-trading/.env)")
+        raise RuntimeError("TOSS_APP_KEY/TOSS_SECRET missing (gongsi-alert/.env)")
     CALLS["token_post"] += 1
     r = requests.post(BASE + "/oauth2/token",
                       data={"grant_type": "client_credentials",

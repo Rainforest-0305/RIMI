@@ -10,7 +10,7 @@
 - 실유저 브로드캐스트 금지. push_disclosure 는 골격이며 토큰 없으면 no-op(로그만).
 - 실행/발송/폴링은 자동으로 시작되지 않는다.
 
-env 로딩은 config.py 와 동일한 방식(load_dotenv 로 os.environ 채움)을 재사용한다.
+env 로딩은 config.py **관문**에 위임한다. 직접 load_dotenv 하지 않는다(관문 우회 금지).
 """
 import json
 import logging
@@ -18,7 +18,10 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-# config 임포트만으로 kis-trading/.env + 로컬 .env 가 os.environ 에 로드된다.
+# config 를 임포트하면 «관문 정책에 따라» env 가 로드된다
+# (MIRI_ALLOW_KIS_ENV · KIS_ENV_ALLOWLIST 5종). ★무조건 로드가 아니다 —
+# 과거 주석은 「kis-trading/.env + 로컬 .env 가 로드된다」고 단언했으나 지금은 조건부다.
+# ★직접 load_dotenv 금지 — 관문 우회이며 ops_env_guard.py 가 검출한다.
 # (네트워크 동작 없음; DATA 디렉터리 준비만.) 봇 토큰도 .env 에 있으면 여기서 노출된다.
 try:
     import config  # noqa: F401  (side-effect: load_dotenv → os.environ)

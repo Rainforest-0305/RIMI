@@ -63,3 +63,9 @@ out_review/
 .env.*
 !.env.example
 dispatch-ledger.md
+
+# 2026-08-16 Partner: 한경 리포트 PDF 5건(4.39MB)이 추적 대상이었다.
+# 600건 규모면 0.5GB 가 git 히스토리에 «영구» 박힌다. 패턴으로 막는다.
+*.pdf
+features/**/_hk*.pdf
+data/_ops/
