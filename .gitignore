@@ -57,3 +57,9 @@ impact_benchmark.biased_kospi200.json
 out/
 out_cards/
 out_review/
+
+# 2026-08-16 Partner: 값이 든 env 백업이 공개 레포로 나갈 뻔했다(.env.bak_*).
+# `.env` 두 줄만으로는 파생 파일을 못 막는다. 패턴으로 막고 예시만 예외.
+.env.*
+!.env.example
+dispatch-ledger.md
