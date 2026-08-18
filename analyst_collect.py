@@ -22,6 +22,7 @@
 리포트는 '진짜 0건'과 '조회 실패'를 구분해 실패일 때만 기존 리포트를 보존한다
 (WS ②). 실패율이 임계를 넘으면 배치를 중단·경보한다 — 조용한 실패 금지."""
 import hashlib
+import os
 import re
 import signal
 import sys
@@ -55,6 +56,23 @@ _CACHE_FILE = config.DATA / "analyst_cache.json"
 _CORP_INDEX_FILE = config.DATA / "corp_index.json"
 _ALIAS_FILE = config.DATA / "corp_alias.json"
 _ALERT_JOURNAL = config.DATA / "analyst_alerts.json"   # 경보 내구 기록(텔레그램 실패 대비)
+
+# ★U7-6 소스 감시 계측(ops_source_health.record). 「새로 크롤하지 않는다」 —
+# 이미 나가는 호출의 «결과만» 받아 적는다. 추가 외부 트래픽 0.
+# import 실패 시 no-op 로 떨어뜨리되 «조용히» 넘기지 않는다: 계측이 안 붙으면
+# 감시 화면에 NONRUN 으로만 뜨고, 그건 「진짜 차단」과 구분이 안 된다(R3 계열 함정).
+try:
+    from ops_source_health import record as _srec
+    _SREC_WIRED = True
+except Exception as _e:  # noqa: BLE001
+    _SREC_WIRED = False
+
+    def _srec(*_a, **_k):
+        return None
+
+    print(f"[analyst] ★계측 미연결: ops_source_health import 실패 "
+          f"({type(_e).__name__}) — 소스감시가 NONRUN 으로만 보인다(차단과 구분 불가)",
+          file=sys.stderr)
 _DISCLAIMER = "증권사 전망을 정리한 참고 자료이며 투자 권유가 아닙니다"
 
 _DDL = """
@@ -68,8 +86,30 @@ CREATE TABLE IF NOT EXISTS analyst_consensus (
   window_start text,
   updated_at text,
   prices jsonb,
-  reports jsonb
+  reports jsonb,
+  -- ★2026-08-16 추가(대표성). 기존 컬럼 의미는 «불변»이다.
+  --   n_total/n_tp = 리포트 «건수» · n_brokers = 그 리포트를 낸 «증권사 수»
+  --   한 곳이 30번 내도 n_total 은 30이지만 n_brokers 는 1이다.
+  n_brokers int,
+  brokers jsonb,
+  avg_tp_by_broker bigint,
+  top_broker_share real
 );"""
+
+# ★기존 테이블에는 위 4컬럼이 «없다». CREATE TABLE IF NOT EXISTS 는 기존 테이블을
+# 바꾸지 않으므로 아래 마이그레이션이 «따로» 필요하다(Supabase 스키마 = Partner 게이트).
+# 적용 전까지는 save_one 이 신규 컬럼을 자동으로 걸러 전송하지 않는다(배치 안전).
+MIGRATION_SQL = """
+ALTER TABLE analyst_consensus ADD COLUMN IF NOT EXISTS n_brokers int;
+ALTER TABLE analyst_consensus ADD COLUMN IF NOT EXISTS brokers jsonb;
+ALTER TABLE analyst_consensus ADD COLUMN IF NOT EXISTS avg_tp_by_broker bigint;
+ALTER TABLE analyst_consensus ADD COLUMN IF NOT EXISTS top_broker_share real;
+"""
+
+# DDL 에 선언된 컬럼명 집합(= 신규 테이블이 가지는 컬럼). save_one 의 화이트리스트.
+_SB_COLS = {"code", "name", "current", "avg_tp", "n_total", "n_tp",
+            "window_start", "updated_at", "prices", "reports"}
+_EXTRA_COLS_ON = os.getenv("GONGSI_ANALYST_EXTRA_COLS", "").strip() in ("1", "true", "True")
 
 
 # ----------------- S0 가드: 조용한 실패 차단 -----------------
@@ -84,6 +124,59 @@ _ABORT_MIN_FAILS = 3
 # 개별 종목의 산발 실패는 재시도로 흡수되지만, 비율이 높으면 소스 전역 장애다.
 _REPORT_ALERT_RATE = 0.20
 _REPORT_ALERT_MIN = 3
+
+
+# ----------------- 대표성 계수(고유 증권사) -----------------
+# 「n_total 이 크다」 ≠ 「대표성이 있다」. 한 곳이 30번 내도 30이다.
+# 실측 2026-08-16(라이브):
+#   005930 삼성전자        n_total=64 창내 15건 → 고유 7곳 (iM증권만 6건 = 40% 편중)
+#   010950 S-Oil          n_total=30 창내  9건 → 고유 7곳
+#   0126Z0 삼성에피스홀딩스 n_total= 2 창내  2건 → ★고유 «1»곳(대신증권, 둘 다 560,000)
+# → avg_tp 560,000 은 «증권사 한 곳»의 의견이다. 「컨센서스」라 부를 근거가 얇다.
+# 이 모듈은 «사실만» 노출한다. 화면 문구는 President 게이트라 여기서 정하지 않는다.
+
+
+def _broker_key(name):
+    """증권사명 정규화 키. ★보수적으로만 정규화한다.
+
+    공백 정리와 대소문자 통일까지만 한다('iM증권'/'IM 증권' 같은 표기 흔들림 흡수).
+    '증권'·'투자증권' 접미사를 떼는 식의 «적극 정규화»는 하지 않는다 — 서로 다른
+    법인을 하나로 합쳐 고유 수를 «과소»계상하면, 대표성이 실제보다 좋아 보인다.
+    그 방향의 오차가 이 지표에서 가장 위험하다."""
+    return " ".join(str(name or "").split()).upper()
+
+
+def broker_stats(reps):
+    """목표가 리포트 리스트 → 대표성 지표.
+
+    반환 dict:
+      n_brokers        고유 증권사 수 (★avg_tp 를 만든 «주체»의 수)
+      brokers          원표기 증권사 목록(정렬)
+      avg_tp_by_broker 증권사 «1곳당 1표» 평균 — 같은 곳이 여러 번 내면 «최신 1건»만 반영
+      top_broker_share 최다 증권사가 차지하는 리포트 비중(0~1). 편중 탐지용
+    ★avg_tp(기존 필드)는 건드리지 않는다. 기존 화면·비교가 조용히 깨지기 때문이다.
+      다만 기존 avg_tp 는 «건수 가중»이라 한 곳이 2번 내면 그 곳 의견이 2배로 들어간다.
+      그 차이를 보이기 위해 avg_tp_by_broker 를 «추가»로 계산해 나란히 둔다."""
+    valid = [r for r in (reps or [])
+             if isinstance(r, dict) and int(r.get("target_price") or 0) > 0]
+    if not valid:
+        return {"n_brokers": 0, "brokers": [], "avg_tp_by_broker": None,
+                "top_broker_share": None}
+    latest, counts, label = {}, {}, {}
+    for r in valid:
+        k = _broker_key(r.get("broker"))
+        counts[k] = counts.get(k, 0) + 1
+        label.setdefault(k, str(r.get("broker") or "").strip())
+        d = str(r.get("date") or "")
+        if k not in latest or d >= latest[k][0]:
+            latest[k] = (d, int(r.get("target_price") or 0))
+    tps = [v[1] for v in latest.values()]
+    return {
+        "n_brokers": len(latest),
+        "brokers": sorted(label[k] for k in latest),
+        "avg_tp_by_broker": round(sum(tps) / len(tps)),
+        "top_broker_share": round(max(counts.values()) / len(valid), 3),
+    }
 
 
 class PriceUnavailable(Exception):
@@ -241,30 +334,47 @@ def _rows(term, sdate, edate, pagenum=_HK_PAGENUM):
     p = {"sdate": sdate, "edate": edate, "now_page": 1, "search_value": "BUSINESS",
          "report_type": "CO", "pagenum": pagenum, "business_code": "",
          "order_type": "", "search_text": term}
+    # ★U7-6 계측(추가 호출 0). 이 함수는 «요청 1회당 record 1회»를 지킨다 —
+    # 여러 번 부르면 fail_rate 분모가 부풀어 판정이 거짓말을 한다.
     try:
         r = requests.get(_HK_LIST, params=p, headers=_HK_H, timeout=25)
     except Exception as e:  # noqa: BLE001
+        _srec("hankyung", ok=False, note=f"req_exc:{type(e).__name__}")
         print(f"[analyst] 한경 요청 실패 term='{term}': {type(e).__name__}", file=sys.stderr)
         return [], REPORTS_NET_FAIL
-    if r.status_code != 200 or not (r.text or "").strip():
+    _body = r.text or ""
+    if r.status_code != 200 or not _body.strip():
+        _srec("hankyung", status=r.status_code, size=len(_body), payload=_body,
+              ok=False, note="http_or_empty")
         print(f"[analyst] 한경 비정상 응답 term='{term}': HTTP {r.status_code} "
-              f"len={len(r.text or '')}", file=sys.stderr)
+              f"len={len(_body)}", file=sys.stderr)
         return [], REPORTS_NET_FAIL
     r.encoding = "utf-8"
     try:
         soup = BeautifulSoup(r.text, "html.parser")
         head = [th.get_text(strip=True) for th in soup.select("table thead th")]
     except Exception as e:  # noqa: BLE001
+        _srec("hankyung", status=r.status_code, size=len(_body), payload=_body,
+              ok=False, note=f"parse_exc:{type(e).__name__}")
         print(f"[analyst] 한경 파싱 실패 term='{term}': {type(e).__name__}", file=sys.stderr)
         return [], REPORTS_PARSE_FAIL
+    # ★형태 지문은 «표 헤더»로 만든다. 본문 텍스트로 지문을 뜨면 종목마다 내용이 달라
+    # 매번 다른 값이 나오거나(노이즈), 반대로 차단페이지 단서가 없으면 정상/이상이
+    # 똑같이 'marks=none' 으로 뭉개진다. 헤더는 «정상일 때 항상 같고 구조가 바뀌면
+    # 반드시 바뀌는» 값이라 SHAPE 감지의 유일하게 의미 있는 기준이다.
+    _shape_src = {h: None for h in head} if head else "EMPTY_HEAD"
     if not head or any(len(head) <= i or head[i] != want
                        for i, want in _HK_HEAD_EXPECT.items()):
+        _srec("hankyung", status=r.status_code, size=len(_body), payload=_shape_src,
+              ok=False, note="head_mismatch")
         print(f"[analyst] 한경 표 구조 불일치 term='{term}': head={head[:8]}",
               file=sys.stderr)
         return [], REPORTS_PARSE_FAIL
     rows = [tr for tr in (soup.select("table tbody tr") or soup.select("table tr"))
             if len(tr.find_all("td")) >= 6
             and tr.find_all("td")[0].get_text(strip=True)[:4].isdigit()]
+    _srec("hankyung", status=r.status_code, size=len(_body), payload=_shape_src,
+          ok=True, note=f"rows={len(rows)}")
     return rows, (REPORTS_OK if rows else REPORTS_ZERO)
 
 
@@ -327,7 +437,10 @@ def fetch_reports(code, name, sdate="2025-01-01", edate=None, with_status=False,
         return ([], REPORTS_ZERO) if with_status else []
     strip_re = re.compile(r"^(" + "|".join(re.escape(n) for n in (names or [code])) + r")+")
     seen, out = set(), []
-    state = {"net": False, "parse": False, "req": 0, "ceiling": False}
+    # ceiling  = 타깃«본인» 리포트가 상한에 닿았다(진짜 절단 위험)
+    # dilution = 페이지는 찼는데 타깃 매치가 0이다(남의 리포트가 칸을 다 먹었다)
+    state = {"net": False, "parse": False, "req": 0,
+             "ceiling": False, "dilution": None}
 
     def _scan(term):
         """단일 검색어 조회 → out 에 병합. 요청 간 >=1초 간격을 여기서 보장한다."""
@@ -335,12 +448,7 @@ def fetch_reports(code, name, sdate="2025-01-01", edate=None, with_status=False,
             time.sleep(1.0)
         state["req"] += 1
         rows, st = _rows(term, sdate, edate)
-        # ★천장 접촉 인바리언트. 반환행이 pagenum 과 «같으면» 잘렸을 수 있다.
-        # 종전 40 이 정확히 이 상태였고(캐시 110종 중 n_total>40 이 0건 = 천장 자국),
-        # 삼성전기가 하필 '40'으로 저장돼 자연값처럼 보였다. 상한을 올린 뒤에도
-        # 같은 함정이 재발하지 않도록 «상시» 감시한다.
-        if len(rows) >= _HK_PAGENUM:
-            state["ceiling"] = True
+        hit_before = len(out)
         if st == REPORTS_NET_FAIL:
             state["net"] = True
         elif st == REPORTS_PARSE_FAIL:
@@ -371,6 +479,19 @@ def fetch_reports(code, name, sdate="2025-01-01", edate=None, with_status=False,
                 tp_val = 0
             out.append({"date": rdate, "title": half[:45],
                         "target_price": tp_val, "opinion": opinion, "broker": broker})
+        # ★상한 접촉을 «두 사건»으로 가른다. 종전엔 하나로 뭉쳐 「n_total 절단 의심」이라
+        # 경보했는데, 실측(2026-08-16 005935 삼성전자우)에서 그 문구가 틀렸다:
+        #   T1 코드 '005935' 0행 · T2 이름 0행 → T3 프리픽스 '삼성전' 이 100행을 채움
+        #   그 100행은 삼성전기 48 + 삼성전자 45 … 이고 «005935 매치는 0» 이었다.
+        # 즉 「우선주 리포트가 잘렸다」가 아니라 「폴백 검색어가 남의 리포트로 칸을
+        # 채웠다」였다. 두 경우는 원인도 대책도 다르므로 신호를 분리한다.
+        if len(rows) >= _HK_PAGENUM:
+            matched = len(out) - hit_before
+            if matched > 0:
+                state["ceiling"] = True      # 본인 리포트가 상한에 닿음 = 진짜 절단 위험
+            else:
+                # 남의 리포트가 페이지를 채움. 타깃이 상한 «너머»에 숨어 있을 수 있다.
+                state["dilution"] = term
 
     for tier in (tier1, tier2, tier3):
         for term in tier:
@@ -392,9 +513,15 @@ def fetch_reports(code, name, sdate="2025-01-01", edate=None, with_status=False,
         # 확정 판정은 호출부가 기존 데이터와 대조해서 내린다(build_payload).
         status = REPORTS_ZERO
     if state["ceiling"]:
-        print(f"[analyst] {code} ★천장 접촉: 한 페이지가 pagenum({_HK_PAGENUM})을 채웠다 "
-              f"— n_total={len(out)} 은 «절단됐을 수 있다»(신뢰불가)", file=sys.stderr)
+        print(f"[analyst] {code} ★상한 접촉(본인 리포트): 한 페이지가 pagenum({_HK_PAGENUM})을 "
+              f"채웠고 그 안에 본인 행이 있다 — n_total={len(out)} 은 «절단됐을 수 있다»",
+              file=sys.stderr)
+    if state["dilution"]:
+        print(f"[analyst] {code} ★검색어 희석: 폴백 검색어 '{state['dilution']}' 가 "
+              f"pagenum({_HK_PAGENUM})을 «남의 리포트»로 채웠다(본인 매치 0). "
+              "본인 리포트가 상한 너머에 있으면 못 본다", file=sys.stderr)
     fetch_reports.last_ceiling = state["ceiling"]
+    fetch_reports.last_dilution = state["dilution"]
     return (out, status) if with_status else out
 
 
@@ -443,14 +570,23 @@ def _prices(code):
     # 하루 밀려 최신 거래일이 창 밖으로 떨어진다. 미리 고정해 둔다.
     end = datetime.now(_KST).date()
     start = end - timedelta(days=_PRICE_LOOKBACK_DAYS)
+    # ★U7-6 계측. fdr 은 HTTP 상태를 돌려주지 않으므로 status 는 없다 —
+    # 대신 «컬럼 집합»을 형태 지문으로, «행 수»를 size 로 적는다. 소스가 막히면
+    # 예외(→ok=False)나 0행(→ok=False)으로 나타나고, 스키마가 바뀌면 shape 가 바뀐다.
     try:
         df = _fdr.DataReader(code, start.isoformat(), end.isoformat())
     except Exception as e:  # noqa: BLE001
+        _srec("krx_fdr", ok=False, note=f"exc:{type(e).__name__}")
         print(f"[analyst] {code} fdr 실패: {type(e).__name__}", file=sys.stderr)
         return []
     if df is None or len(df) == 0 or "Close" not in df:
+        _srec("krx_fdr", ok=False, size=(0 if df is None else len(df)),
+              payload=({c: None for c in df.columns} if df is not None else "NONE_DF"),
+              note="empty_or_no_close")
         print(f"[analyst] {code} fdr 빈 응답(0행) — 실패로 판정", file=sys.stderr)
         return []
+    _srec("krx_fdr", ok=True, size=len(df),
+          payload={c: None for c in df.columns}, note=f"code={code}")
     exp = _expected_trade_day()
     out = []
     for d, c in df["Close"].items():
@@ -525,16 +661,22 @@ def build_payload(code, name, prev_loader=None, alt_names=None):
     all_reports, rstatus = fetch_reports(code, name, with_status=True,
                                          alt_names=alt_names)
     ceiling = bool(getattr(fetch_reports, "last_ceiling", False))
-    # ★집계창 검산. window_start 는 prices 에서 나오고(최근 100거래일), 리포트 조회창은
-    # sdate=2025-01-01 부터라 «훨씬 넓다». 따라서 조회된 최고령 리포트는 정상이라면
-    # window_start «이전»이어야 한다. 그보다 늦다면 앞부분이 조회조차 안 된 것이고
-    # (실측 사례: 034730 SK — win=2026-03-23 인데 최고령 행 2026-05-18, 앞 56일 미조회),
-    # 그 상태로 계산한 avg_tp 는 창과 어긋난 값이다.
+    dilution = getattr(fetch_reports, "last_dilution", None)
+    # ★집계창 대비 커버 검산. window_start 는 prices 에서 나오고(최근 100거래일),
+    # 리포트 조회창은 sdate=2025-01-01 부터라 «훨씬 넓다». 따라서 조회된 최고령 리포트가
+    # window_start 보다 «늦다»면, 그건 앞부분을 «못 가져온» 게 아니라 그 기간에 리포트가
+    # «없다»는 뜻이다(조회창이 이미 그 앞을 덮고 있으므로).
+    # ★2026-08-16 실측으로 확정 — 종전 주석의 「조회조차 안 된 것」은 틀린 해석이었다:
+    #   377300 카카오페이  코드·이름 검색 × sdate 2025/2024 네 조합 모두 1건(2026-08-05)
+    #   0126Z0 삼성에피스홀딩스  최초거래일 2025-11-24 신규상장, 리포트는 2026-07 부터
+    #   양성대조로 같은 방법이 005930 64건 / 010950 30건을 정상 취득 → 수집 실패 아님
+    # 남는 진짜 의미: avg_tp 가 명목 창이 아니라 «짧은 실효기간»으로 계산됐다(대표성 경고).
     oldest = min((str(r.get("date") or "") for r in all_reports), default="")
     window_gap = bool(all_reports and oldest > window_start)
     if window_gap:
-        print(f"[analyst] {code} ★집계창 결손: 조회 최고령 {oldest} > window_start "
-              f"{window_start} — 창 앞부분이 미조회(avg_tp 신뢰불가)", file=sys.stderr)
+        print(f"[analyst] {code} ★창내 커버 희소: 최초리포트 {oldest} > window_start "
+              f"{window_start} — 그 앞 기간엔 리포트가 없다(avg_tp 실효기간이 짧다)",
+              file=sys.stderr)
     preserved = False
     zero_conflict = False
     if not all_reports and rstatus != REPORTS_OK:
@@ -575,7 +717,14 @@ def build_payload(code, name, prev_loader=None, alt_names=None):
                    if r.get("target_price", 0) > 0 and r["date"] >= window_start]
         tp_reps.sort(key=lambda x: x["date"])
     tps = [int(r.get("target_price") or 0) for r in tp_reps]
+    # ★avg_tp 는 «건수 가중» 그대로 둔다(기존 의미 불변 — 재정의하면 기존 화면·비교가
+    # 조용히 깨진다). 대표성 지표는 아래에서 «추가»한다.
     avg_tp = round(sum(tps) / len(tps)) if tps else None
+    bstat = broker_stats(tp_reps)
+    if bstat["n_brokers"] == 1 and avg_tp is not None:
+        print(f"[analyst] {code} ★단일 증권사: avg_tp={avg_tp:,} 는 "
+              f"{bstat['brokers'][0]} «한 곳»의 의견이다(리포트 {len(tp_reps)}건)",
+              file=sys.stderr)
     return {
         "code": code,
         "name": name,
@@ -583,6 +732,11 @@ def build_payload(code, name, prev_loader=None, alt_names=None):
         "avg_tp": avg_tp,
         "n_total": n_total,
         "n_tp": len(tp_reps),
+        # ★신규(추가 — 기존 필드 의미 불변). n_total/n_tp 는 «리포트 건수», 아래는 «주체 수».
+        "n_brokers": bstat["n_brokers"],
+        "brokers": bstat["brokers"],
+        "avg_tp_by_broker": bstat["avg_tp_by_broker"],
+        "top_broker_share": bstat["top_broker_share"],
         "window_start": window_start,
         "updated_at": date.today().isoformat(),
         "prices": prices,
@@ -592,6 +746,7 @@ def build_payload(code, name, prev_loader=None, alt_names=None):
         "_reports_preserved": preserved,
         "_zero_conflict": zero_conflict,
         "_ceiling": ceiling,
+        "_dilution": dilution,
         "_window_gap": window_gap,
         "_oldest_report": oldest,
     }
@@ -666,6 +821,20 @@ def save_one(payload):
     """
     row = {k: v for k, v in payload.items() if not str(k).startswith("_")}
     row.pop("disclaimer", None)  # 로컬/응답에서 상수 부착(테이블엔 미저장)
+    # ★스키마 안전장치. PostgREST 는 «테이블에 없는 컬럼»이 하나라도 섞이면 400 을 낸다.
+    # 그러면 그 종목만이 아니라 «전 종목» upsert 가 실패한다 — 신규 필드를 무심코 추가하는
+    # 것만으로 배치 전체가 죽는다. 그래서 DDL 에 선언된 컬럼만 보내고, 나머지는 «로컬
+    # 캐시·API payload 에만» 남긴다(정보는 잃지 않는다).
+    # 마이그레이션(ALTER TABLE)이 끝나면 GONGSI_ANALYST_EXTRA_COLS=1 로 전송을 켠다.
+    if not _EXTRA_COLS_ON:
+        dropped = sorted(set(row) - _SB_COLS)
+        if dropped:
+            row = {k: v for k, v in row.items() if k in _SB_COLS}
+            if not getattr(save_one, "_warned", False):
+                save_one._warned = True
+                print(f"[analyst] 신규 필드 {dropped} 는 Supabase 미전송(컬럼 없음). "
+                      "로컬 캐시엔 저장됨. ALTER TABLE 후 "
+                      "GONGSI_ANALYST_EXTRA_COLS=1 로 전송 활성화", file=sys.stderr)
     if not row.get("prices") or row.get("current") is None:
         print(f"[analyst] {row.get('code')}: 빈 가격 — upsert 스킵(기존 행 보존)",
               file=sys.stderr)
@@ -876,8 +1045,9 @@ def main(limit=0, sleep_sec=1.2, extra=None, resume=True, deadline_min=0.0,
     rep_fails = []        # 리포트 조회 실패(가격은 성공) — 중단 사유는 아니지만 반드시 표면화
     zero_conflicts = []   # 「있다가 0건」 이상징후 — 부재로 «확정하지 않은» 건들
     zeros = 0             # 조회 정상 + 0건(부재 확정)
-    ceilings = []         # 천장 접촉 — n_total 이 절단됐을 수 있는 종목
-    window_gaps = []      # 집계창 앞부분 미조회 — avg_tp 신뢰불가 종목
+    ceilings = []         # 상한 접촉(본인 행 포함) — n_total 절단 가능
+    dilutions = []        # 폴백 검색어가 «남의 리포트»로 페이지를 채움(본인 매치 0)
+    window_gaps = []      # 집계창 앞부분에 리포트가 «없다»(미조회 아님 — 아래 주석)
     aborted = False
     stop_reason = None
     t_begin = time.time()
@@ -902,6 +1072,8 @@ def main(limit=0, sleep_sec=1.2, extra=None, resume=True, deadline_min=0.0,
             rst = payload.get("_reports_status")
             if payload.get("_ceiling"):
                 ceilings.append((code, name, payload["n_total"]))
+            if payload.get("_dilution"):
+                dilutions.append((code, name, payload["_dilution"], payload["n_total"]))
             if payload.get("_window_gap"):
                 window_gaps.append((code, name, payload.get("_oldest_report"),
                                     payload["window_start"]))
@@ -957,17 +1129,43 @@ def main(limit=0, sleep_sec=1.2, extra=None, resume=True, deadline_min=0.0,
     print(f"[analyst] {head}: 커버 {covered}/{len(codes)} "
           f"(이번 회차 성공 {ok} 실패 {len(fails)}), 캐시 {len(cache)}종목 -> {_CACHE_FILE}")
     print(f"[analyst] 리포트: 0건확정 {zeros} · 0건이상징후 {len(zero_conflicts)} · "
-          f"조회실패 {len(rep_fails)} · 천장접촉 {len(ceilings)} · 집계창결손 {len(window_gaps)}")
+          f"조회실패 {len(rep_fails)} · 상한접촉 {len(ceilings)} · 검색어희석 {len(dilutions)} · "
+          f"창내커버희소 {len(window_gaps)}")
     if ceilings:
         d = ", ".join(f"{c}({n}):{t}" for c, n, t in ceilings[:10])
-        print(f"[analyst] ★천장접촉 {len(ceilings)}종목(n_total 절단 의심): {d}", file=sys.stderr)
-        _alert(f"천장접촉 {len(ceilings)}종목 — pagenum({_HK_PAGENUM}) 을 채웠다\n{d}\n"
+        print(f"[analyst] ★상한접촉 {len(ceilings)}종목(n_total 절단 의심): {d}",
+              file=sys.stderr)
+        _alert(f"상한접촉 {len(ceilings)}종목 — 본인 리포트가 pagenum({_HK_PAGENUM})을 채웠다\n"
+               f"{d}\n"
                "n_total 이 절단됐을 수 있다(화면 확정값으로 쓰지 말 것)")
+    # ★희석은 «절단»과 다른 사건이다. 종전엔 둘을 하나로 묶어 「n_total 절단 의심」이라
+    # 경보했고, 그래서 n_total=0 인 우선주가 「절단 의심」으로 뜨는 «자기모순 경보»가 나갔다.
+    # 실측 2026-08-16(005935 삼성전자우): T1 코드 0행 · T2 이름 0행 → T3 프리픽스 '삼성전'
+    # 이 100행을 채웠고 그 내용은 삼성전기 48 + 삼성전자 45 …, 본인 매치는 0이었다.
+    if dilutions:
+        d = ", ".join(f"{c}({n}) 검색어 '{t}'→남의행 {_HK_PAGENUM}"
+                      for c, n, t, _ in dilutions[:10])
+        print(f"[analyst] ★검색어 희석 {len(dilutions)}종목: {d}", file=sys.stderr)
+        _alert(f"검색어 희석 {len(dilutions)}종목 — 폴백 검색어가 «남의 리포트»로 "
+               f"pagenum({_HK_PAGENUM})을 채웠다(본인 매치 0)\n{d}\n"
+               "데이터 손상은 아니다. 다만 본인 리포트가 상한 너머에 있으면 못 본다 — "
+               "코드검색이 되는 종목은 이 경로를 타지 않는다")
+    # ★문구 정정(2026-08-16). 종전 「창 앞부분이 미조회」는 «틀린 서술»이었다.
+    # 조회창은 sdate=2025-01-01 로 집계창보다 훨씬 넓다 — 앞부분을 «안 가져온» 게 아니라
+    # 그 기간에 리포트가 «존재하지 않는» 것이다. 실측 2렌즈로 확인:
+    #   377300 카카오페이 — 코드·이름 검색 × sdate 2025/2024 «네 조합 모두» 1건(2026-08-05)
+    #   0126Z0 삼성에피스홀딩스 — 최초거래일 2025-11-24(신규상장), 리포트는 2026-07 부터
+    # 같은 방법이 005930 은 64건, 010950 은 30건을 가져온다(양성대조) → 수집 실패 아님.
+    # 남는 «진짜» 의미: avg_tp 가 명목 창이 아니라 «훨씬 짧은 실효기간»으로 계산됐다
+    # = 대표성 경고(n_brokers 와 같은 계열). 그래서 신호는 유지하되 이름·문구를 바꾼다.
     if window_gaps:
-        d = ", ".join(f"{c}({n}):최고령 {o} > 창 {w}" for c, n, o, w in window_gaps[:10])
-        print(f"[analyst] ★집계창 결손 {len(window_gaps)}종목: {d}", file=sys.stderr)
-        _alert(f"집계창 결손 {len(window_gaps)}종목 — 창 앞부분이 미조회\n{d}\n"
-               "avg_tp 가 창과 어긋난다")
+        d = ", ".join(f"{c}({n}):최초리포트 {o} > 창시작 {w}"
+                      for c, n, o, w in window_gaps[:10])
+        print(f"[analyst] ★창내 커버 희소 {len(window_gaps)}종목: {d}", file=sys.stderr)
+        _alert(f"창내 커버 희소 {len(window_gaps)}종목 — 집계창 앞부분에 리포트가 «없다»\n"
+               f"{d}\n"
+               "수집 실패가 아니라 그 기간 리포트 부재다(조회창은 2025-01-01 부터로 더 넓다).\n"
+               "다만 avg_tp 가 명목 창보다 «짧은 실효기간»으로 계산됐다 — 대표성 주의")
     # ★커버리지 경보. 종전엔 '몇 종목을 돌았는지'를 아무도 보지 않아, 72/100 에서
     # 죽어도 조용했다. app.py 신선도 워치독은 max(updated_at) 만 보므로 부분 실패를
     # 원리적으로 못 잡는다(그날 72종목이 갱신되면 age=0 → stale=false).

@@ -27,6 +27,21 @@ import requests
 import config
 import miri_cache as mc
 
+# ★U7-6 소스 감시 계측. import 실패를 조용히 넘기면 감시 화면에 NONRUN 만 남고
+# 「계측 미연결」과 「진짜 차단」이 구분되지 않는다 — 반드시 표면화한다.
+try:
+    from ops_source_health import record as _srec
+    _SREC_WIRED = True
+except Exception as _e:  # noqa: BLE001
+    _SREC_WIRED = False
+
+    def _srec(*_a, **_k):
+        return None
+
+    print(f"[top100] ★계측 미연결: ops_source_health import 실패 "
+          f"({type(_e).__name__}) — 소스감시가 NONRUN 으로만 보인다(차단과 구분 불가)",
+          file=sys.stderr)
+
 _URL = ("https://m.stock.naver.com/api/stocks/marketValue/{market}"
         "?page={page}&pageSize={size}")
 _H = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -86,12 +101,35 @@ def cap_label(won):
 
 
 def _fetch_page(market, page):
-    """단일 페이지 원본 stocks 배열. 실패 시 예외 전파."""
-    r = requests.get(_URL.format(market=market, page=page, size=_PAGE_SIZE),
-                     headers=_H, timeout=25)
+    """단일 페이지 원본 stocks 배열. 실패 시 예외 전파.
+
+    ★U7-6 계측(추가 호출 0): 이미 나가는 이 요청의 «결과만» 기록한다.
+    형태 지문은 stocks[0] 의 키 집합으로 뜬다 — 최상위(stocks/totalCount/…)보다
+    민감해서, 200 을 유지한 채 필드가 빠지는 «조용한 변형»을 잡아낸다.
+    """
+    try:
+        r = requests.get(_URL.format(market=market, page=page, size=_PAGE_SIZE),
+                         headers=_H, timeout=25)
+    except Exception as e:  # noqa: BLE001
+        _srec("naver", ok=False, note=f"req_exc:{type(e).__name__}·{market}p{page}")
+        raise
+    body = r.text or ""
+    if r.status_code != 200:
+        _srec("naver", status=r.status_code, size=len(body), payload=body,
+              ok=False, note=f"http·{market}p{page}")
+        r.encoding = "utf-8"
+        r.raise_for_status()
     r.encoding = "utf-8"
-    r.raise_for_status()
-    return r.json().get("stocks") or []
+    try:
+        stocks = r.json().get("stocks") or []
+    except Exception as e:  # noqa: BLE001
+        _srec("naver", status=r.status_code, size=len(body), payload=body,
+              ok=False, note=f"json_exc:{type(e).__name__}·{market}p{page}")
+        raise
+    _srec("naver", status=r.status_code, size=len(body),
+          payload=(stocks[0] if stocks else {"_empty": None}),
+          ok=bool(stocks), note=f"{market}p{page}·n={len(stocks)}")
+    return stocks
 
 
 def _fetch_market(market, pages=None):
